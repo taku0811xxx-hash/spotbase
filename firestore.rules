@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function requesterProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function sameOrg(data) {
+      return isSignedIn() && requesterProfile().organizationId == data.organizationId;
+    }
+
+    function canView(data) {
+      return sameOrg(data) &&
+        (requesterProfile().accessLevel == "admin" || requesterProfile().category == data.category);
+    }
+
+    function isOwnOrgData(data) {
+      return sameOrg(data) && requesterProfile().category == data.category;
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == uid || requesterProfile().organizationId == resource.data.organizationId);
+      allow write: if false;
+    }
+
+    match /pins/{pinId} {
+      allow read: if canView(resource.data);
+      allow create: if isSignedIn() && isOwnOrgData(request.resource.data);
+      allow update, delete: if canView(resource.data);
+    }
+
+    match /dispatch_records/{recordId} {
+      allow read: if canView(resource.data);
+      allow create: if isSignedIn() && isOwnOrgData(request.resource.data);
+      allow update, delete: if canView(resource.data);
+    }
+
+    match /dispatches/{dispatchId} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

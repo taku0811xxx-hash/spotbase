@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// MVP段階の簡易ルール。招待コードでログインした人だけがアプリを使う前提だが、
+// Firebase Authは未導入のため、現状は読み書きとも許可している。
+// 本番運用する場合は、招待コードの検証をFirebase Auth(カスタムトークン等)に
+// 置き換えたうえで、request.auth != null を条件に加えること。
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /pins/{pinId}/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /dispatch_records/{recordId}/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}
