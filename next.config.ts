@@ -10,7 +10,15 @@ const nextConfig: NextConfig = {
   // そのままNode.jsに読み込ませる設定。これをしないと、firebase-adminが
   // 内部で使っているESM専用パッケージ(jose)とバンドラーの相性問題で、
   // Vercel上で "ERR_REQUIRE_ESM" エラーが発生する。
-  serverExternalPackages: ["firebase-admin"],
+  // firebase-admin本体だけでなく、その内部依存(認証まわり)も対象に含めている。
+  serverExternalPackages: [
+    "firebase-admin",
+    "google-auth-library",
+    "gaxios",
+    "gcp-metadata",
+    "jose",
+    "jwks-rsa",
+  ],
 };
 
 export default nextConfig;
