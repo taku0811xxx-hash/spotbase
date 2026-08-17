@@ -97,10 +97,10 @@ export default function SearchLocationPanel({
         </div>
 
         <Link
-          href={`/pin/new?lat=${lat}&lng=${lng}&address=${encodeURIComponent(address)}`}
-          className="block text-center bg-blue-600 text-white rounded-lg py-2.5 font-medium text-sm shadow-sm hover:bg-blue-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150"
+          href={`/dispatch/new?lat=${lat}&lng=${lng}&locationName=${encodeURIComponent(address)}`}
+          className="block text-center bg-red-600 text-white rounded-lg py-2.5 font-medium text-sm shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150"
         >
-          ここに現場を登録する
+          ここで出動記録を作成する
         </Link>
 
         <ShootingSuggestionPanel name={label} address={label} lat={lat} lng={lng} />

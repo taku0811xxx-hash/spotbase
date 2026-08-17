@@ -103,6 +103,42 @@ export default function DispatchDetailPage() {
           </button>
         </div>
 
+        {(record.parkingInfo || record.shootingSpots || record.ipTransmissionInfo || record.fpuInfo || record.hazards) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+            <h2 className="font-semibold text-gray-900">現場情報</h2>
+            {record.parkingInfo && (
+              <div>
+                <p className="text-xs text-gray-500">駐車場所</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.parkingInfo}</p>
+              </div>
+            )}
+            {record.shootingSpots && (
+              <div>
+                <p className="text-xs text-gray-500">撮影ポイント</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.shootingSpots}</p>
+              </div>
+            )}
+            {record.ipTransmissionInfo && (
+              <div>
+                <p className="text-xs text-gray-500">携帯回線(IP伝送)の状況</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.ipTransmissionInfo}</p>
+              </div>
+            )}
+            {record.fpuInfo && (
+              <div>
+                <p className="text-xs text-gray-500">FPU伝送の状況</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.fpuInfo}</p>
+              </div>
+            )}
+            {record.hazards && (
+              <div>
+                <p className="text-xs text-gray-500">危険箇所・注意事項</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.hazards}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-3">チェックポイント</h2>
           {record.checkpoints.length === 0 && (

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   createDispatchRecord,
   type Checkpoint,
@@ -11,7 +11,7 @@ import {
 } from "@/lib/dispatchRecords";
 import { useAuth } from "@/components/AuthProvider";
 import { parseCsv } from "@/lib/csv";
-import { geocodeQuery } from "@/lib/geocode";
+import { geocodeQuery, reverseGeocode } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
 import GpsCheckpointRecorder from "@/components/GpsCheckpointRecorder";
 import Toast, { type ToastState } from "@/components/Toast";
@@ -39,14 +39,23 @@ function nextId() {
   return `id-${idCounter}`;
 }
 
-export default function NewDispatchPage() {
+const inputClass =
+  "w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+
+function NewDispatchForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile } = useAuth();
   const [responderName, setResponderName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [locationSearching, setLocationSearching] = useState(false);
   const [incidentType, setIncidentType] = useState("");
+  const [parkingInfo, setParkingInfo] = useState("");
+  const [shootingSpots, setShootingSpots] = useState("");
+  const [ipTransmissionInfo, setIpTransmissionInfo] = useState("");
+  const [fpuInfo, setFpuInfo] = useState("");
+  const [hazards, setHazards] = useState("");
   const [notes, setNotes] = useState<NoteEntry[]>([{ title: "", body: "" }]);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [track, setTrack] = useState<TrackPoint[]>([]);
@@ -64,6 +73,20 @@ export default function NewDispatchPage() {
   }, [profile]);
 
   const positionLockedRef = useRef(false);
+
+  // 地図・検索結果から「ここで出動記録を作成する」で来た場合、
+  // 場所名・位置をあらかじめ入力しておく
+  useEffect(() => {
+    const lat = searchParams.get("lat");
+    const lng = searchParams.get("lng");
+    const name = searchParams.get("locationName");
+    if (lat && lng) {
+      positionLockedRef.current = true;
+      setPosition({ lat: parseFloat(lat), lng: parseFloat(lng) });
+    }
+    if (name) setLocationName(name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 場所名を入力すると、位置が手動で決まっていない場合に限り自動で地図にピンを立てる
   useEffect(() => {
@@ -89,9 +112,17 @@ export default function NewDispatchPage() {
     return () => clearTimeout(timer);
   }, [locationName]);
 
-  function handlePositionChange(pos: { lat: number; lng: number }) {
+  async function handlePositionChange(pos: { lat: number; lng: number }) {
     positionLockedRef.current = true;
     setPosition(pos);
+    if (!locationName.trim()) {
+      try {
+        const address = await reverseGeocode(pos.lat, pos.lng);
+        if (address) setLocationName(address);
+      } catch (err) {
+        console.error(err);
+      }
+    }
   }
 
   function handleEquipmentFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -170,6 +201,11 @@ export default function NewDispatchPage() {
         lat: position?.lat ?? null,
         lng: position?.lng ?? null,
         incidentType,
+        parkingInfo,
+        shootingSpots,
+        ipTransmissionInfo,
+        fpuInfo,
+        hazards,
         checkpoints,
         track,
         equipmentHeaders,
@@ -194,6 +230,11 @@ export default function NewDispatchPage() {
     { label: "出動者", value: responderName },
     { label: "場所名", value: locationName },
     { label: "出動内容", value: incidentType },
+    { label: "駐車場所", value: parkingInfo },
+    { label: "撮影ポイント", value: shootingSpots },
+    { label: "携帯回線(IP伝送)の状況", value: ipTransmissionInfo },
+    { label: "FPU伝送の状況", value: fpuInfo },
+    { label: "危険箇所・注意事項", value: hazards },
     {
       label: "記録メモ",
       value: notes.filter((n) => n.title.trim() || n.body.trim()).length > 0
@@ -205,9 +246,6 @@ export default function NewDispatchPage() {
     { label: "機材", value: equipmentRows.length > 0 ? `${equipmentRows.length}件` : "未登録" },
     { label: "現場写真", value: photoEntries.length > 0 ? `${photoEntries.length}枚` : "未登録" },
   ];
-
-  const inputClass =
-    "w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -275,6 +313,64 @@ export default function NewDispatchPage() {
               onChange={(e) => setIncidentType(e.target.value)}
               placeholder="例: 交通事故の取材"
               className={inputClass}
+            />
+          </div>
+        </section>
+
+        <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-4">
+          <h2 className="font-semibold text-gray-900">現場情報</h2>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">駐車場所</label>
+            <textarea
+              value={parkingInfo}
+              onChange={(e) => setParkingInfo(e.target.value)}
+              placeholder="例: 敷地内に3台分あり。満車時は近くのコインパーキングを利用"
+              className={inputClass}
+              rows={2}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">撮影ポイント</label>
+            <textarea
+              value={shootingSpots}
+              onChange={(e) => setShootingSpots(e.target.value)}
+              placeholder="例: 正面玄関から見上げるアングルが撮りやすい"
+              className={inputClass}
+              rows={2}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              携帯回線(IP伝送)の状況
+            </label>
+            <textarea
+              value={ipTransmissionInfo}
+              onChange={(e) => setIpTransmissionInfo(e.target.value)}
+              placeholder="例: 3キャリアボンディングで安定。屋内は不安定になりやすい"
+              className={inputClass}
+              rows={2}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">FPU伝送の状況</label>
+            <textarea
+              value={fpuInfo}
+              onChange={(e) => setFpuInfo(e.target.value)}
+              placeholder="例: ○○中継局への見通しあり。ビル影になる位置は不可"
+              className={inputClass}
+              rows={2}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              危険箇所・注意事項
+            </label>
+            <textarea
+              value={hazards}
+              onChange={(e) => setHazards(e.target.value)}
+              placeholder="例: 前面道路は交通量が多く、機材搬入時は要注意"
+              className={inputClass}
+              rows={2}
             />
           </div>
         </section>
@@ -449,5 +545,19 @@ export default function NewDispatchPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewDispatchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-500">
+          読み込み中...
+        </div>
+      }
+    >
+      <NewDispatchForm />
+    </Suspense>
   );
 }

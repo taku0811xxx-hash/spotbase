@@ -42,6 +42,11 @@ export type DispatchRecord = {
   lat: number | null;
   lng: number | null;
   incidentType: string; // 出動内容(事件、事故など)
+  parkingInfo: string; // 駐車場所
+  shootingSpots: string; // 撮影ポイント
+  ipTransmissionInfo: string; // 携帯回線(IP伝送)の状況
+  fpuInfo: string; // FPU伝送の状況
+  hazards: string; // 危険箇所・注意事項
   checkpoints: Checkpoint[];
   track: TrackPoint[]; // リアルタイム記録の軌跡
   equipmentHeaders: string[]; // 持ち出した機材表の見出し
@@ -61,6 +66,11 @@ export type NewDispatchRecordInput = {
   lat: number | null;
   lng: number | null;
   incidentType: string;
+  parkingInfo: string;
+  shootingSpots: string;
+  ipTransmissionInfo: string;
+  fpuInfo: string;
+  hazards: string;
   checkpoints: Checkpoint[];
   track: TrackPoint[];
   equipmentHeaders: string[];
@@ -93,6 +103,11 @@ export async function createDispatchRecord(
     lat: input.lat,
     lng: input.lng,
     incidentType: input.incidentType,
+    parkingInfo: input.parkingInfo,
+    shootingSpots: input.shootingSpots,
+    ipTransmissionInfo: input.ipTransmissionInfo,
+    fpuInfo: input.fpuInfo,
+    hazards: input.hazards,
     checkpoints: input.checkpoints,
     track: input.track,
     equipmentHeaders: input.equipmentHeaders,

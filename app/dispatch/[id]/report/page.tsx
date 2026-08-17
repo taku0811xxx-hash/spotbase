@@ -96,6 +96,52 @@ export default function DispatchReportPage() {
             </tbody>
           </table>
 
+          {(record.parkingInfo || record.shootingSpots || record.ipTransmissionInfo || record.fpuInfo || record.hazards) && (
+            <div>
+              <h2 className="font-semibold text-gray-900 mb-2 text-sm border-b border-gray-200 pb-1">
+                現場情報
+              </h2>
+              <table className="w-full text-sm">
+                <tbody>
+                  {record.parkingInfo && (
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 pr-4 text-gray-500 font-medium w-32 align-top">駐車場所</th>
+                      <td className="py-2 text-gray-900 whitespace-pre-wrap">{record.parkingInfo}</td>
+                    </tr>
+                  )}
+                  {record.shootingSpots && (
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 pr-4 text-gray-500 font-medium align-top">撮影ポイント</th>
+                      <td className="py-2 text-gray-900 whitespace-pre-wrap">{record.shootingSpots}</td>
+                    </tr>
+                  )}
+                  {record.ipTransmissionInfo && (
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 pr-4 text-gray-500 font-medium align-top">
+                        携帯回線(IP伝送)
+                      </th>
+                      <td className="py-2 text-gray-900 whitespace-pre-wrap">{record.ipTransmissionInfo}</td>
+                    </tr>
+                  )}
+                  {record.fpuInfo && (
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 pr-4 text-gray-500 font-medium align-top">FPU伝送</th>
+                      <td className="py-2 text-gray-900 whitespace-pre-wrap">{record.fpuInfo}</td>
+                    </tr>
+                  )}
+                  {record.hazards && (
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 pr-4 text-gray-500 font-medium align-top">
+                        危険箇所・注意事項
+                      </th>
+                      <td className="py-2 text-gray-900 whitespace-pre-wrap">{record.hazards}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <div>
             <h2 className="font-semibold text-gray-900 mb-2 text-sm border-b border-gray-200 pb-1">
               チェックポイント記録

@@ -127,12 +127,12 @@ export default function Map({
               <p className="font-bold">{searchMarker.label}</p>
               <p className="text-xs text-gray-500">まだ現場として未登録です</p>
               <a
-                href={`/pin/new?lat=${searchMarker.lat}&lng=${searchMarker.lng}&address=${encodeURIComponent(
+                href={`/dispatch/new?lat=${searchMarker.lat}&lng=${searchMarker.lng}&locationName=${encodeURIComponent(
                   searchMarker.address
                 )}`}
                 className="inline-block mt-1 text-blue-600 underline text-sm"
               >
-                ここに現場を登録する
+                ここで出動記録を作成する
               </a>
             </div>
           </Popup>
