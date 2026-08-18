@@ -7,8 +7,9 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  where,
   Timestamp,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
@@ -36,9 +37,16 @@ export type NoteEntry = {
   body: string;
 };
 
+export type EditLogEntry = {
+  editedBy: string;
+  editedAt: Timestamp;
+  changedFields: string[]; // 変更された項目名の一覧(例: ["駐車場所", "危険箇所・注意事項"])
+};
+
 export type DispatchRecord = {
   id: string;
   locationName: string; // 場所名
+  address: string; // 住所
   lat: number | null;
   lng: number | null;
   incidentType: string; // 出動内容(事件、事故など)
@@ -56,6 +64,7 @@ export type DispatchRecord = {
   organizationId: string; // 組織(NHK、日本テレビなど)
   category: string; // 分類(記者、カメラマンなど)
   recordedBy: string; // 出動者名
+  history: EditLogEntry[]; // 編集履歴(誰が・いつ・何を変えたか)
   createdAt: Timestamp | null;
 };
 
@@ -63,6 +72,7 @@ const COLLECTION = "dispatch_records";
 
 export type NewDispatchRecordInput = {
   locationName: string;
+  address: string;
   lat: number | null;
   lng: number | null;
   incidentType: string;
@@ -100,6 +110,7 @@ export async function createDispatchRecord(
 
   await setDoc(docRef, {
     locationName: input.locationName,
+    address: input.address,
     lat: input.lat,
     lng: input.lng,
     incidentType: input.incidentType,
@@ -117,9 +128,88 @@ export async function createDispatchRecord(
     organizationId: input.organizationId,
     category: input.category,
     recordedBy: input.recordedBy,
+    history: [],
     createdAt: serverTimestamp(),
   });
   return docRef.id;
+}
+
+// 編集可能な項目とその表示名(履歴に「何が変わったか」を記録するために使う)
+const EDITABLE_FIELD_LABELS: Record<string, string> = {
+  locationName: "場所名",
+  address: "住所",
+  lat: "位置",
+  lng: "位置",
+  incidentType: "出動内容",
+  parkingInfo: "駐車場所",
+  shootingSpots: "撮影ポイント",
+  ipTransmissionInfo: "携帯回線(IP伝送)の状況",
+  fpuInfo: "FPU伝送の状況",
+  hazards: "危険箇所・注意事項",
+  notes: "記録メモ",
+};
+
+export type UpdateDispatchRecordInput = {
+  locationName: string;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  incidentType: string;
+  parkingInfo: string;
+  shootingSpots: string;
+  ipTransmissionInfo: string;
+  fpuInfo: string;
+  hazards: string;
+  notes: NoteEntry[];
+};
+
+// 出動記録を編集する。誰でも(同じ組織・分類なら)編集できる代わりに、
+// 「誰が・いつ・何を変えたか」を履歴として残す。
+export async function updateDispatchRecord(
+  id: string,
+  input: UpdateDispatchRecordInput,
+  editedBy: string
+): Promise<void> {
+  const existing = await getDispatchRecord(id);
+  if (!existing) throw new Error("出動記録が見つかりません");
+
+  const changedFieldKeys = Object.keys(EDITABLE_FIELD_LABELS).filter((key) => {
+    if (key === "notes") {
+      return JSON.stringify(existing.notes) !== JSON.stringify(input.notes);
+    }
+    const existingValue = (existing as unknown as Record<string, unknown>)[key];
+    const newValue = (input as unknown as Record<string, unknown>)[key];
+    return existingValue !== newValue;
+  });
+
+  // lat/lngは両方とも「位置」としてまとめて1件扱いにする
+  const changedLabels = Array.from(
+    new Set(changedFieldKeys.map((key) => EDITABLE_FIELD_LABELS[key]))
+  );
+
+  const newHistory: EditLogEntry[] = [...(existing.history ?? [])];
+  if (changedLabels.length > 0) {
+    newHistory.push({
+      editedBy,
+      editedAt: Timestamp.now(),
+      changedFields: changedLabels,
+    });
+  }
+
+  await updateDoc(doc(db, COLLECTION, id), {
+    locationName: input.locationName,
+    address: input.address,
+    lat: input.lat,
+    lng: input.lng,
+    incidentType: input.incidentType,
+    parkingInfo: input.parkingInfo,
+    shootingSpots: input.shootingSpots,
+    ipTransmissionInfo: input.ipTransmissionInfo,
+    fpuInfo: input.fpuInfo,
+    hazards: input.hazards,
+    notes: input.notes,
+    history: newHistory,
+  });
 }
 
 // 一覧取得: Firestoreのセキュリティルール上、組織をまたぐ一覧取得はできないため、

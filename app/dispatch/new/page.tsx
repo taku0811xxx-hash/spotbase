@@ -12,6 +12,7 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import { parseCsv } from "@/lib/csv";
 import { geocodeQuery, reverseGeocode } from "@/lib/geocode";
+import { syncPinFromDispatch } from "@/lib/pinSync";
 import PageHeader from "@/components/PageHeader";
 import GpsCheckpointRecorder from "@/components/GpsCheckpointRecorder";
 import Toast, { type ToastState } from "@/components/Toast";
@@ -48,8 +49,11 @@ function NewDispatchForm() {
   const { profile } = useAuth();
   const [responderName, setResponderName] = useState("");
   const [locationName, setLocationName] = useState("");
+  const [address, setAddress] = useState("");
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [locationSearching, setLocationSearching] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [parkingGpsLoading, setParkingGpsLoading] = useState(false);
   const [incidentType, setIncidentType] = useState("");
   const [parkingInfo, setParkingInfo] = useState("");
   const [shootingSpots, setShootingSpots] = useState("");
@@ -84,11 +88,11 @@ function NewDispatchForm() {
       positionLockedRef.current = true;
       setPosition({ lat: parseFloat(lat), lng: parseFloat(lng) });
     }
-    if (name) setLocationName(name);
+    if (name) setAddress(name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 場所名を入力すると、位置が手動で決まっていない場合に限り自動で地図にピンを立てる
+  // 場所名を入力すると、位置が手動で決まっていない場合に限り自動で地図にピンを立て、住所も入力する
   useEffect(() => {
     if (positionLockedRef.current) return;
     const trimmed = locationName.trim();
@@ -101,6 +105,7 @@ function NewDispatchForm() {
         if (positionLockedRef.current) return;
         if (results.length > 0) {
           setPosition({ lat: results[0].lat, lng: results[0].lng });
+          setAddress(results[0].displayName);
         }
       } catch (err) {
         console.error(err);
@@ -115,14 +120,49 @@ function NewDispatchForm() {
   async function handlePositionChange(pos: { lat: number; lng: number }) {
     positionLockedRef.current = true;
     setPosition(pos);
-    if (!locationName.trim()) {
-      try {
-        const address = await reverseGeocode(pos.lat, pos.lng);
-        if (address) setLocationName(address);
-      } catch (err) {
-        console.error(err);
-      }
+    setAddressLoading(true);
+    try {
+      const found = await reverseGeocode(pos.lat, pos.lng);
+      if (found) setAddress(found);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAddressLoading(false);
     }
+  }
+
+  // 駐車場所欄: 現在地(GPS)の住所を取得して、駐車場所メモに挿入する
+  function handleInsertCurrentLocationToParking() {
+    if (!navigator.geolocation) {
+      setToast({ type: "error", message: "この端末は位置情報の取得に対応していません" });
+      return;
+    }
+    setParkingGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const found = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+          const text =
+            found ??
+            `緯度${pos.coords.latitude.toFixed(5)} / 経度${pos.coords.longitude.toFixed(5)}`;
+          setParkingInfo((prev) => (prev ? `${prev}\n現在地: ${text}` : `現在地: ${text}`));
+        } catch (err) {
+          console.error(err);
+          setToast({ type: "error", message: "住所の取得に失敗しました" });
+        } finally {
+          setParkingGpsLoading(false);
+        }
+      },
+      (err) => {
+        console.error(err);
+        setParkingGpsLoading(false);
+        setToast({
+          type: "error",
+          message: "現在地を取得できませんでした。位置情報の許可を確認してください",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   }
 
   function handleEquipmentFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -198,6 +238,7 @@ function NewDispatchForm() {
     try {
       const id = await createDispatchRecord({
         locationName,
+        address,
         lat: position?.lat ?? null,
         lng: position?.lng ?? null,
         incidentType,
@@ -218,6 +259,28 @@ function NewDispatchForm() {
       });
       setConfirmOpen(false);
       setToast({ type: "success", message: "出動記録を保存しました" });
+
+      // 位置情報があれば、この場所の現場記録を裏側で自動生成・更新する
+      // (画面遷移をブロックしないよう、結果を待たずに実行する)
+      if (position) {
+        syncPinFromDispatch(
+          {
+            locationName,
+            address,
+            lat: position.lat,
+            lng: position.lng,
+            organizationId: profile.organizationId,
+            category: profile.category,
+            recordedBy: responderName,
+          },
+          {
+            organizationId: profile.organizationId,
+            category: profile.category,
+            isAdmin: profile.accessLevel === "admin",
+          }
+        ).catch((err) => console.error("現場記録の自動同期に失敗:", err));
+      }
+
       setTimeout(() => router.push(`/dispatch/${id}`), 600);
     } catch (err) {
       console.error(err);
@@ -227,9 +290,10 @@ function NewDispatchForm() {
   }
 
   const confirmSummary = [
+    { label: "出動内容", value: incidentType },
     { label: "出動者", value: responderName },
     { label: "場所名", value: locationName },
-    { label: "出動内容", value: incidentType },
+    { label: "住所", value: address },
     { label: "駐車場所", value: parkingInfo },
     { label: "撮影ポイント", value: shootingSpots },
     { label: "携帯回線(IP伝送)の状況", value: ipTransmissionInfo },
@@ -265,6 +329,17 @@ function NewDispatchForm() {
         <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              出動内容(事件・事故など)
+            </label>
+            <input
+              value={incidentType}
+              onChange={(e) => setIncidentType(e.target.value)}
+              placeholder="例: 交通事故の取材"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               出動者名<span className="text-red-500 ml-0.5">*</span>
             </label>
             <input
@@ -293,6 +368,20 @@ function NewDispatchForm() {
             )}
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">住所</label>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="場所名の入力や地図クリックで自動入力されます"
+              className={inputClass}
+            />
+            {addressLoading && (
+              <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                <Spinner /> 住所を取得中...
+              </p>
+            )}
+          </div>
+          <div>
             <LocationPicker value={position} onChange={handlePositionChange} />
             {position ? (
               <p className="text-xs text-gray-500 mt-1">
@@ -304,30 +393,37 @@ function NewDispatchForm() {
               </p>
             )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              出動内容(事件・事故など)
-            </label>
-            <input
-              value={incidentType}
-              onChange={(e) => setIncidentType(e.target.value)}
-              placeholder="例: 交通事故の取材"
-              className={inputClass}
-            />
-          </div>
         </section>
 
         <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-4">
           <h2 className="font-semibold text-gray-900">現場情報</h2>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">駐車場所</label>
-            <textarea
-              value={parkingInfo}
-              onChange={(e) => setParkingInfo(e.target.value)}
-              placeholder="例: 敷地内に3台分あり。満車時は近くのコインパーキングを利用"
-              className={inputClass}
-              rows={2}
-            />
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleInsertCurrentLocationToParking}
+                disabled={parkingGpsLoading}
+                className="flex items-center gap-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 rounded-lg px-3 py-1.5 hover:bg-blue-100 hover:border-blue-300 hover:shadow-sm active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
+              >
+                {parkingGpsLoading ? (
+                  <Spinner className="w-4 h-4" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                  </svg>
+                )}
+                {parkingGpsLoading ? "現在地を取得中..." : "現在地の住所を挿入"}
+              </button>
+              <textarea
+                value={parkingInfo}
+                onChange={(e) => setParkingInfo(e.target.value)}
+                placeholder="例: 敷地内に3台分あり。満車時は近くのコインパーキングを利用。実際の駐車スペースにいる時は上のボタンで現在地を追加できます"
+                className={inputClass}
+                rows={3}
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">撮影ポイント</label>

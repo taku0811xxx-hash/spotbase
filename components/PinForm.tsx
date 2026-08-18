@@ -142,19 +142,31 @@ function PhotoPicker({
 type Props = {
   initialPosition?: { lat: number; lng: number } | null;
   initialAddress?: string;
+  initialName?: string;
+  initialParkingInfo?: string;
+  initialShootingSpots?: string;
+  initialIpTransmissionInfo?: string;
+  initialFpuInfo?: string;
+  initialHazards?: string;
   existingPin?: Pin | null; // 指定があれば編集モード
 };
 
 export default function PinForm({
   initialPosition,
   initialAddress,
+  initialName,
+  initialParkingInfo,
+  initialShootingSpots,
+  initialIpTransmissionInfo,
+  initialFpuInfo,
+  initialHazards,
   existingPin,
 }: Props) {
   const router = useRouter();
   const { profile } = useAuth();
   const isEdit = !!existingPin;
 
-  const [name, setName] = useState(existingPin?.name ?? "");
+  const [name, setName] = useState(existingPin?.name ?? initialName ?? "");
   const [address, setAddress] = useState(
     existingPin?.address ?? initialAddress ?? ""
   );
@@ -163,15 +175,17 @@ export default function PinForm({
       ? { lat: existingPin.lat, lng: existingPin.lng }
       : initialPosition ?? null
   );
-  const [parkingInfo, setParkingInfo] = useState(existingPin?.parkingInfo ?? "");
+  const [parkingInfo, setParkingInfo] = useState(
+    existingPin?.parkingInfo ?? initialParkingInfo ?? ""
+  );
   const [shootingSpots, setShootingSpots] = useState(
-    existingPin?.shootingSpots ?? ""
+    existingPin?.shootingSpots ?? initialShootingSpots ?? ""
   );
   const [ipTransmissionInfo, setIpTransmissionInfo] = useState(
-    existingPin?.ipTransmissionInfo ?? ""
+    existingPin?.ipTransmissionInfo ?? initialIpTransmissionInfo ?? ""
   );
-  const [fpuInfo, setFpuInfo] = useState(existingPin?.fpuInfo ?? "");
-  const [hazards, setHazards] = useState(existingPin?.hazards ?? "");
+  const [fpuInfo, setFpuInfo] = useState(existingPin?.fpuInfo ?? initialFpuInfo ?? "");
+  const [hazards, setHazards] = useState(existingPin?.hazards ?? initialHazards ?? "");
 
   const [photos, setPhotos] = useState<File[]>([]);
   const [shootingPhotos, setShootingPhotos] = useState<File[]>([]);

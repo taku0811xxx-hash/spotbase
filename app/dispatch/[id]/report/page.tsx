@@ -89,6 +89,12 @@ export default function DispatchReportPage() {
                   )}
                 </td>
               </tr>
+              {record.address && (
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 pr-4 text-gray-500 font-medium align-top">住所</th>
+                  <td className="py-2 text-gray-900">{record.address}</td>
+                </tr>
+              )}
               <tr className="border-b border-gray-100">
                 <th className="text-left py-2 pr-4 text-gray-500 font-medium align-top">出動内容</th>
                 <td className="py-2 text-gray-900">{record.incidentType || "-"}</td>

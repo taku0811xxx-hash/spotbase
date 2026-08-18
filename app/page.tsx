@@ -188,6 +188,12 @@ export default function Home() {
                 </Link>
               )}
               <Link
+                href="/dispatch"
+                className="text-white text-sm font-medium rounded-lg px-3 py-2 border border-gray-600 hover:bg-gray-800 transition-all duration-150"
+              >
+                出動記録一覧
+              </Link>
+              <Link
                 href="/dispatch/new"
                 className="text-white text-sm font-medium rounded-lg px-4 py-2 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150"
               >

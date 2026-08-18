@@ -6,19 +6,32 @@ import { useParams, useRouter } from "next/navigation";
 import {
   deleteDispatchRecord,
   getDispatchRecord,
+  getDispatchRecordsNear,
   type DispatchRecord,
 } from "@/lib/dispatchRecords";
+import { useAuth } from "@/components/AuthProvider";
 import PageHeader from "@/components/PageHeader";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Toast, { type ToastState } from "@/components/Toast";
 
+type PinSummary = {
+  parkingInfo: string;
+  shootingSpots: string;
+  ipTransmissionInfo: string;
+  fpuInfo: string;
+  hazards: string;
+};
+
 export default function DispatchDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { profile } = useAuth();
   const [record, setRecord] = useState<DispatchRecord | null | undefined>(undefined);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
+  const [generating, setGenerating] = useState(false);
+  const [sourceCount, setSourceCount] = useState<number | null>(null);
 
   useEffect(() => {
     getDispatchRecord(params.id).then(setRecord);
@@ -34,6 +47,69 @@ export default function DispatchDetailPage() {
       setDeleting(false);
       setDeleteConfirmOpen(false);
       setToast({ type: "error", message: "削除に失敗しました" });
+    }
+  }
+
+  // この場所の付近にある出動記録をすべて集めて、AIに現場記録としてまとめさせてから
+  // 現場登録フォームに渡す
+  async function handleGeneratePinSummary() {
+    if (!record || record.lat == null || record.lng == null || !profile) return;
+    setGenerating(true);
+    try {
+      const nearby = await getDispatchRecordsNear(
+        record.lat,
+        record.lng,
+        {
+          organizationId: profile.organizationId,
+          category: profile.category,
+          isAdmin: profile.accessLevel === "admin",
+        }
+      );
+      const source = nearby.length > 0 ? nearby : [record];
+      setSourceCount(source.length);
+
+      const res = await fetch("/api/generate-pin-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationName: record.locationName,
+          address: record.address,
+          records: source.map((r) => ({
+            date: r.createdAt?.toDate?.()?.toLocaleDateString("ja-JP") ?? "",
+            incidentType: r.incidentType,
+            parkingInfo: r.parkingInfo,
+            shootingSpots: r.shootingSpots,
+            ipTransmissionInfo: r.ipTransmissionInfo,
+            fpuInfo: r.fpuInfo,
+            hazards: r.hazards,
+            notes: r.notes,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ type: "error", message: data.error || "現場記録の生成に失敗しました" });
+        return;
+      }
+      const summary = data.summary as PinSummary;
+
+      const query = new URLSearchParams({
+        lat: String(record.lat),
+        lng: String(record.lng),
+        name: record.locationName,
+        address: record.address ?? "",
+        parkingInfo: summary.parkingInfo ?? "",
+        shootingSpots: summary.shootingSpots ?? "",
+        ipTransmissionInfo: summary.ipTransmissionInfo ?? "",
+        fpuInfo: summary.fpuInfo ?? "",
+        hazards: summary.hazards ?? "",
+      });
+      router.push(`/pin/new?${query.toString()}`);
+    } catch (err) {
+      console.error(err);
+      setToast({ type: "error", message: "現場記録の生成に失敗しました" });
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -56,6 +132,7 @@ export default function DispatchDetailPage() {
   }
 
   const createdAt = record.createdAt?.toDate?.();
+  const canGeneratePin = record.lat != null && record.lng != null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -87,6 +164,9 @@ export default function DispatchDetailPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 flex items-start justify-between gap-3">
           <div>
             <h1 className="text-lg font-bold text-gray-900">{record.locationName}</h1>
+            {record.address && (
+              <p className="text-xs text-gray-500 mt-0.5">{record.address}</p>
+            )}
             {record.incidentType && (
               <p className="text-sm text-gray-600 mt-0.5">{record.incidentType}</p>
             )}
@@ -95,13 +175,42 @@ export default function DispatchDetailPage() {
               {createdAt && ` / ${createdAt.toLocaleString("ja-JP")}`}
             </p>
           </div>
-          <button
-            onClick={() => setDeleteConfirmOpen(true)}
-            className="text-sm border border-red-200 text-red-600 rounded-lg px-3 py-1.5 hover:bg-red-50 hover:border-red-300 transition-all duration-150 flex-shrink-0"
-          >
-            削除
-          </button>
+          <div className="flex gap-2 flex-shrink-0">
+            <Link
+              href={`/dispatch/${record.id}/edit`}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-all duration-150"
+            >
+              編集
+            </Link>
+            {canGeneratePin && (
+              <button
+                onClick={handleGeneratePinSummary}
+                disabled={generating}
+                className="flex items-center gap-1.5 text-sm border border-blue-200 text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5 hover:bg-blue-100 hover:border-blue-300 transition-all duration-150 disabled:opacity-50"
+              >
+                {generating && (
+                  <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.4 0 0 5.4 0 12h4z" />
+                  </svg>
+                )}
+                {generating ? "この場所の出動記録を集めて生成中..." : "現場記録を自動生成"}
+              </button>
+            )}
+            <button
+              onClick={() => setDeleteConfirmOpen(true)}
+              className="text-sm border border-red-200 text-red-600 rounded-lg px-3 py-1.5 hover:bg-red-50 hover:border-red-300 transition-all duration-150"
+            >
+              削除
+            </button>
+          </div>
         </div>
+
+        {canGeneratePin && sourceCount != null && (
+          <p className="text-xs text-gray-400 -mt-3">
+            付近の出動記録{sourceCount}件から現場記録を生成しています
+          </p>
+        )}
 
         {(record.parkingInfo || record.shootingSpots || record.ipTransmissionInfo || record.fpuInfo || record.hazards) && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
@@ -249,6 +358,24 @@ export default function DispatchDetailPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+        {record.history?.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="font-semibold text-gray-900 mb-3">編集履歴</h2>
+            <ul className="space-y-2">
+              {[...record.history].reverse().map((entry, i) => {
+                const editedAt = entry.editedAt?.toDate?.();
+                return (
+                  <li key={i} className="text-xs text-gray-600 border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+                    <span className="font-medium text-gray-800">{entry.editedBy}</span>
+                    {editedAt && ` が ${editedAt.toLocaleString("ja-JP")} に`}
+                    {" "}
+                    {entry.changedFields.join("・")} を変更
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </div>

@@ -24,7 +24,7 @@ export default function Toast({ toast, onDismiss }: Props) {
   const isSuccess = toast.type === "success";
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-[toast-in_0.25s_ease-out]">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[2000] animate-[toast-in_0.25s_ease-out]">
       <div
         className={`flex items-center gap-3 rounded-xl shadow-lg border px-4 py-3 min-w-[280px] max-w-sm ${
           isSuccess
