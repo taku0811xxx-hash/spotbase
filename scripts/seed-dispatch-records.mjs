@@ -326,7 +326,458 @@ const DUMMY_RECORDS = [
     ],
     createdAt: Timestamp.fromDate(new Date("2026-08-14T14:00:00")),
   },
+
+  {
+    // データ5: 東京タワー・通信機材点検（技術）
+    organizationId: TEST_ORG_ID,
+    category: "技術",
+    recordedBy: "山田花子（技術）",
+    locationName: "東京タワー周辺",
+    address: "東京都港区芝公園4丁目2-8",
+    lat: 35.65859,
+    lng: 139.74538,
+    incidentType: "通信機材の定期点検・保守作業",
+    siteInfo:
+      "東京タワーの通信機材室で定期メンテナンス実施。複数キャリアの基地局機材を点検。タワー内部の温度・湿度管理を確認。",
+    parkingInfo:
+      "タワー周辺の民間駐車場を利用。タワー直下のパーキング（高さ制限2.3m）は利用不可。芝公園の周辺に複数パーキング配置。",
+    shootingSpots:
+      "タワー下部からの撮影が可能。機材室内部は撮影許可要。外部からのタワー全景も参考になる。",
+    ipTransmissionInfo:
+      "タワー内の複数基地局から安定した伝送が可能。スマートフォンのテザリングでも高速。中継設備に負荷をかけないよう注意。",
+    fpuInfo:
+      "タワーの放送局施設との連携が可能。機材室からの直接中継も検討。バックアップ回線は別回線で確保推奨。",
+    hazards:
+      "高所作業のため安全帯・ヘルメット着用必須。機材室内の高電圧機器に注意。メンテナンス時は周囲の人員配置を確認。",
+    notes: [
+      {
+        title: "機材室アクセス",
+        body: "セキュリティチェックが厳しい。身分証明書とスタッフ証が必須。事前予約と立ち入り許可確認が重要。",
+      },
+      {
+        title: "メンテナンス時間",
+        body: "放送運用に支障がないよう、深夜帯（22:00-6:00）の作業が基本。緊急対応以外は事前スケジュール調整。",
+      },
+    ],
+    checkpoints: [
+      {
+        time: new Date("2026-08-13T21:00:00").toISOString(),
+        lat: 35.65859,
+        lng: 139.74538,
+        comment: "局発",
+      },
+      {
+        time: new Date("2026-08-13T22:15:00").toISOString(),
+        lat: 35.65859,
+        lng: 139.74538,
+        comment: "現場着・機材室入室",
+      },
+      {
+        time: new Date("2026-08-14T01:30:00").toISOString(),
+        lat: 35.65859,
+        lng: 139.74538,
+        comment: "メンテナンス完了・撤収",
+      },
+    ],
+    track: [],
+    equipmentHeaders: [],
+    equipmentRows: [],
+    photos: [],
+    sitePhotos: [],
+    parkingPhotos: [],
+    shootingPhotos: [],
+    ipTransmissionPhotos: [],
+    fpuPhotos: [],
+    hazardPhotos: [],
+    status: "published",
+    publishedAt: Timestamp.fromDate(new Date("2026-08-14T04:00:00")),
+    draftSavedAt: Timestamp.fromDate(new Date("2026-08-14T01:00:00")),
+    history: [
+      {
+        editedBy: "山田花子（技術）",
+        editedAt: Timestamp.fromDate(new Date("2026-08-14T04:00:00")),
+        changedFields: ["定期点検完了し正式提出"],
+      },
+    ],
+    createdAt: Timestamp.fromDate(new Date("2026-08-13T21:00:00")),
+  },
+
+  {
+    // データ6: 羽田空港・放送イベント対応（技術）
+    organizationId: TEST_ORG_ID,
+    category: "技術",
+    recordedBy: "佐藤太郎（技術）",
+    locationName: "羽田空港第1ターミナル",
+    address: "東京都大田区羽田空港3-4-1",
+    lat: 35.55263,
+    lng: 139.77194,
+    incidentType: "空港ターミナルでの放送イベント技術サポート",
+    siteInfo:
+      "羽田空港第1ターミナルの特別イベント（航空会社セレモニー）にて技術スタッフとして対応。複数放送局との同時配信に対応。",
+    parkingInfo:
+      "空港公式駐車場（P4・P5）を利用。イベント関係車両用の特別停車エリアあり。搬入・搬出時間は事前調整が必須。",
+    shootingSpots:
+      "ターミナルロビーからの撮影許可あり。パブリックエリア内での機材設営に配慮。上層階からのドローン撮影は不可。",
+    ipTransmissionInfo:
+      "羽田空港の高速WiFi利用可。ただしセキュリティが厳しく、事前登録必須。モバイル回線は au・docomo ともに強し。",
+    fpuInfo:
+      "羽田中継局への見通し良好。ターミナル屋上からの直接中継も可能。小田急・京急線との連携放送も検討。",
+    hazards:
+      "空港内での撮影許可管理が厳格。セキュリティエリアに注意。搬入・搬出時に一般客との接触リスク。",
+    notes: [
+      {
+        title: "事前許可申請",
+        body: "撮影許可・機材搬入は、空港テナント管理部に最低3営業日前の申請が必須。テロ対策によるチェックあり。",
+      },
+      {
+        title: "イベントスケジュール",
+        body: "セレモニー本番は10:00-11:30。搬入は08:00-09:30、撤収は11:45-12:30で短時間に集中。",
+      },
+    ],
+    checkpoints: [
+      {
+        time: new Date("2026-08-12T07:00:00").toISOString(),
+        lat: 35.55263,
+        lng: 139.77194,
+        comment: "局発",
+      },
+      {
+        time: new Date("2026-08-12T08:15:00").toISOString(),
+        lat: 35.55263,
+        lng: 139.77194,
+        comment: "空港到着・搬入開始",
+      },
+      {
+        time: new Date("2026-08-12T12:45:00").toISOString(),
+        lat: 35.55263,
+        lng: 139.77194,
+        comment: "撤収完了・局帰着",
+      },
+    ],
+    track: [],
+    equipmentHeaders: [],
+    equipmentRows: [],
+    photos: [],
+    sitePhotos: [],
+    parkingPhotos: [],
+    shootingPhotos: [],
+    ipTransmissionPhotos: [],
+    fpuPhotos: [],
+    hazardPhotos: [],
+    status: "published",
+    publishedAt: Timestamp.fromDate(new Date("2026-08-12T14:00:00")),
+    draftSavedAt: Timestamp.fromDate(new Date("2026-08-12T12:00:00")),
+    history: [
+      {
+        editedBy: "佐藤太郎（技術）",
+        editedAt: Timestamp.fromDate(new Date("2026-08-12T14:00:00")),
+        changedFields: ["イベント技術対応完了し正式提出"],
+      },
+    ],
+    createdAt: Timestamp.fromDate(new Date("2026-08-12T07:00:00")),
+  },
+
+  {
+    // データ7: スカイツリー・5G環境測定（技術）
+    organizationId: TEST_ORG_ID,
+    category: "技術",
+    recordedBy: "鈴木次郎（技術）",
+    locationName: "東京スカイツリー周辺",
+    address: "東京都墨田区押上1丁目1-2",
+    lat: 35.71009,
+    lng: 139.8107,
+    incidentType: "5G通信環境の測定・検証テスト",
+    siteInfo:
+      "スカイツリー周辺の5G通信環境を実測。複数キャリアの電波強度・速度を測定。ビル街での反射・減衰の影響を分析。",
+    parkingInfo:
+      "スカイツリータウンの駐車場（30分400円）を利用。イベント時は満車の可能性あり。周辺の商業施設駐車場も検討。",
+    shootingSpots:
+      "スカイツリー東側の公園からの全景撮影が最良。北側からは浅草寺とのコンボショット可能。空撮は許可要確認。",
+    ipTransmissionInfo:
+      "3キャリア全て強力。特に NTT docomo の 5G が高速。ただし周辺人口密集のため、ピーク時は混雑の可能性。",
+    fpuInfo:
+      "スカイツリー放送局への見通し非常に良好。直接中継の最適候補地。バックアップ中継局も複数確保可能。",
+    hazards:
+      "周辺に観光客が多く、機材盗難リスク。測定機器の破損に注意。突然の天候変化にも対応が必要。",
+    notes: [
+      {
+        title: "測定方法",
+        body: "複数地点でのスピードテストを実施。朝・昼・夜間の3時間帯で測定して、時間帯別の特性を把握。",
+      },
+      {
+        title: "観光客への配慮",
+        body: "混雑時間帯（10:00-16:00）は計測機材を目立たないようにする。三脚等の設営には周囲への注意が必須。",
+      },
+    ],
+    checkpoints: [
+      {
+        time: new Date("2026-08-11T08:00:00").toISOString(),
+        lat: 35.71009,
+        lng: 139.8107,
+        comment: "局発",
+      },
+      {
+        time: new Date("2026-08-11T09:15:00").toISOString(),
+        lat: 35.71009,
+        lng: 139.8107,
+        comment: "現場着・測定開始",
+      },
+      {
+        time: new Date("2026-08-11T17:00:00").toISOString(),
+        lat: 35.71009,
+        lng: 139.8107,
+        comment: "測定完了・撤収",
+      },
+    ],
+    track: [],
+    equipmentHeaders: [],
+    equipmentRows: [],
+    photos: [],
+    sitePhotos: [],
+    parkingPhotos: [],
+    shootingPhotos: [],
+    ipTransmissionPhotos: [],
+    fpuPhotos: [],
+    hazardPhotos: [],
+    status: "published",
+    publishedAt: Timestamp.fromDate(new Date("2026-08-11T19:00:00")),
+    draftSavedAt: Timestamp.fromDate(new Date("2026-08-11T17:30:00")),
+    history: [
+      {
+        editedBy: "鈴木次郎（技術）",
+        editedAt: Timestamp.fromDate(new Date("2026-08-11T19:00:00")),
+        changedFields: ["5G環境測定完了し正式提出"],
+      },
+    ],
+    createdAt: Timestamp.fromDate(new Date("2026-08-11T08:00:00")),
+  },
+
+  {
+    // データ8: 品川駅・光ファイバー工事対応（技術）
+    organizationId: TEST_ORG_ID,
+    category: "技術",
+    recordedBy: "高橋花子（技術）",
+    locationName: "品川駅西口周辺",
+    address: "東京都港区高輪3丁目26-30",
+    lat: 35.62815,
+    lng: 139.73896,
+    incidentType: "光ファイバー埋設工事のテレビ中継対応",
+    siteInfo:
+      "品川駅西口周辺での大規模光ファイバー埋設工事。NTT等の通信インフラ工事を放送で中継。工事現場のライブ映像配信。",
+    parkingInfo:
+      "駅周辺の駐車場は満車の可能性が高い。離れた場所の駐車場を事前確保。搬入・搬出は駅前のロータリーを活用。",
+    shootingSpots:
+      "工事現場の周辺柵からの撮影が最良。ビルの上層階からの全景撮影も可能。駅の歩道橋からも俯瞰ショット可能。",
+    ipTransmissionInfo:
+      "駅周辺は3キャリア全て良好。駅施設の WiFi も利用可。工事現場内での通信環境も確認して、移動局の設営位置を決定。",
+    fpuInfo:
+      "品川駅前のビル群からの中継が複数可能。バックアップ中継局も容易に確保できる。高層階からのFPUも検討。",
+    hazards:
+      "工事現場の機械・重機に注意。掘削作業の進行状況を常に確認。夜間工事の場合は照明・交通管制に配慮。",
+    notes: [
+      {
+        title: "工事スケジュール",
+        body: "掘削作業は04:00-10:00の深夜帯。通行人が少ない時間帯での撮影が最適。本線通行止め時間を事前把握。",
+      },
+      {
+        title: "安全管理",
+        body: "現場管理者との連携が必須。ヘルメット・安全ベスト着用。工事車両の動きに常に注意。",
+      },
+    ],
+    checkpoints: [
+      {
+        time: new Date("2026-08-10T03:00:00").toISOString(),
+        lat: 35.62815,
+        lng: 139.73896,
+        comment: "局発（深夜出発）",
+      },
+      {
+        time: new Date("2026-08-10T04:15:00").toISOString(),
+        lat: 35.62815,
+        lng: 139.73896,
+        comment: "現場着・中継開始",
+      },
+      {
+        time: new Date("2026-08-10T10:30:00").toISOString(),
+        lat: 35.62815,
+        lng: 139.73896,
+        comment: "中継終了・撤収",
+      },
+    ],
+    track: [],
+    equipmentHeaders: [],
+    equipmentRows: [],
+    photos: [],
+    sitePhotos: [],
+    parkingPhotos: [],
+    shootingPhotos: [],
+    ipTransmissionPhotos: [],
+    fpuPhotos: [],
+    hazardPhotos: [],
+    status: "published",
+    publishedAt: Timestamp.fromDate(new Date("2026-08-10T12:00:00")),
+    draftSavedAt: Timestamp.fromDate(new Date("2026-08-10T10:00:00")),
+    history: [
+      {
+        editedBy: "高橋花子（技術）",
+        editedAt: Timestamp.fromDate(new Date("2026-08-10T12:00:00")),
+        changedFields: ["光ファイバー工事中継完了し正式提出"],
+      },
+    ],
+    createdAt: Timestamp.fromDate(new Date("2026-08-10T03:00:00")),
+  },
+
+  {
+    // データ9: 新宿駅・通信品質測定（技術）
+    organizationId: TEST_ORG_ID,
+    category: "技術",
+    recordedBy: "中村三郎（技術）",
+    locationName: "新宿駅東口周辺",
+    address: "東京都新宿区新宿3丁目38-1",
+    lat: 35.52983,
+    lng: 139.70028,
+    incidentType: "地下鉄・鉄道駅の通信品質測定・改善対応",
+    siteInfo:
+      "新宿駅東口・地下街での通信環境測定。地下での電波の減衰・反射を分析。複数キャリア・複数周波数帯での実測調査。",
+    parkingInfo:
+      "新宿駅周辺の駐車場は常時満車。大手町や丸の内の駐車場を利用して、電車で移動する方が効率的。",
+    shootingSpots:
+      "駅東口からの全景撮影。丸の内線への乗り換え通路からの撮影も可能。地下1階～地下4階のレベル別撮影が必要。",
+    ipTransmissionInfo:
+      "地下での通信は全体的に不安定。地上レベルに比べて速度が低下。複数回線のボンディング必須。",
+    fpuInfo:
+      "新宿中継局への見通しは限定的。地上での設営位置が重要。ビルの上層階からの中継が最適。",
+    hazards:
+      "駅構内での撮影許可管理が厳格。JR・小田急・地下鉄各社の許可が必要。朝夜の通勤ラッシュを避けた測定時間帯の選定が必須。",
+    notes: [
+      {
+        title: "測定時間帯",
+        body: "ラッシュ時間帯（7:30-9:30、17:00-19:00）を避ける。昼間（11:00-15:00）の測定が最適。",
+      },
+      {
+        title: "駅構内での撮影許可",
+        body: "各鉄道会社に個別申請。商用撮影なので料金発生の可能性あり。事前に使用目的を詳細に説明。",
+      },
+    ],
+    checkpoints: [
+      {
+        time: new Date("2026-08-09T10:00:00").toISOString(),
+        lat: 35.52983,
+        lng: 139.70028,
+        comment: "局発",
+      },
+      {
+        time: new Date("2026-08-09T11:00:00").toISOString(),
+        lat: 35.52983,
+        lng: 139.70028,
+        comment: "地上測定開始",
+      },
+      {
+        time: new Date("2026-08-09T13:15:00").toISOString(),
+        lat: 35.52983,
+        lng: 139.70028,
+        comment: "地下測定開始",
+      },
+      {
+        time: new Date("2026-08-09T16:00:00").toISOString(),
+        lat: 35.52983,
+        lng: 139.70028,
+        comment: "測定完了・撤収",
+      },
+    ],
+    track: [],
+    equipmentHeaders: [],
+    equipmentRows: [],
+    photos: [],
+    sitePhotos: [],
+    parkingPhotos: [],
+    shootingPhotos: [],
+    ipTransmissionPhotos: [],
+    fpuPhotos: [],
+    hazardPhotos: [],
+    status: "published",
+    publishedAt: Timestamp.fromDate(new Date("2026-08-09T17:30:00")),
+    draftSavedAt: Timestamp.fromDate(new Date("2026-08-09T16:30:00")),
+    history: [
+      {
+        editedBy: "中村三郎（技術）",
+        editedAt: Timestamp.fromDate(new Date("2026-08-09T17:30:00")),
+        changedFields: ["通信品質測定完了し正式提出"],
+      },
+    ],
+    createdAt: Timestamp.fromDate(new Date("2026-08-09T10:00:00")),
+  },
 ];
+
+// Claude API を呼び出して現場情報（pin）を生成
+async function generatePinSummary(locationName, address, records) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.warn("⚠️  ANTHROPIC_API_KEYが設定されていません。pins の生成をスキップします。");
+    return null;
+  }
+
+  const recordsText = records
+    .map(
+      (r, i) => `
+【出動記録 ${i + 1}】(${r.date || "日付不明"}${r.incidentType ? ` / ${r.incidentType}` : ""})
+駐車場所: ${r.parkingInfo || "(記載なし)"}
+撮影ポイント: ${r.shootingSpots || "(記載なし)"}
+携帯回線(IP伝送): ${r.ipTransmissionInfo || "(記載なし)"}
+FPU伝送: ${r.fpuInfo || "(記載なし)"}
+危険箇所・注意事項: ${r.hazards || "(記載なし)"}`
+    )
+    .join("\n");
+
+  const prompt = `あなたは放送・映像取材のロケハン情報を整理するベテランカメラマンです。
+以下は「${locationName}」(${address})という現場について、${records.length}回分の出動記録から集めた情報です。
+
+${recordsText}
+
+これらを統合して、この現場について今後この場所へ行く人に向けた「現場記録」としてまとめてください。
+複数回の記録に共通する情報は1つにまとめ、矛盾する情報があれば時系列が新しい方を優先してください。
+
+以下のJSON形式のみで出力してください。前置きや説明文は一切不要です。
+{
+  "parkingInfo": "駐車場所についてのまとめ",
+  "shootingSpots": "撮影ポイントについてのまとめ",
+  "ipTransmissionInfo": "携帯回線(IP伝送)の状況についてのまとめ",
+  "fpuInfo": "FPU伝送の状況についてのまとめ",
+  "hazards": "危険箇所・注意事項についてのまとめ"
+}`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1200,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      console.warn(`⚠️  Claude API エラー (${res.status}): 現場情報の生成をスキップします。`);
+      return null;
+    }
+
+    const data = await res.json();
+    const text = data.content
+      ?.map((block) => (block.type === "text" ? block.text : ""))
+      .join("") ?? "";
+
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.warn(`⚠️  Claude API 呼び出しエラー: ${err.message}`);
+    return null;
+  }
+}
 
 async function main() {
   loadEnvLocal();
@@ -360,6 +811,8 @@ async function main() {
 
   console.log("🚀 Firestore へのダミー出動記録挿入を開始します...\n");
 
+  const insertedRecords = [];
+
   for (const [index, record] of DUMMY_RECORDS.entries()) {
     try {
       // コレクションに追加
@@ -369,6 +822,24 @@ async function main() {
         `✅ データ ${index + 1}: "${record.locationName}" (${record.category}) を挿入しました`
       );
       console.log(`   ドキュメントID: ${docRef.id}\n`);
+
+      // 挿入されたレコード情報を保存（後で pins 生成時に使用）
+      insertedRecords.push({
+        locationName: record.locationName,
+        address: record.address,
+        lat: record.lat,
+        lng: record.lng,
+        organizationId: record.organizationId,
+        category: record.category,
+        recordedBy: record.recordedBy,
+        incidentType: record.incidentType,
+        parkingInfo: record.parkingInfo,
+        shootingSpots: record.shootingSpots,
+        ipTransmissionInfo: record.ipTransmissionInfo,
+        fpuInfo: record.fpuInfo,
+        hazards: record.hazards,
+        createdAt: record.createdAt,
+      });
     } catch (error) {
       console.error(
         `❌ データ ${index + 1}: "${record.locationName}" の挿入に失敗しました`
@@ -377,7 +848,78 @@ async function main() {
     }
   }
 
-  console.log("✨ ダミーデータ挿入が完了しました！");
+  console.log("\n📍 現場情報（pins）の生成を開始します...\n");
+
+  // location ごとに重複排除して pins を生成
+  const locationMap = new Map();
+  for (const record of insertedRecords) {
+    const key = `${record.lat},${record.lng}`;
+    if (!locationMap.has(key)) {
+      locationMap.set(key, {
+        locationName: record.locationName,
+        address: record.address,
+        lat: record.lat,
+        lng: record.lng,
+        organizationId: record.organizationId,
+        category: record.category,
+        recordedBy: record.recordedBy,
+        records: [],
+      });
+    }
+    locationMap.get(key).records.push({
+      date: record.createdAt?.toDate?.()?.toLocaleDateString("ja-JP") ?? "",
+      incidentType: record.incidentType,
+      parkingInfo: record.parkingInfo,
+      shootingSpots: record.shootingSpots,
+      ipTransmissionInfo: record.ipTransmissionInfo,
+      fpuInfo: record.fpuInfo,
+      hazards: record.hazards,
+    });
+  }
+
+  // 各 location の pins を生成
+  for (const [key, location] of locationMap.entries()) {
+    const summary = await generatePinSummary(
+      location.locationName,
+      location.address,
+      location.records
+    );
+
+    if (!summary) {
+      console.log(`⚠️  "${location.locationName}" の現場情報生成をスキップしました`);
+      continue;
+    }
+
+    try {
+      const pinRef = db.collection("pins").doc();
+      await pinRef.set({
+        name: location.locationName,
+        address: location.address,
+        lat: location.lat,
+        lng: location.lng,
+        parkingInfo: summary.parkingInfo ?? "",
+        shootingSpots: summary.shootingSpots ?? "",
+        ipTransmissionInfo: summary.ipTransmissionInfo ?? "",
+        fpuInfo: summary.fpuInfo ?? "",
+        hazards: summary.hazards ?? "",
+        photoUrls: [],
+        shootingPhotoUrls: [],
+        hazardPhotoUrls: [],
+        organizationId: location.organizationId,
+        category: location.category,
+        recordedBy: location.recordedBy,
+        recordedAt: Timestamp.now(),
+      });
+
+      console.log(`✅ 現場情報: "${location.locationName}" (${location.category}) を生成しました`);
+      console.log(`   ドキュメントID: ${pinRef.id}\n`);
+    } catch (error) {
+      console.error(`❌ 現場情報: "${location.locationName}" の生成に失敗しました`);
+      console.error(`   エラー: ${error.message}\n`);
+    }
+  }
+
+  console.log("✨ ダミーデータ挿入と現場情報生成が完了しました！");
   console.log("📋 以下のコマンドで確認できます:");
   console.log("   ブラウザで http://localhost:3000/dispatch を開く");
   process.exit(0);

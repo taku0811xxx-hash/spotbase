@@ -212,37 +212,151 @@ export default function DispatchDetailPage() {
           </p>
         )}
 
-        {(record.parkingInfo || record.shootingSpots || record.ipTransmissionInfo || record.fpuInfo || record.hazards) && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+        {(record.siteInfo || record.parkingInfo || record.shootingSpots || record.ipTransmissionInfo || record.fpuInfo || record.hazards) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
             <h2 className="font-semibold text-gray-900">現場情報</h2>
+
+            {record.siteInfo && (
+              <div>
+                <p className="text-xs text-gray-500 font-medium">現場情報</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.siteInfo}</p>
+                {record.sitePhotos && record.sitePhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    {record.sitePhotos.map((photo, i) => (
+                      <div key={i}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || ""}
+                          className="w-full h-20 object-cover rounded border border-gray-200"
+                        />
+                        {photo.caption && (
+                          <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {record.parkingInfo && (
               <div>
-                <p className="text-xs text-gray-500">駐車場所</p>
+                <p className="text-xs text-gray-500 font-medium">駐車場所</p>
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.parkingInfo}</p>
+                {record.parkingPhotos && record.parkingPhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    {record.parkingPhotos.map((photo, i) => (
+                      <div key={i}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || ""}
+                          className="w-full h-20 object-cover rounded border border-gray-200"
+                        />
+                        {photo.caption && (
+                          <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+
             {record.shootingSpots && (
               <div>
-                <p className="text-xs text-gray-500">撮影ポイント</p>
+                <p className="text-xs text-gray-500 font-medium">撮影ポイント</p>
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.shootingSpots}</p>
+                {record.shootingPhotos && record.shootingPhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    {record.shootingPhotos.map((photo, i) => (
+                      <div key={i}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || ""}
+                          className="w-full h-20 object-cover rounded border border-gray-200"
+                        />
+                        {photo.caption && (
+                          <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+
             {record.ipTransmissionInfo && (
               <div>
-                <p className="text-xs text-gray-500">携帯回線(IP伝送)の状況</p>
+                <p className="text-xs text-gray-500 font-medium">携帯回線(IP伝送)の状況</p>
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.ipTransmissionInfo}</p>
+                {record.ipTransmissionPhotos && record.ipTransmissionPhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    {record.ipTransmissionPhotos.map((photo, i) => (
+                      <div key={i}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || ""}
+                          className="w-full h-20 object-cover rounded border border-gray-200"
+                        />
+                        {photo.caption && (
+                          <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+
             {record.fpuInfo && (
               <div>
-                <p className="text-xs text-gray-500">FPU伝送の状況</p>
+                <p className="text-xs text-gray-500 font-medium">FPU伝送の状況</p>
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.fpuInfo}</p>
+                {record.fpuPhotos && record.fpuPhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    {record.fpuPhotos.map((photo, i) => (
+                      <div key={i}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || ""}
+                          className="w-full h-20 object-cover rounded border border-gray-200"
+                        />
+                        {photo.caption && (
+                          <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+
             {record.hazards && (
               <div>
-                <p className="text-xs text-gray-500">危険箇所・注意事項</p>
+                <p className="text-xs text-gray-500 font-medium">危険箇所・注意事項</p>
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.hazards}</p>
+                {record.hazardPhotos && record.hazardPhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    {record.hazardPhotos.map((photo, i) => (
+                      <div key={i}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || ""}
+                          className="w-full h-20 object-cover rounded border border-gray-200"
+                        />
+                        {photo.caption && (
+                          <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

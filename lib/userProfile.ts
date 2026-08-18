@@ -2,6 +2,9 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 export type AccessLevel = "admin" | "member";
+export type UserCategory = "記者" | "技術" | "カメラマン" | "ディレクター";
+
+export const USER_CATEGORIES: UserCategory[] = ["記者", "技術", "カメラマン", "ディレクター"];
 
 export type UserProfile = {
   uid: string;
@@ -9,7 +12,7 @@ export type UserProfile = {
   name: string;
   organizationId: string;
   organizationName: string;
-  category: string; // 記者、カメラマン、ディレクターなど(組織内で自由に設定)
+  category: UserCategory;
   accessLevel: AccessLevel;
 };
 

@@ -5,6 +5,9 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   createDispatchRecord,
+  saveDraft,
+  publishDispatchRecord,
+  getDispatchRecord,
   type Checkpoint,
   type TrackPoint,
   type NoteEntry,
@@ -24,6 +27,8 @@ const LocationPicker = dynamic(() => import("@/components/LocationPicker"), {
 });
 
 type PhotoEntry = { id: string; file: File; caption: string; previewUrl: string };
+
+type SectionPhotoEntry = { id: string; file: File; caption: string; previewUrl: string };
 
 function Spinner({ className = "" }: { className?: string }) {
   return (
@@ -47,6 +52,7 @@ function NewDispatchForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
+  const [recordId, setRecordId] = useState<string | null>(null); // 編集時のレコードID
   const [responderName, setResponderName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [address, setAddress] = useState("");
@@ -55,11 +61,18 @@ function NewDispatchForm() {
   const [addressLoading, setAddressLoading] = useState(false);
   const [parkingGpsLoading, setParkingGpsLoading] = useState(false);
   const [incidentType, setIncidentType] = useState("");
+  const [siteInfo, setSiteInfo] = useState("");
+  const [sitePhotoEntries, setSitePhotoEntries] = useState<SectionPhotoEntry[]>([]);
   const [parkingInfo, setParkingInfo] = useState("");
+  const [parkingPhotoEntries, setParkingPhotoEntries] = useState<SectionPhotoEntry[]>([]);
   const [shootingSpots, setShootingSpots] = useState("");
+  const [shootingPhotoEntries, setShootingPhotoEntries] = useState<SectionPhotoEntry[]>([]);
   const [ipTransmissionInfo, setIpTransmissionInfo] = useState("");
+  const [ipTransmissionPhotoEntries, setIpTransmissionPhotoEntries] = useState<SectionPhotoEntry[]>([]);
   const [fpuInfo, setFpuInfo] = useState("");
+  const [fpuPhotoEntries, setFpuPhotoEntries] = useState<SectionPhotoEntry[]>([]);
   const [hazards, setHazards] = useState("");
+  const [hazardPhotoEntries, setHazardPhotoEntries] = useState<SectionPhotoEntry[]>([]);
   const [notes, setNotes] = useState<NoteEntry[]>([{ title: "", body: "" }]);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [track, setTrack] = useState<TrackPoint[]>([]);
@@ -69,6 +82,7 @@ function NewDispatchForm() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [draftSaveMode, setDraftSaveMode] = useState(false); // 下書き保存モード
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ログイン名を出動者名の初期値として入れておく(編集可能)
@@ -78,12 +92,52 @@ function NewDispatchForm() {
 
   const positionLockedRef = useRef(false);
 
+  // 下書きIDがある場合は、そのデータを読み込む
+  useEffect(() => {
+    const draftId = searchParams.get("draftId");
+    if (!draftId) return;
+
+    (async () => {
+      try {
+        const draft = await getDispatchRecord(draftId);
+        if (draft && draft.status === "draft") {
+          setRecordId(draftId);
+          setLocationName(draft.locationName);
+          setAddress(draft.address);
+          if (draft.lat != null && draft.lng != null) {
+            setPosition({ lat: draft.lat, lng: draft.lng });
+          }
+          setIncidentType(draft.incidentType);
+          setSiteInfo(draft.siteInfo || "");
+          setParkingInfo(draft.parkingInfo);
+          setShootingSpots(draft.shootingSpots);
+          setIpTransmissionInfo(draft.ipTransmissionInfo);
+          setFpuInfo(draft.fpuInfo);
+          setHazards(draft.hazards);
+          if (draft.notes && draft.notes.length > 0) {
+            setNotes(draft.notes);
+          }
+          setCheckpoints(draft.checkpoints || []);
+          setTrack(draft.track || []);
+          setEquipmentHeaders(draft.equipmentHeaders || []);
+          setEquipmentRows(draft.equipmentRows || []);
+        }
+      } catch (err) {
+        console.error("Failed to load draft:", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 地図・検索結果から「ここで出動記録を作成する」で来た場合、
   // 場所名・位置をあらかじめ入力しておく
   useEffect(() => {
     const lat = searchParams.get("lat");
     const lng = searchParams.get("lng");
     const name = searchParams.get("locationName");
+    const draftId = searchParams.get("draftId");
+    // draftId がある場合はスキップ（上記の useEffect で処理済み）
+    if (draftId) return;
     if (lat && lng) {
       positionLockedRef.current = true;
       setPosition({ lat: parseFloat(lat), lng: parseFloat(lng) });
@@ -201,6 +255,39 @@ function NewDispatchForm() {
     setNotes((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // セクション別写真管理ユーティリティ関数
+  function createSectionPhotoHandler(
+    setEntries: React.Dispatch<React.SetStateAction<SectionPhotoEntry[]>>
+  ) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      const newEntries: SectionPhotoEntry[] = files.map((file) => ({
+        id: nextId(),
+        file,
+        caption: "",
+        previewUrl: URL.createObjectURL(file),
+      }));
+      setEntries((prev) => [...prev, ...newEntries]);
+      e.target.value = "";
+    };
+  }
+
+  function createSectionPhotoCaptionHandler(
+    setEntries: React.Dispatch<React.SetStateAction<SectionPhotoEntry[]>>
+  ) {
+    return (id: string, caption: string) => {
+      setEntries((prev) => prev.map((p) => (p.id === id ? { ...p, caption } : p)));
+    };
+  }
+
+  function createSectionPhotoRemoveHandler(
+    setEntries: React.Dispatch<React.SetStateAction<SectionPhotoEntry[]>>
+  ) {
+    return (id: string) => {
+      setEntries((prev) => prev.filter((p) => p.id !== id));
+    };
+  }
+
   // 現場写真: 選択した各ファイルにキャプション入力欄が付く
   function handlePhotoFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -225,7 +312,139 @@ function NewDispatchForm() {
     setConfirmOpen(true);
   }
 
+  // 下書きを保存
+  async function handleSaveDraft() {
+    if (!responderName.trim()) {
+      setToast({ type: "error", message: "出動者名を入力してください" });
+      return;
+    }
+    if (!profile) {
+      setToast({ type: "error", message: "ログインしてください" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const draftInput = {
+        locationName,
+        address,
+        lat: position?.lat ?? null,
+        lng: position?.lng ?? null,
+        incidentType,
+        siteInfo,
+        sitePhotos: sitePhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        parkingInfo,
+        parkingPhotos: parkingPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        shootingSpots,
+        shootingPhotos: shootingPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        ipTransmissionInfo,
+        ipTransmissionPhotos: ipTransmissionPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        fpuInfo,
+        fpuPhotos: fpuPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        hazards,
+        hazardPhotos: hazardPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        checkpoints,
+        track,
+        equipmentHeaders,
+        equipmentRows,
+        notes: notes.filter((n) => n.title.trim() || n.body.trim()),
+        photos: photoEntries.map((p) => ({ file: p.file, caption: p.caption })),
+        organizationId: profile.organizationId,
+        category: profile.category,
+        recordedBy: responderName,
+      };
+
+      // オンラインの場合はFirestoreに保存、オフラインの場合はIndexedDBに保存
+      if (navigator.onLine) {
+        const id = await saveDraft(draftInput, recordId || undefined);
+        setRecordId(id);
+        setToast({ type: "success", message: "下書きを保存しました" });
+      } else {
+        // オフラインの場合: IndexedDB に保存
+        const { saveDraftLocal, fileToBase64 } = await import("@/lib/offlineStorage");
+
+        // 画像をBase64に変換
+        const imagesToStore: { [key: string]: string } = {};
+        const allPhotos = [
+          ...sitePhotoEntries,
+          ...parkingPhotoEntries,
+          ...shootingPhotoEntries,
+          ...ipTransmissionPhotoEntries,
+          ...fpuPhotoEntries,
+          ...hazardPhotoEntries,
+          ...photoEntries,
+        ];
+
+        for (const photo of allPhotos) {
+          imagesToStore[photo.id] = await fileToBase64(photo.file);
+        }
+
+        const draftId = recordId || `draft-${Date.now()}`;
+        await saveDraftLocal({
+          id: draftId,
+          recordId: draftId,
+          data: draftInput,
+          images: imagesToStore,
+          savedAt: Date.now(),
+        });
+
+        setRecordId(draftId);
+        setToast({ type: "success", message: "オフライン下書きを保存しました" });
+      }
+    } catch (err) {
+      console.error(err);
+      setToast({ type: "error", message: "下書き保存に失敗しました" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // 出動記録を公開（status を 'published' に変更）
+  async function handlePublish() {
+    if (!responderName.trim()) {
+      setToast({ type: "error", message: "出動者名を入力してください" });
+      return;
+    }
+    if (!profile) {
+      setToast({ type: "error", message: "ログインしてください" });
+      return;
+    }
+
+    // 先にフォーム内容を下書き保存
+    if (!recordId) {
+      setDraftSaveMode(true);
+      await handleSaveDraft();
+      setDraftSaveMode(false);
+    } else {
+      // 既存の下書きを更新
+      await handleSaveDraft();
+    }
+
+    // その後、公開処理
+    if (!recordId) {
+      setToast({ type: "error", message: "下書き保存に失敗しました" });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await publishDispatchRecord(recordId, {
+        organizationId: profile.organizationId,
+        category: profile.category,
+        isAdmin: profile.accessLevel === "admin",
+      });
+
+      setToast({ type: "success", message: "出動記録を公開しました" });
+      setTimeout(() => router.push(`/dispatch/${recordId}`), 600);
+    } catch (err) {
+      console.error(err);
+      setToast({ type: "error", message: "公開に失敗しました" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleConfirmedSubmit() {
+    // 既存の公開処理（下書き保存なしで直接公開）
     if (!responderName.trim()) {
       setToast({ type: "error", message: "出動者名を入力してください" });
       return;
@@ -242,11 +461,18 @@ function NewDispatchForm() {
         lat: position?.lat ?? null,
         lng: position?.lng ?? null,
         incidentType,
+        siteInfo,
+        sitePhotos: sitePhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
         parkingInfo,
+        parkingPhotos: parkingPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
         shootingSpots,
+        shootingPhotos: shootingPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
         ipTransmissionInfo,
+        ipTransmissionPhotos: ipTransmissionPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
         fpuInfo,
+        fpuPhotos: fpuPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
         hazards,
+        hazardPhotos: hazardPhotoEntries.map((p) => ({ file: p.file, caption: p.caption })),
         checkpoints,
         track,
         equipmentHeaders,
@@ -294,11 +520,36 @@ function NewDispatchForm() {
     { label: "出動者", value: responderName },
     { label: "場所名", value: locationName },
     { label: "住所", value: address },
-    { label: "駐車場所", value: parkingInfo },
-    { label: "撮影ポイント", value: shootingSpots },
-    { label: "携帯回線(IP伝送)の状況", value: ipTransmissionInfo },
-    { label: "FPU伝送の状況", value: fpuInfo },
-    { label: "危険箇所・注意事項", value: hazards },
+    { label: "現場情報", value: siteInfo ? `${siteInfo.substring(0, 30)}...` : "未入力" },
+    {
+      label: "  └ 現場情報の写真",
+      value: sitePhotoEntries.length > 0 ? `${sitePhotoEntries.length}枚` : "未登録",
+    },
+    { label: "駐車場所", value: parkingInfo ? `${parkingInfo.substring(0, 30)}...` : "未入力" },
+    {
+      label: "  └ 駐車場所の写真",
+      value: parkingPhotoEntries.length > 0 ? `${parkingPhotoEntries.length}枚` : "未登録",
+    },
+    { label: "撮影ポイント", value: shootingSpots ? `${shootingSpots.substring(0, 30)}...` : "未入力" },
+    {
+      label: "  └ 撮影ポイントの写真",
+      value: shootingPhotoEntries.length > 0 ? `${shootingPhotoEntries.length}枚` : "未登録",
+    },
+    { label: "携帯回線(IP伝送)の状況", value: ipTransmissionInfo ? `${ipTransmissionInfo.substring(0, 30)}...` : "未入力" },
+    {
+      label: "  └ IP伝送の写真",
+      value: ipTransmissionPhotoEntries.length > 0 ? `${ipTransmissionPhotoEntries.length}枚` : "未登録",
+    },
+    { label: "FPU伝送の状況", value: fpuInfo ? `${fpuInfo.substring(0, 30)}...` : "未入力" },
+    {
+      label: "  └ FPU伝送の写真",
+      value: fpuPhotoEntries.length > 0 ? `${fpuPhotoEntries.length}枚` : "未登録",
+    },
+    { label: "危険箇所・注意事項", value: hazards ? `${hazards.substring(0, 30)}...` : "未入力" },
+    {
+      label: "  └ 危険箇所の写真",
+      value: hazardPhotoEntries.length > 0 ? `${hazardPhotoEntries.length}枚` : "未登録",
+    },
     {
       label: "記録メモ",
       value: notes.filter((n) => n.title.trim() || n.body.trim()).length > 0
@@ -395,8 +646,58 @@ function NewDispatchForm() {
           </div>
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-4">
+        <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-6">
           <h2 className="font-semibold text-gray-900">現場情報</h2>
+
+          {/* 現場情報 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">現場情報</label>
+            <textarea
+              value={siteInfo}
+              onChange={(e) => setSiteInfo(e.target.value)}
+              placeholder="例: 警察がテープを張っている。近隣への配慮が必要"
+              className={inputClass}
+              rows={2}
+            />
+            {sitePhotoEntries.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {sitePhotoEntries.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-2 flex gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-12 h-12 object-cover rounded flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        value={p.caption}
+                        onChange={(e) => createSectionPhotoCaptionHandler(setSitePhotoEntries)(p.id, e.target.value)}
+                        placeholder="キャプション"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createSectionPhotoRemoveHandler(setSitePhotoEntries)(p.id)}
+                        className="text-[11px] text-gray-400 hover:text-red-500"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={createSectionPhotoHandler(setSitePhotoEntries)}
+              className="block w-full text-sm text-gray-600 mt-2 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-100"
+            />
+          </div>
+
+          {/* 駐車場所 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">駐車場所</label>
             <div className="space-y-2">
@@ -419,12 +720,50 @@ function NewDispatchForm() {
               <textarea
                 value={parkingInfo}
                 onChange={(e) => setParkingInfo(e.target.value)}
-                placeholder="例: 敷地内に3台分あり。満車時は近くのコインパーキングを利用。実際の駐車スペースにいる時は上のボタンで現在地を追加できます"
+                placeholder="例: 敷地内に3台分あり。満車時は近くのコインパーキングを利用"
                 className={inputClass}
-                rows={3}
+                rows={2}
               />
             </div>
+            {parkingPhotoEntries.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {parkingPhotoEntries.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-2 flex gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-12 h-12 object-cover rounded flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        value={p.caption}
+                        onChange={(e) => createSectionPhotoCaptionHandler(setParkingPhotoEntries)(p.id, e.target.value)}
+                        placeholder="キャプション"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createSectionPhotoRemoveHandler(setParkingPhotoEntries)(p.id)}
+                        className="text-[11px] text-gray-400 hover:text-red-500"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={createSectionPhotoHandler(setParkingPhotoEntries)}
+              className="block w-full text-sm text-gray-600 mt-2 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-100"
+            />
           </div>
+
+          {/* 撮影ポイント */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">撮影ポイント</label>
             <textarea
@@ -434,7 +773,45 @@ function NewDispatchForm() {
               className={inputClass}
               rows={2}
             />
+            {shootingPhotoEntries.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {shootingPhotoEntries.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-2 flex gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-12 h-12 object-cover rounded flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        value={p.caption}
+                        onChange={(e) => createSectionPhotoCaptionHandler(setShootingPhotoEntries)(p.id, e.target.value)}
+                        placeholder="キャプション"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createSectionPhotoRemoveHandler(setShootingPhotoEntries)(p.id)}
+                        className="text-[11px] text-gray-400 hover:text-red-500"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={createSectionPhotoHandler(setShootingPhotoEntries)}
+              className="block w-full text-sm text-gray-600 mt-2 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-100"
+            />
           </div>
+
+          {/* 携帯回線(IP伝送)の状況 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               携帯回線(IP伝送)の状況
@@ -446,7 +823,45 @@ function NewDispatchForm() {
               className={inputClass}
               rows={2}
             />
+            {ipTransmissionPhotoEntries.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {ipTransmissionPhotoEntries.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-2 flex gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-12 h-12 object-cover rounded flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        value={p.caption}
+                        onChange={(e) => createSectionPhotoCaptionHandler(setIpTransmissionPhotoEntries)(p.id, e.target.value)}
+                        placeholder="キャプション"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createSectionPhotoRemoveHandler(setIpTransmissionPhotoEntries)(p.id)}
+                        className="text-[11px] text-gray-400 hover:text-red-500"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={createSectionPhotoHandler(setIpTransmissionPhotoEntries)}
+              className="block w-full text-sm text-gray-600 mt-2 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-100"
+            />
           </div>
+
+          {/* FPU伝送の状況 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">FPU伝送の状況</label>
             <textarea
@@ -456,7 +871,45 @@ function NewDispatchForm() {
               className={inputClass}
               rows={2}
             />
+            {fpuPhotoEntries.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {fpuPhotoEntries.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-2 flex gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-12 h-12 object-cover rounded flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        value={p.caption}
+                        onChange={(e) => createSectionPhotoCaptionHandler(setFpuPhotoEntries)(p.id, e.target.value)}
+                        placeholder="キャプション"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createSectionPhotoRemoveHandler(setFpuPhotoEntries)(p.id)}
+                        className="text-[11px] text-gray-400 hover:text-red-500"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={createSectionPhotoHandler(setFpuPhotoEntries)}
+              className="block w-full text-sm text-gray-600 mt-2 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-100"
+            />
           </div>
+
+          {/* 危険箇所・注意事項 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               危険箇所・注意事項
@@ -467,6 +920,42 @@ function NewDispatchForm() {
               placeholder="例: 前面道路は交通量が多く、機材搬入時は要注意"
               className={inputClass}
               rows={2}
+            />
+            {hazardPhotoEntries.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {hazardPhotoEntries.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-2 flex gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-12 h-12 object-cover rounded flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        value={p.caption}
+                        onChange={(e) => createSectionPhotoCaptionHandler(setHazardPhotoEntries)(p.id, e.target.value)}
+                        placeholder="キャプション"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createSectionPhotoRemoveHandler(setHazardPhotoEntries)(p.id)}
+                        className="text-[11px] text-gray-400 hover:text-red-500"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={createSectionPhotoHandler(setHazardPhotoEntries)}
+              className="block w-full text-sm text-gray-600 mt-2 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-100"
             />
           </div>
         </section>
@@ -632,12 +1121,38 @@ function NewDispatchForm() {
         </section>
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 sm:static sm:border-0 sm:p-0 sm:bg-transparent">
-          <button
-            type="submit"
-            className="w-full max-w-2xl mx-auto flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg py-3 font-medium shadow-sm hover:bg-blue-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150"
-          >
-            内容を確認して保存する
-          </button>
+          <div className="max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={submitting}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gray-600 text-white rounded-lg py-3 px-6 font-medium shadow-sm hover:bg-gray-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Spinner className="w-4 h-4" />
+                  保存中...
+                </>
+              ) : (
+                "💾 下書き保存"
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={submitting}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-green-600 text-white rounded-lg py-3 px-6 font-medium shadow-sm hover:bg-green-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Spinner className="w-4 h-4" />
+                  公開中...
+                </>
+              ) : (
+                "✓ 出動記録を公開"
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </div>

@@ -43,6 +43,7 @@ export default function EditDispatchPage() {
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
   const [incidentType, setIncidentType] = useState("");
+  const [siteInfo, setSiteInfo] = useState("");
   const [parkingInfo, setParkingInfo] = useState("");
   const [shootingSpots, setShootingSpots] = useState("");
   const [ipTransmissionInfo, setIpTransmissionInfo] = useState("");
@@ -62,6 +63,7 @@ export default function EditDispatchPage() {
         setAddress(r.address ?? "");
         if (r.lat != null && r.lng != null) setPosition({ lat: r.lat, lng: r.lng });
         setIncidentType(r.incidentType);
+        setSiteInfo(r.siteInfo ?? "");
         setParkingInfo(r.parkingInfo);
         setShootingSpots(r.shootingSpots);
         setIpTransmissionInfo(r.ipTransmissionInfo);
@@ -116,6 +118,7 @@ export default function EditDispatchPage() {
           lat: position?.lat ?? null,
           lng: position?.lng ?? null,
           incidentType,
+          siteInfo,
           parkingInfo,
           shootingSpots,
           ipTransmissionInfo,
@@ -157,11 +160,12 @@ export default function EditDispatchPage() {
     { label: "場所名", value: locationName },
     { label: "住所", value: address },
     { label: "出動内容", value: incidentType },
-    { label: "駐車場所", value: parkingInfo },
-    { label: "撮影ポイント", value: shootingSpots },
-    { label: "携帯回線(IP伝送)の状況", value: ipTransmissionInfo },
-    { label: "FPU伝送の状況", value: fpuInfo },
-    { label: "危険箇所・注意事項", value: hazards },
+    { label: "現場情報", value: siteInfo || "未入力" },
+    { label: "駐車場所", value: parkingInfo || "未入力" },
+    { label: "撮影ポイント", value: shootingSpots || "未入力" },
+    { label: "携帯回線(IP伝送)の状況", value: ipTransmissionInfo || "未入力" },
+    { label: "FPU伝送の状況", value: fpuInfo || "未入力" },
+    { label: "危険箇所・注意事項", value: hazards || "未入力" },
   ];
 
   return (
@@ -234,13 +238,56 @@ export default function EditDispatchPage() {
         <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-4">
           <h2 className="font-semibold text-gray-900">現場情報</h2>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">現場情報</label>
+            <textarea
+              value={siteInfo}
+              onChange={(e) => setSiteInfo(e.target.value)}
+              className={inputClass}
+              rows={2}
+            />
+            {record?.sitePhotos && record.sitePhotos.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {record.sitePhotos.map((photo, i) => (
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.caption || ""}
+                      className="w-full h-16 object-cover rounded border border-gray-200"
+                    />
+                    {photo.caption && (
+                      <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">駐車場所</label>
             <textarea
               value={parkingInfo}
               onChange={(e) => setParkingInfo(e.target.value)}
               className={inputClass}
-              rows={3}
+              rows={2}
             />
+            {record?.parkingPhotos && record.parkingPhotos.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {record.parkingPhotos.map((photo, i) => (
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.caption || ""}
+                      className="w-full h-16 object-cover rounded border border-gray-200"
+                    />
+                    {photo.caption && (
+                      <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">撮影ポイント</label>
@@ -250,6 +297,23 @@ export default function EditDispatchPage() {
               className={inputClass}
               rows={2}
             />
+            {record?.shootingPhotos && record.shootingPhotos.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {record.shootingPhotos.map((photo, i) => (
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.caption || ""}
+                      className="w-full h-16 object-cover rounded border border-gray-200"
+                    />
+                    {photo.caption && (
+                      <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -261,6 +325,23 @@ export default function EditDispatchPage() {
               className={inputClass}
               rows={2}
             />
+            {record?.ipTransmissionPhotos && record.ipTransmissionPhotos.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {record.ipTransmissionPhotos.map((photo, i) => (
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.caption || ""}
+                      className="w-full h-16 object-cover rounded border border-gray-200"
+                    />
+                    {photo.caption && (
+                      <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">FPU伝送の状況</label>
@@ -270,6 +351,23 @@ export default function EditDispatchPage() {
               className={inputClass}
               rows={2}
             />
+            {record?.fpuPhotos && record.fpuPhotos.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {record.fpuPhotos.map((photo, i) => (
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.caption || ""}
+                      className="w-full h-16 object-cover rounded border border-gray-200"
+                    />
+                    {photo.caption && (
+                      <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -281,6 +379,23 @@ export default function EditDispatchPage() {
               className={inputClass}
               rows={2}
             />
+            {record?.hazardPhotos && record.hazardPhotos.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {record.hazardPhotos.map((photo, i) => (
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.caption || ""}
+                      className="w-full h-16 object-cover rounded border border-gray-200"
+                    />
+                    {photo.caption && (
+                      <p className="text-xs text-gray-500 mt-1">{photo.caption}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 

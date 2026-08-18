@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { USER_CATEGORIES, type UserCategory } from "@/lib/userProfile";
 import PageHeader from "@/components/PageHeader";
 import Toast, { type ToastState } from "@/components/Toast";
 
@@ -10,7 +11,7 @@ type OrgUser = {
   uid: string;
   name: string;
   email: string;
-  category: string;
+  category: UserCategory;
   accessLevel: "admin" | "member";
 };
 
@@ -28,7 +29,7 @@ export default function AdminUsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState<UserCategory>("記者");
   const [accessLevel, setAccessLevel] = useState<"admin" | "member">("member");
   const [submitting, setSubmitting] = useState(false);
 
@@ -88,7 +89,7 @@ export default function AdminUsersPage() {
       setName("");
       setEmail("");
       setPassword("");
-      setCategory("");
+      setCategory("記者");
       setAccessLevel("member");
       loadUsers();
     } catch (err) {
@@ -164,13 +165,17 @@ export default function AdminUsersPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">分類</label>
-              <input
-                required
+              <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="例: 記者、カメラマン、ディレクター"
+                onChange={(e) => setCategory(e.target.value as UserCategory)}
                 className={inputClass}
-              />
+              >
+                {USER_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">権限</label>
