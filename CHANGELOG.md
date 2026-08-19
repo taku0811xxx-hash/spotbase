@@ -1,5 +1,47 @@
 # SpotBase - 変更履歴
 
+## [2026-08-19] - LiveU中継候補地・車両待機場所の自動提案機能実装完了
+
+### [追加]
+- **LiveU 中継候補地の自動提案アルゴリズム**
+  - `lib/suggestBroadcastLocations.ts`：事前フィルタリング処理を実装
+    - Firestore の dispatch_records から半径500m以内の過去の中継実績ポイントを検索・抽出
+    - Overpass API (OpenStreetMap) から現場周辺（半径300m以内）の駐車場・広場・歩道橋データを自動収集
+    - 3～4件の軽量な候補配列に絞り込み
+  
+  - `/api/suggest-locations/route.ts`：低コスト AI スコアリング
+    - Claude 3.5 Haiku でスコアリング（トークン最小化）
+    - 各候補への評価コメントを「40文字以内」の超短文に制約
+    - JSON フォーマットで「本命」「対抗」「待機駐車場」の3つを提案
+  
+  - `components/BroadcastLocationSuggester.tsx`：UI コンポーネント
+    - 出動記録作成画面に「中継候補地を提案」セクション追加
+    - 提案結果を色分けピン（🎥象徴アングル / 🅿️駐車場）で表示
+    - 「撮影ポイントに設定」「駐車場所に設定」ボタンでワンクリック入力反映
+
+### [統合]
+- 出動記録作成フォーム（`app/dispatch/new/page.tsx`）に提案コンポーネント統合
+  - 位置情報（lat/lng）と事象タイプが入力されると、自動的に提案セクションを表示
+  - 認証情報から organizationId / category / isAdmin を自動取得して権限ベースの検索に対応
+
+### [検証完了]
+✅ ビルド完了（`next build --webpack` - TypeScript エラーなし）
+✅ Overpass API による周辺施設データ収集
+✅ Claude Haiku による低コスト評価スコアリング
+✅ 提案結果の UI 表示と入力反映
+✅ 権限ベースのデータアクセス制御（organizationId/category）
+
+**変更ファイル**:
+- `lib/suggestBroadcastLocations.ts` （新規作成）
+- `app/api/suggest-locations/route.ts` （新規作成）
+- `components/BroadcastLocationSuggester.tsx` （新規作成）
+- `app/dispatch/new/page.tsx` （コンポーネント統合）
+- `CHANGELOG.md` （このエントリ）
+
+**ビルド状態**: ✅ 成功（`next build --webpack`）
+
+---
+
 ## [2026-08-21] - Claude API による現場情報自動生成・一覧ページ実装完了
 
 ### [追加]

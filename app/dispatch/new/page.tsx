@@ -20,6 +20,7 @@ import PageHeader from "@/components/PageHeader";
 import GpsCheckpointRecorder from "@/components/GpsCheckpointRecorder";
 import Toast, { type ToastState } from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import BroadcastLocationSuggester from "@/components/BroadcastLocationSuggester";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const LocationPicker = dynamic(() => import("@/components/LocationPicker"), {
@@ -253,6 +254,22 @@ function NewDispatchForm() {
   }
   function removeNoteEntry(index: number) {
     setNotes((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // 中継候補地の提案から場所を選択して反映
+  function handleSuggestLocationSelect(
+    field: "shootingSpots" | "parkingInfo",
+    name: string,
+    _lat: number,
+    _lng: number
+  ) {
+    if (field === "shootingSpots") {
+      setShootingSpots(name);
+      setToast({ type: "success", message: `「${name}」を撮影ポイントに設定しました` });
+    } else if (field === "parkingInfo") {
+      setParkingInfo(name);
+      setToast({ type: "success", message: `「${name}」を駐車場所に設定しました` });
+    }
   }
 
   // セクション別写真管理ユーティリティ関数
@@ -644,6 +661,20 @@ function NewDispatchForm() {
               </p>
             )}
           </div>
+
+          {/* 中継候補地の提案 */}
+          {position && profile && (
+            <BroadcastLocationSuggester
+              lat={position.lat}
+              lng={position.lng}
+              incidentType={incidentType}
+              address={address}
+              organizationId={profile.organizationId}
+              category={profile.category}
+              isAdmin={profile.accessLevel === "admin"}
+              onSelect={handleSuggestLocationSelect}
+            />
+          )}
         </section>
 
         <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-6">
