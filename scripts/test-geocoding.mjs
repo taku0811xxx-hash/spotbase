@@ -9,51 +9,28 @@
  * 正しく該当する緯度経度・住所名が返ることを確認します。
  */
 
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
+const API_BASE_URL = "http://localhost:3000";
 
 async function geocodeQuery(query) {
-  const url = new URL(NOMINATIM_URL);
+  const url = new URL("/api/geocode", API_BASE_URL);
   url.searchParams.set("q", query);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("countrycodes", "jp");
-  url.searchParams.set("accept-language", "ja");
-  url.searchParams.set("addressdetails", "1");
-  url.searchParams.set("limit", "10");
-  url.searchParams.set("viewbox", "138.4,34.0,141.5,36.5");
-  url.searchParams.set("bounded", "1");
 
   try {
-    const res = await fetch(url.toString(), {
-      headers: {
-        "Accept-Language": "ja",
-        "User-Agent": "SpotBase/1.0 (Broadcast location management system)",
-      },
-    });
+    const res = await fetch(url.toString());
 
     if (!res.ok) {
       console.error(`API エラー: ${res.status}`);
       return [];
     }
 
-    const data = await res.json();
-    if (!Array.isArray(data)) return [];
+    const results = await res.json();
+    if (!Array.isArray(results)) return [];
 
-    // 日本座標範囲のフィルタリング
-    const filtered = data
-      .filter((d) => {
-        const lat = parseFloat(d.lat);
-        const lng = parseFloat(d.lon);
-        return lat >= 30 && lat <= 46 && lng >= 130 && lng <= 146;
-      })
-      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
-      .slice(0, 5);
-
-    return filtered.map((d) => ({
-      lat: parseFloat(d.lat),
-      lng: parseFloat(d.lon),
-      displayName: d.display_name,
-      address: d.address,
-      importance: d.importance ?? 0,
+    return results.map((d) => ({
+      lat: d.lat,
+      lng: d.lng,
+      displayName: d.displayName,
+      importance: 0, // API 側で既にソート済みなので、重要度は表示しない
     }));
   } catch (err) {
     console.error("ジオコーディング処理エラー:", err.message);
