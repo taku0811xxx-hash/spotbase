@@ -181,12 +181,12 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       <div className="flex flex-col flex-1 max-w-6xl w-full mx-auto p-6 sm:p-10 gap-4 sm:gap-6 overflow-hidden">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-shrink-0 overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
           />
-          <div className="border-t border-gray-100">
+          <div className="border-t border-gray-100 relative z-40">
             <SearchBar onSearch={setQuery} onSubmit={handleSubmit} loading={geocoding} />
             {geocodeError && (
               <p className="px-4 sm:px-5 pb-3 text-xs text-red-600">{geocodeError}</p>

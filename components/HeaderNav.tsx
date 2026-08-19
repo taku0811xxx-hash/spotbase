@@ -15,7 +15,7 @@ export default function HeaderNav({ profile, onLogout }: Props) {
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-gray-900 text-white">
+    <div className="relative z-50 flex items-center justify-between px-4 sm:px-5 py-2.5 bg-gray-900 text-white">
       <Logo className="text-white" />
       <div className="flex items-center gap-1.5 sm:gap-2">
         {profile && (
@@ -30,7 +30,7 @@ export default function HeaderNav({ profile, onLogout }: Props) {
 
         {/* 管理者メニュー（ドロップダウン） */}
         {profile?.accessLevel === "admin" && (
-          <div className="relative" ref={adminMenuRef}>
+          <div className="relative z-50" ref={adminMenuRef}>
             <button
               onClick={() => setAdminMenuOpen(!adminMenuOpen)}
               className="text-white text-xs font-medium rounded-lg px-2.5 py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 flex items-center gap-1 whitespace-nowrap"
@@ -43,7 +43,7 @@ export default function HeaderNav({ profile, onLogout }: Props) {
 
             {/* ドロップダウンメニュー */}
             {adminMenuOpen && (
-              <div className="absolute right-0 mt-1 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-[9999]">
+              <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-[9999] pointer-events-auto">
                 <Link
                   href="/admin/users"
                   className="block px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white first:rounded-t-lg transition-colors"
@@ -75,21 +75,21 @@ export default function HeaderNav({ profile, onLogout }: Props) {
           href="/dispatch"
           className="text-white text-xs font-medium rounded-lg px-2.5 py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap"
         >
-          📋 一覧
+          📋 出動記録一覧
         </Link>
 
         <Link
           href="/dispatch/import"
           className="text-white text-xs font-medium rounded-lg px-2.5 py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap"
         >
-          📄 インポート
+          📄 報告書インポート
         </Link>
 
         <Link
           href="/dispatch/new"
-          className="text-white text-xs font-medium rounded-lg px-3 py-1.5 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap"
+          className="text-white text-xs font-medium rounded-lg px-2.5 py-1.5 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap"
         >
-          + 新規
+          + 新規出動
         </Link>
 
         {/* ログアウト */}
