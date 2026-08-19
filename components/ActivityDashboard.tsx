@@ -12,6 +12,8 @@ type ActivityStats = {
   topSites: Array<{ name: string; count: number }>;
 };
 
+type PeriodType = "all" | "thisMonth" | "lastMonth" | "last30Days" | "thisYear";
+
 interface Props {
   records: DispatchRecord[];
   organizationId: string;
@@ -26,6 +28,7 @@ export default function ActivityDashboard({
   onCategoryChange,
 }: Props) {
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>("all");
 
   // カテゴリーの一覧を取得
   const categories = Array.from(new Set(records.map((r) => r.category))).sort();
@@ -34,15 +37,43 @@ export default function ActivityDashboard({
   );
 
   // 集計データを計算
-  const stats = calculateStats(records, selectedCategory);
+  const stats = calculateStats(records, selectedCategory, selectedPeriod);
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
+      {/* 期間フィルター */}
+      <div className="flex gap-2 flex-wrap">
+        <span className="text-sm font-medium text-gray-700 py-2">期間:</span>
+        {(["all", "thisMonth", "lastMonth", "last30Days", "thisYear"] as const).map((period) => {
+          const labels: Record<PeriodType, string> = {
+            all: "全期間",
+            thisMonth: "今月",
+            lastMonth: "先月",
+            last30Days: "直近30日",
+            thisYear: "今年度",
+          };
+          return (
+            <button
+              key={period}
+              onClick={() => setSelectedPeriod(period)}
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                selectedPeriod === period
+                  ? "bg-green-600 text-white"
+                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+              }`}
+            >
+              {labels[period]}
+            </button>
+          );
+        })}
+      </div>
+
       {/* カテゴリーフィルター */}
       <div className="flex gap-2 flex-wrap">
+        <span className="text-sm font-medium text-gray-700 py-2">分類:</span>
         <button
           onClick={() => onCategoryChange(null)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
             selectedCategory === null
               ? "bg-blue-600 text-white"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
@@ -54,7 +85,7 @@ export default function ActivityDashboard({
           <button
             key={cat}
             onClick={() => onCategoryChange(cat)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
               selectedCategory === cat
                 ? "bg-blue-600 text-white"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
@@ -133,12 +164,58 @@ export default function ActivityDashboard({
 
 function calculateStats(
   records: DispatchRecord[],
-  selectedCategory: string | null
+  selectedCategory: string | null,
+  selectedPeriod: PeriodType
 ): ActivityStats[] {
+  // 期間フィルタリング関数
+  function isWithinPeriod(date: Date | undefined, period: PeriodType): boolean {
+    if (!date) return false;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    switch (period) {
+      case "all":
+        return true;
+      case "thisMonth": {
+        const start = new Date(currentYear, currentMonth, 1);
+        const end = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
+        return date >= start && date <= end;
+      }
+      case "lastMonth": {
+        const start = new Date(currentYear, currentMonth - 1, 1);
+        const end = new Date(currentYear, currentMonth, 0, 23, 59, 59);
+        return date >= start && date <= end;
+      }
+      case "last30Days": {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 30);
+        start.setHours(0, 0, 0, 0);
+        return date >= start && date <= now;
+      }
+      case "thisYear": {
+        const start = new Date(currentYear, 0, 1);
+        const end = new Date(currentYear, 11, 31, 23, 59, 59);
+        return date >= start && date <= end;
+      }
+      default:
+        return false;
+    }
+  }
+
   // フィルタリング
   let filtered = records;
+
+  // 期間フィルター
+  filtered = filtered.filter((r) => {
+    const date = r.createdAt?.toDate?.();
+    return isWithinPeriod(date, selectedPeriod);
+  });
+
+  // カテゴリーフィルター
   if (selectedCategory) {
-    filtered = records.filter((r) => r.category === selectedCategory);
+    filtered = filtered.filter((r) => r.category === selectedCategory);
   }
 
   // ユーザー別に集計
