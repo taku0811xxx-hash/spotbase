@@ -62,11 +62,14 @@ export default function Home() {
 
   // 検索結果(登録済みピン)が1件に絞られたら、その場所へ地図を自動的に移動する
   useEffect(() => {
-    if (query.trim() && filtered.length === 1) {
-      setFlyTo({ lat: filtered[0].lat, lng: filtered[0].lng });
-      setSearchMarker(null);
+    if (query.trim()) {
+      const results = searchPins(pins, query);
+      if (results.length === 1) {
+        setFlyTo({ lat: results[0].lat, lng: results[0].lng });
+        setSearchMarker(null);
+      }
     }
-  }, [query, filtered]);
+  }, [query, pins]);
 
   // 指定した地点の「駐車候補」「駐停車候補」をまとめて検索する
   async function loadLocationInsights(lat: number, lng: number) {
