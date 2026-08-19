@@ -91,8 +91,16 @@ export default function Home() {
   function handleSelectPin(pin: Pin) {
     setSelectedPin(pin);
     setSearchMarker(null);
-    setFlyTo({ lat: pin.lat, lng: pin.lng });
-    loadLocationInsights(pin.lat, pin.lng);
+
+    // 座標が有効か確認（null/undefined/不正な値を除外）
+    if (pin.lat && pin.lng && typeof pin.lat === 'number' && typeof pin.lng === 'number') {
+      setFlyTo({ lat: pin.lat, lng: pin.lng });
+      loadLocationInsights(pin.lat, pin.lng);
+    } else {
+      // 座標が無効な場合はマップをリセット
+      setFlyTo(null);
+      console.warn(`ピン ${pin.id} の座標が無効です: (${pin.lat}, ${pin.lng})`);
+    }
   }
 
   function handleCloseSidePanel() {
