@@ -634,7 +634,7 @@ const DUMMY_RECORDS = [
     recordedBy: "中村三郎（技術）",
     locationName: "新宿駅東口周辺",
     address: "東京都新宿区新宿3丁目38-1",
-    lat: 35.52983,
+    lat: 35.69092,
     lng: 139.70028,
     incidentType: "地下鉄・鉄道駅の通信品質測定・改善対応",
     siteInfo:
@@ -662,25 +662,25 @@ const DUMMY_RECORDS = [
     checkpoints: [
       {
         time: new Date("2026-08-09T10:00:00").toISOString(),
-        lat: 35.52983,
+        lat: 35.69092,
         lng: 139.70028,
         comment: "局発",
       },
       {
         time: new Date("2026-08-09T11:00:00").toISOString(),
-        lat: 35.52983,
+        lat: 35.69092,
         lng: 139.70028,
         comment: "地上測定開始",
       },
       {
         time: new Date("2026-08-09T13:15:00").toISOString(),
-        lat: 35.52983,
+        lat: 35.69092,
         lng: 139.70028,
         comment: "地下測定開始",
       },
       {
         time: new Date("2026-08-09T16:00:00").toISOString(),
-        lat: 35.52983,
+        lat: 35.69092,
         lng: 139.70028,
         comment: "測定完了・撤収",
       },
