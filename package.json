@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "backup": "node scripts/backup-firestore.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
     "leaflet": "^1.9.4",

@@ -81,6 +81,7 @@ export type DispatchRecord = {
   publishedAt?: Timestamp | null; // 正式提出日時
   history: EditLogEntry[]; // 編集履歴(誰が・いつ・何を変えたか)
   createdAt: Timestamp | null;
+  sourceFileHash?: string; // インポート時のソースファイルハッシュ（重複防止用）
 };
 
 const COLLECTION = "dispatch_records";
@@ -595,4 +596,23 @@ export function filterDispatchRecords(
   }
 
   return filtered;
+}
+
+// 組織別に全出動記録を取得
+export async function getDispatchRecordsByOrganization(
+  organizationId: string
+): Promise<DispatchRecord[]> {
+  const q = query(collection(db, COLLECTION), where("organizationId", "==", organizationId));
+  const snap = await getDocs(q);
+  const records = snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<DispatchRecord, "id">),
+  }));
+  // 最新順でソート
+  records.sort((a, b) => {
+    const at = a.createdAt?.toMillis?.() ?? 0;
+    const bt = b.createdAt?.toMillis?.() ?? 0;
+    return bt - at;
+  });
+  return records;
 }

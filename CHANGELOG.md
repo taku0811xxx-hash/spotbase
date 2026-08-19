@@ -1,5 +1,105 @@
 # SpotBase - 変更履歴
 
+## [2026-08-19] - 3 つの大規模機能追加実装完了
+
+### [実施内容]
+
+#### 1. 管理者向け クルー別現場出動集計ダッシュボード (/admin/activity)
+**ページ・コンポーネント**:
+- `app/admin/activity/page.tsx` - 管理者用集計ページ
+- `components/ActivityDashboard.tsx` - 集計テーブルと分類フィルター
+- `components/ActivityDetailsModal.tsx` - クルー別詳細履歴 Modal
+- `lib/dispatchRecords.ts` - `getDispatchRecordsByOrganization()` 関数追加
+
+**機能**:
+- ✅ 分類フィルター（記者、技術、カメラマン、ディレクター）
+- ✅ 集計テーブル: クルー名 | 分類 | 累計出動回数 | 主な現場 TOP 3 | 直近出動日
+- ✅ クリックで詳細 Modal 表示（出動履歴一覧）
+- ✅ 管理者のみアクセス可能
+
+#### 2. Firestore データバックアップ機能
+**CLI スクリプト**:
+- `scripts/backup-firestore.mjs` - Node.js バックアップスクリプト
+- `package.json` に `npm run backup` コマンド追加
+
+**管理者画面**:
+- `app/admin/backup/page.tsx` - バックアップ UI
+- `app/api/admin/backup/route.ts` - API ルート
+
+**機能**:
+- ✅ 全コレクション（users, dispatch_records, pins等）をJSON形式で出力
+- ✅ タイムスタンプを ISO 8601 形式に自動変換
+- ✅ ブラウザから1クリックでダウンロード
+- ✅ CLIスクリプトでスケジュール実行対応
+
+#### 3. 低コスト&重複防止機能付き 過去報告書自動取り込み (/dispatch/import)
+**ページ・コンポーネント**:
+- `app/dispatch/import/page.tsx` - インポートページ
+- `components/DispatchImportUploader.tsx` - ファイルアップロード UI
+- `components/DispatchImportPreview.tsx` - 解析結果確認・編集画面
+
+**API ルート**:
+- `app/api/dispatch/import/check-hash/route.ts` - ファイルハッシュ重複チェック
+- `app/api/dispatch/import/analyze/route.ts` - Claude (Haiku) ファイル解析
+- `app/api/dispatch/import/check-location-date/route.ts` - 現場＋日時重複チェック
+- `app/api/dispatch/import/save/route.ts` - 出動記録保存
+
+**重複ファイル防止 (★API費用0円対策)**:
+- ✅ ファイル SHA-256 ハッシュ値計算・検索
+- ✅ Firestore に `sourceFileHash` 保存（スキーマ更新済み）
+- ✅ 重複ハッシュ検出時は Claude API 呼び出さずブロック
+- ✅ 現場＋日時の同一チェック（プレビュー画面で警告表示）
+
+**コスト削減仕様**:
+- ✅ モデル: `claude-3-5-haiku-20241022` （低コスト）
+- ✅ PDF・テキスト・画像対応（PDF はテキスト化後に送信）
+- ✅ システムプロンプトで余計な解説を禁止・JSON のみ出力
+
+**対応ファイル形式**: PDF、PNG、JPG、TXT（最大10MB）
+
+### [データモデル更新]
+- `lib/dispatchRecords.ts`:
+  - `DispatchRecord` 型に `sourceFileHash?: string` フィールド追加
+
+### [依存関係]
+- `npm install @anthropic-ai/sdk` 完了
+
+### [動作確認結果]
+✅ 全 3 つの機能の UI・ロジック実装完了
+✅ 管理者ダッシュボード集計機能正常動作
+✅ バックアップ API・CLI 正常動作
+✅ ファイルハッシュ重複チェック正常動作（API 節約機能）
+✅ Claude Haiku での自動解析機能正常動作
+✅ `npm run build` で型チェック・ビルド成功
+
+### [実装ファイル（計 15 個）]
+**新規ページ・コンポーネント**:
+- `app/admin/activity/page.tsx`
+- `app/admin/backup/page.tsx`
+- `app/dispatch/import/page.tsx`
+- `components/ActivityDashboard.tsx`
+- `components/ActivityDetailsModal.tsx`
+- `components/DispatchImportUploader.tsx`
+- `components/DispatchImportPreview.tsx`
+
+**新規 API ルート**:
+- `app/api/admin/backup/route.ts`
+- `app/api/dispatch/import/check-hash/route.ts`
+- `app/api/dispatch/import/analyze/route.ts`
+- `app/api/dispatch/import/check-location-date/route.ts`
+- `app/api/dispatch/import/save/route.ts`
+
+**新規スクリプト・設定**:
+- `scripts/backup-firestore.mjs`
+- `package.json` (スクリプト追加)
+
+**修正ファイル**:
+- `lib/dispatchRecords.ts` (型定義・関数追加)
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-19] - 現場詳細画面 UI 整理・ロジック修正
 
 ### [実施内容]
