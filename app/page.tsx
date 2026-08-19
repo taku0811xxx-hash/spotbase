@@ -221,6 +221,11 @@ export default function Home() {
             />
           ) : (
             <aside className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm hidden sm:block">
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-10">
+                <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  📍 現場一覧
+                </h2>
+              </div>
               {loading && <p className="p-3 text-sm text-gray-500">読み込み中...</p>}
               {!loading && filtered.length === 0 && (
                 <p className="p-3 text-sm text-gray-500">該当する現場がありません</p>
