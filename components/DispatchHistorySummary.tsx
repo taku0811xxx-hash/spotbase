@@ -6,13 +6,14 @@ import { getDispatchRecordsNear, type DispatchRecord } from "@/lib/dispatchRecor
 import { useAuth } from "@/components/AuthProvider";
 
 type Props = {
+  pinId: string;
   lat: number;
   lng: number;
 };
 
 // この現場の付近で行われた過去の出動記録を集約して表示する。
 // 出動記録に書かれた記録メモや伝送状況を、現場情報の一部として横断的に見れるようにするもの。
-export default function DispatchHistorySummary({ lat, lng }: Props) {
+export default function DispatchHistorySummary({ pinId, lat, lng }: Props) {
   const { profile } = useAuth();
   const [records, setRecords] = useState<DispatchRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,11 +35,20 @@ export default function DispatchHistorySummary({ lat, lng }: Props) {
 
   return (
     <div className="border-t pt-3">
-      <p className="text-xs font-medium text-gray-700 mb-1">
-        この現場での出動記録(過去{records.length}件)
-      </p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-gray-700">
+          {records.length > 0 ? `過去の出動記録（${records.length}件）` : "出動記録"}
+        </p>
+        <Link
+          href={`/dispatch/new?pinId=${pinId}`}
+          className="text-xs text-blue-600 border border-blue-200 bg-blue-50 rounded-lg px-2.5 py-1 hover:bg-blue-100 hover:border-blue-300 hover:shadow-sm active:scale-[0.98] transition-all duration-150"
+        >
+          {records.length === 0 ? "+ 最初の出動記録を追加" : "+ 新しく出動記録を追加"}
+        </Link>
+      </div>
 
       {loading && <p className="text-xs text-gray-400">検索中...</p>}
+
       {!loading && records.length === 0 && (
         <p className="text-xs text-gray-400">
           この付近での出動記録はまだありません
@@ -54,7 +64,6 @@ export default function DispatchHistorySummary({ lat, lng }: Props) {
               <div key={r.id} className="bg-gray-50 rounded-lg px-2.5 py-2">
                 <p className="text-[11px] text-gray-500">
                   {createdAt && createdAt.toLocaleDateString("ja-JP")}
-                  {r.recordedBy && ` / ${r.recordedBy}`}
                   {r.incidentType && ` / ${r.incidentType}`}
                 </p>
                 {r.notes.map((note, i) => (

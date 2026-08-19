@@ -1,5 +1,48 @@
 # SpotBase - 変更履歴
 
+## [2026-08-19] - 現場詳細画面 UI 整理・ロジック修正
+
+### [実施内容]
+
+#### 1. 現場基本情報の「記録者名」表示削除
+- **変更前**: 「記録者: 山田次郎（カメラマン） / 2026/8/19」
+- **変更後**: 「最終更新: 2026/8/19」
+- **理由**: 現場情報は組織の共有ナレッジであり、個人名は不要
+- **修正ファイル**:
+  - `components/PinDetail.tsx` (104-107行目)
+  - `components/PinSidePanel.tsx` (182-185行目)
+
+#### 2. 出動記録セクションの二重表示バグ解消
+- **問題**: 「出動記録」セクションと「この現場での出動記録」セクションが同時表示
+- **解決策**: `DispatchLog` コンポーネント削除、`DispatchHistorySummary` に統合
+- **修正ファイル**:
+  - `components/PinDetail.tsx` (削除: DispatchLog インポート・呼び出し)
+  - `components/PinSidePanel.tsx` (削除: DispatchLog インポート・呼び出し)
+  - `components/DispatchHistorySummary.tsx` (UI・ロジック強化)
+
+#### 3. DispatchHistorySummary の機能強化
+- `pinId` プロップを追加して、新規出動記録作成のエントリーポイントを提供
+- 条件分岐でボタンテキストを変更:
+  - 出動記録 0 件: 「+ 最初の出動記録を追加」
+  - 出動記録 1 件以上: 「+ 新しく出動記録を追加」
+- 記録者名の表示を削除（出動日と事件タイプのみ表示）
+- ナビゲーション: `/dispatch/new?pinId={pinId}` で新規記録作成画面へ
+
+### [動作確認結果]
+✅ 記録者名が削除され「最終更新: 2026/8/19」のみ表示
+✅ 出動記録セクションが1つに統合（二重表示なし）
+✅ 出動記録が1件以上の場合、適切なボタンテキスト表示
+✅ `npm run build` で型チェック・ビルド成功
+
+### [修正ファイル]
+- `components/PinDetail.tsx`
+- `components/PinSidePanel.tsx`
+- `components/DispatchHistorySummary.tsx`
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-19] - Firestore データベースクリーンアップ・座標修正完了
 
 ### [実施内容]

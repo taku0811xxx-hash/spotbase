@@ -7,7 +7,6 @@ import type { RoadSuggestion } from "@/lib/roads";
 import ConfirmDialog from "./ConfirmDialog";
 import Toast, { type ToastState } from "./Toast";
 import ShootingSuggestionPanel from "./ShootingSuggestionPanel";
-import DispatchLog from "./DispatchLog";
 import DispatchHistorySummary from "./DispatchHistorySummary";
 
 function PhotoGrid({ urls, alt }: { urls: string[]; alt: string }) {
@@ -180,8 +179,7 @@ export default function PinSidePanel({
         </div>
 
         <div className="text-xs text-gray-500">
-          記録者: {pin.recordedBy || "不明"}
-          {recordedAt && ` / ${recordedAt.toLocaleDateString("ja-JP")}`}
+          {recordedAt && `最終更新: ${recordedAt.toLocaleDateString("ja-JP")}`}
         </div>
 
         <Field label="駐車場所" value={pin.parkingInfo} alt={pin.name} />
@@ -217,9 +215,7 @@ export default function PinSidePanel({
           lng={pin.lng}
         />
 
-        <DispatchLog pinId={pin.id} />
-
-        <DispatchHistorySummary lat={pin.lat} lng={pin.lng} />
+        <DispatchHistorySummary pinId={pin.id} lat={pin.lat} lng={pin.lng} />
 
         <div className="border-t pt-3 space-y-3">
           <RoadSuggestionsSection
