@@ -1,5 +1,24 @@
 # SpotBase - 変更履歴
 
+## [2026-08-19] - useEffect 無限ループ修正
+
+### [修正]
+- `app/page.tsx` の useEffect 無限ループエラーを解決
+  - **問題**：依存配列に `filtered` が含まれていたが、`searchPins()` は毎回新しい配列を返すため無限ループが発生
+  - **解決**：依存配列を `[query, pins]` に変更し、エフェクト内で `filtered` を計算
+
+### [検証完了]
+✅ "Maximum update depth exceeded" エラーが消滅
+✅ ビルド成功（`next build --webpack` - TypeScript エラーなし）
+✅ ホームページの動作確認（エラーなし）
+
+**変更ファイル**:
+- `app/page.tsx` （useEffect 依存配列修正）
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-19] - LiveU中継候補地・車両待機場所の自動提案機能実装完了
 
 ### [追加]
