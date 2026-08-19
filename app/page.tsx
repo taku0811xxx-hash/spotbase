@@ -13,6 +13,7 @@ import SearchBar from "@/components/SearchBar";
 import PinSidePanel from "@/components/PinSidePanel";
 import SearchLocationPanel from "@/components/SearchLocationPanel";
 import Logo from "@/components/Logo";
+import HeaderNav from "@/components/HeaderNav";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -181,43 +182,10 @@ export default function Home() {
     <div className="h-screen flex flex-col bg-gray-100">
       <div className="flex flex-col flex-1 max-w-6xl w-full mx-auto p-6 sm:p-10 gap-4 sm:gap-6 overflow-hidden">
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-shrink-0 overflow-hidden">
-          <div className="flex items-center justify-between px-4 sm:px-5 py-3 bg-gray-900 text-white">
-            <Logo className="text-white" />
-            <div className="flex items-center gap-3">
-              {profile && (
-                <div className="hidden sm:block text-right text-xs text-gray-300 leading-tight mr-1">
-                  <p>{profile.organizationName} / {profile.category}</p>
-                  <p className="text-gray-400">{profile.name}{profile.accessLevel === "admin" && "(管理者)"}</p>
-                </div>
-              )}
-              {profile?.accessLevel === "admin" && (
-                <Link
-                  href="/admin/users"
-                  className="text-white text-sm font-medium rounded-lg px-3 py-2 border border-gray-600 hover:bg-gray-800 transition-all duration-150"
-                >
-                  ユーザー管理
-                </Link>
-              )}
-              <Link
-                href="/dispatch"
-                className="text-white text-sm font-medium rounded-lg px-3 py-2 border border-gray-600 hover:bg-gray-800 transition-all duration-150"
-              >
-                出動記録一覧
-              </Link>
-              <Link
-                href="/dispatch/new"
-                className="text-white text-sm font-medium rounded-lg px-4 py-2 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150"
-              >
-                + 出動記録
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="text-gray-300 text-sm rounded-lg px-3 py-2 hover:bg-gray-800 hover:text-white transition-all duration-150"
-              >
-                ログアウト
-              </button>
-            </div>
-          </div>
+          <HeaderNav
+            profile={profile}
+            onLogout={handleLogout}
+          />
           <div className="border-t border-gray-100">
             <SearchBar onSearch={setQuery} onSubmit={handleSubmit} loading={geocoding} />
             {geocodeError && (
