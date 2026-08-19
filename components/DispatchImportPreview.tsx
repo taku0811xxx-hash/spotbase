@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Toast, { type ToastState } from "./Toast";
 
@@ -51,9 +51,9 @@ export default function DispatchImportPreview({
   const [toast, setToast] = useState<ToastState>(null);
 
   // マウント時に現場＋日時の重複チェック
-  useState(() => {
+  useEffect(() => {
     checkDuplicateLocation();
-  });
+  }, [editedData.locationName, editedData.date, organizationId]);
 
   async function checkDuplicateLocation() {
     try {
