@@ -197,6 +197,9 @@ export default function Map({
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        keepBuffer={2}
+        updateWhenIdle={true}
+        updateInterval={200}
       />
       {pins.map((pin) => (
         <Marker

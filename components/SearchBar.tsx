@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 
 type Props = {
   onSearch: (query: string) => void;
@@ -9,7 +9,7 @@ type Props = {
   onClear?: () => void;
 };
 
-export default function SearchBar({ onSearch, onSubmit, loading, onClear }: Props) {
+const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear }: Props) {
   const [value, setValue] = useState("");
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -58,4 +58,6 @@ export default function SearchBar({ onSearch, onSubmit, loading, onClear }: Prop
       )}
     </div>
   );
-}
+});
+
+export default SearchBar;

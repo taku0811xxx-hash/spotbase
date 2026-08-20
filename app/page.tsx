@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -140,7 +140,8 @@ export default function Home() {
     router.push("/login");
   }
 
-  const filtered = searchPins(pins, query);
+  // 検索結果のメモ化 - 検索クエリまたはピン配列が変更された場合のみ再計算
+  const filtered = useMemo(() => searchPins(pins, query), [pins, query]);
 
   // 検索結果(登録済みピン)が1件に絞られたら、その場所へ地図を自動的に移動する
   useEffect(() => {

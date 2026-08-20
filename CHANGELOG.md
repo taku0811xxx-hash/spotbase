@@ -1,5 +1,113 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - 地図コンポーネントの動的読込、メモ化、タイル描写の高速化対応
+
+### [実施内容]
+
+Next.js（App Router）および Leaflet を使用した SpotBase のパフォーマンス最適化を実装しました。
+
+#### 最適化施策1: 初期読み込み速度の高速化（バンドルサイズ削減）
+
+**確認内容**:
+- ✅ Leaflet 地図コンポーネント: `next/dynamic` で動的インポート（`ssr: false`）
+  ```tsx
+  const Map = dynamic(() => import("@/components/Map"), { ssr: false });
+  ```
+- ✅ ファーストビューの JS 読み込みをブロックせず、必要な時のみ読み込み
+- ✅ アイコンライブラリは個別インポート形式で実装済み（Tree Shaking が効く）
+
+**効果**: ファーストビュー描画時間が短縮される
+
+---
+
+#### 最適化施策2: レンダリングパフォーマンスの最適化（メモ化）
+
+**1. 検索結果のメモ化（app/page.tsx）**
+```tsx
+// 修正前:
+const filtered = searchPins(pins, query);
+
+// 修正後:
+const filtered = useMemo(() => searchPins(pins, query), [pins, query]);
+```
+- 検索クエリまたはピン配列が変更された場合のみ再計算
+- 不要な配列フィルタリング演算を回避
+
+**2. SearchBar コンポーネントのメモ化**
+```tsx
+const SearchBar = memo(function SearchBar({ ... }) { ... });
+export default SearchBar;
+```
+- 親コンポーネント再レンダリング時に不要な再描画を防止
+- 検索入力体験が滑らかになる
+
+**3. BottomSheet コンポーネントのメモ化**
+```tsx
+const BottomSheet = memo(function BottomSheet({ ... }) { ... });
+export default BottomSheet;
+```
+- ボトムシート内のコンテンツ変更時の無駄な再レンダリング排除
+- パンやドラッグ操作の応答性向上
+
+**4. IncidentAlert コンポーネントのメモ化**
+```tsx
+const IncidentAlert = memo(function IncidentAlert({ ... }) { ... });
+export default IncidentAlert;
+```
+- 速報バナーの不要な再描画を削減
+- 事案情報の更新時のみ再描画
+
+**5. HeaderNav コンポーネントのメモ化**
+```tsx
+const HeaderNav = memo(function HeaderNav({ ... }) { ... });
+export default HeaderNav;
+```
+- ヘッダーの無駄な再レンダリング排除
+- ユーザーインタラクション時の応答性向上
+
+**効果**: 
+- メモ化によって不要な再レンダリングが排除される
+- React の diff 処理が最小限に抑えられる
+- メモリ使用量が削減される
+
+---
+
+#### 最適化施策3: 地図タイル・画像の読み込み最適化
+
+**Leaflet TileLayer の設定最適化（components/Map.tsx）**
+```tsx
+<TileLayer
+  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  keepBuffer={2}           // キャッシュするタイルバッファ数を制御（メモリ効率向上）
+  updateWhenIdle={true}    // ズーム中ではなくズーム完了後にタイル更新
+  updateInterval={200}     // タイル更新の最小間隔を 200ms に設定
+/>
+```
+
+**設定内容**:
+| オプション | 値 | 効果 |
+|----------|-----|------|
+| `keepBuffer` | 2 | 表示領域周辺のタイルのみキャッシュ、メモリ節約 |
+| `updateWhenIdle` | true | ズーム操作完了後にタイル更新、スムーズなズーム体験 |
+| `updateInterval` | 200 | 最小更新間隔を 200ms に設定、過度な更新回数を削減 |
+
+**効果**:
+- 地図スクロール時のフレームレート安定化
+- ズーム時のタイル描画がスムーズになる
+- ブラウザメモリ使用量が削減される
+- モバイルデバイスでの応答性向上
+
+---
+
+#### 検証
+
+- `npm run build` で型チェック・ビルド成功を確認
+- 全コンポーネントの memo 化・useMemo ラップが正しく実装
+- Leaflet TileLayer の設定オプションが反映
+
+---
+
 ## [2026-08-20] - PC版地図表示の復元、検索時の地図移動&ピン設置機能の追加、現場一覧の配置修正
 
 ### [実施内容]

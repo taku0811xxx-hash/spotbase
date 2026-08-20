@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, memo } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
 import type { UserProfile } from "@/lib/userProfile";
@@ -12,7 +12,7 @@ interface Props {
   onToggleMenu?: () => void;
 }
 
-export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0, onToggleMenu }: Props) {
+const HeaderNav = memo(function HeaderNav({ profile, onLogout, activeDispatchCount = 0, onToggleMenu }: Props) {
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
@@ -136,4 +136,6 @@ export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0, 
       </div>
     </div>
   );
-}
+});
+
+export default HeaderNav;

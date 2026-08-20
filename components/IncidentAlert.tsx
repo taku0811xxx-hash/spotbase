@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import IncidentModal from "./IncidentModal";
 import type { Incident } from "@/lib/incidents";
 
@@ -17,7 +17,7 @@ const categoryEmojis: Record<string, string> = {
   その他: "⚠️",
 };
 
-export default function IncidentAlert({ incidents, onMapNavigate }: Props) {
+const IncidentAlert = memo(function IncidentAlert({ incidents, onMapNavigate }: Props) {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
   if (incidents.length === 0) {
@@ -73,4 +73,6 @@ export default function IncidentAlert({ incidents, onMapNavigate }: Props) {
       />
     </>
   );
-}
+});
+
+export default IncidentAlert;

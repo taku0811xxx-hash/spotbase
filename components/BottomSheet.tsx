@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 type SheetState = "peek" | "half" | "full";
 
@@ -14,7 +14,7 @@ interface Props {
   onStateChange?: (state: SheetState) => void;
 }
 
-export default function BottomSheet({
+const BottomSheet = memo(function BottomSheet({
   isOpen,
   onClose,
   children,
@@ -145,4 +145,6 @@ export default function BottomSheet({
       </div>
     </div>
   );
-}
+});
+
+export default BottomSheet;
