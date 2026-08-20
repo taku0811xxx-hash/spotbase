@@ -9,6 +9,12 @@ import { useAuth } from "@/components/AuthProvider";
 import { getDispatchRecords, type DispatchRecord } from "@/lib/dispatchRecords";
 import PageHeader from "@/components/PageHeader";
 
+const DEFAULT_STATUS_CONFIG = {
+  bg: "bg-gray-100",
+  text: "text-gray-700",
+  label: "不明",
+};
+
 const statusColors: Record<string, { bg: string; text: string; label: string }> = {
   準備中: { bg: "bg-gray-100", text: "text-gray-700", label: "準備中" },
   移動中: { bg: "bg-blue-100", text: "text-blue-700", label: "移動中" },
@@ -164,7 +170,7 @@ export default function ActiveDispatchPage() {
               <div className="space-y-4">
                 {records.map((record) => {
                   const currentStatus = record.status || "準備中";
-                  const statusConfig = statusColors[currentStatus];
+                  const statusConfig = statusColors[currentStatus] || DEFAULT_STATUS_CONFIG;
                   const elapsedTime = getElapsedTime(record.createdAt);
 
                   return (

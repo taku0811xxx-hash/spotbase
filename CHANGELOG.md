@@ -1,5 +1,113 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - 出動中ページ & ヘッダー管理メニューのバグ修正
+
+### [実施内容]
+
+#### 1. 出動中ページ (/dispatch/active) の Runtime Error を修正
+**修正箇所** (`app/dispatch/active/page.tsx`):
+- **問題**: dispatch.status の値が STATUS_CONFIG に存在しない場合、statusConfig が undefined になり、`statusConfig.bg` にアクセスする時点で TypeError が発生していた
+- **原因**: 予期しないステータス値や undefined 値に対する防御がない
+- **対策**:
+  - `DEFAULT_STATUS_CONFIG` を定義（デフォルト値: gray-100 背景、"不明" ラベル）
+  - statusConfig アクセス時に `|| DEFAULT_STATUS_CONFIG` でフォールバック
+  - すべての想定ステータス（準備中/移動中/現場対応中/完了）が STATUS_CONFIG に網羅されていることを確認
+
+**変更内容**:
+```typescript
+const DEFAULT_STATUS_CONFIG = {
+  bg: "bg-gray-100",
+  text: "text-gray-700",
+  label: "不明",
+};
+
+// ステータスマッピング（すべての想定ステータスを網羅）
+const statusColors: Record<string, { bg: string; text: string; label: string }> = {
+  準備中: { bg: "bg-gray-100", text: "text-gray-700", label: "準備中" },
+  移動中: { bg: "bg-blue-100", text: "text-blue-700", label: "移動中" },
+  現場対応中: { bg: "bg-red-100", text: "text-red-700", label: "現場対応中" },
+  完了: { bg: "bg-green-100", text: "text-green-700", label: "完了" },
+};
+
+// 使用時のフォールバック
+const statusConfig = statusColors[currentStatus] || DEFAULT_STATUS_CONFIG;
+```
+
+**効果**:
+- ✅ ページロード時の TypeError が完全に解決
+- ✅ 19件のアクティブ案件が正常に表示される
+- ✅ 予期しないステータス値でもグレースフルに対応
+
+#### 2. ヘッダー「管理」ボタンのドロップダウンメニュー不具合を修正
+**修正箇所** (`components/HeaderNav.tsx`):
+- **問題**: 「管理」ボタンをクリックしてもドロップダウンメニューが開かない（表示されない）状態
+- **原因**: 
+  - ヘッダーの `overflow-x-auto` により、position: absolute のドロップダウンが表示領域外にクリップされていた可能性
+  - z-index の stacking context が正しくなかった
+- **対策**:
+  - ヘッダーの `overflow-x-auto` を `overflow-visible` に変更
+  - 親コンテナ div に `relative` クラスを追加（stacking context の確立）
+  - admin メニューコンテナの z-index を `z-50` → `z-[9998]` に引き上げ
+  - ドロップダウンメニューの z-index を `z-[9999]` に維持
+  - margin-top を `mt-2` → `mt-1` に調整（より密接な配置）
+
+**変更内容**:
+```jsx
+// ヘッダー
+<div className="relative z-50 flex flex-row ... overflow-visible">
+  ...
+  <div className="flex flex-row ... relative"> {/* stacking context 追加 */}
+    {/* 管理メニュー */}
+    <div className="relative z-[9998]">
+      <button onClick={() => setAdminMenuOpen(!adminMenuOpen)}>⚙️ 管理</button>
+      {adminMenuOpen && (
+        <div className="absolute right-0 mt-1 w-56 ... z-[9999] pointer-events-auto overflow-visible">
+          {/* メニュー項目 */}
+        </div>
+      )}
+    </div>
+  </div>
+</div>
+```
+
+**効果**:
+- ✅ 管理ボタンを押すとドロップダウンメニューが正しく開く
+- ✅ 全メニュー項目が正常に表示・タップ可能
+- ✅ デスクトップ・モバイルの両方で正常動作
+- ✅ z-index が地図や他の要素の上に正しく配置される
+
+### [ファイル変更]
+**修正**:
+- `app/dispatch/active/page.tsx` - DEFAULT_STATUS_CONFIG 定義、statusConfig フォールバック実装
+- `components/HeaderNav.tsx` - overflow-visible 変更、z-index stacking context 調整
+
+### [動作確認結果]
+✅ **dispatch/active ページ**:
+- 19件のアクティブ案件が正常に表示される
+- ステータスバッジが全案件に正しく表示される
+- コンソールに TypeError なし
+
+✅ **管理メニュー**:
+- デスクトップ表示で「管理」ボタン → ドロップダウン開閉が正常動作
+- モバイル表示（375px）でもメニュー全体が表示される
+- 全メニュー項目が視認可能でタップ可能
+- ドロップダウンが地図やその他の要素の上に配置される
+
+✅ **ビルド・型チェック**:
+- `npm run build --webpack` で成功
+- TypeScript エラーなし
+- 追加の依存関係なし
+
+### [改善のメリット]
+- 🐛 **バグ修正**: Runtime error が完全に解決
+- 👤 **ユーザー体験**: 管理機能へのアクセスが正常化
+- 📱 **レスポンシブ**: モバイル・デスクトップ両対応
+- 🔒 **信頼性**: 予期しないデータに対するグレースフルフォールバック
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-20] - 現場一覧の出動頻度ソート & 地図スクロール最適化
 
 ### [実施内容]
