@@ -389,10 +389,10 @@ export default function Home() {
         </div>
 
         {/* Full-screen Map Container */}
-        <div className="flex-1 relative overflow-hidden">
+        <div className="flex-1 relative overflow-hidden touch-action-auto" style={{ touchAction: "auto" }}>
           {/* Floating Incident Banner */}
           {incidents.length > 0 && (
-            <div className="absolute top-2 left-2 right-2 z-[900]">
+            <div className="absolute top-2 left-2 right-2 z-[900] pointer-events-auto">
               <IncidentAlert
                 incidents={incidents}
                 onMapNavigate={(lat, lng) => {

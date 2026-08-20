@@ -128,7 +128,11 @@ export default function Map({
       center={center}
       zoom={12}
       scrollWheelZoom={false}
+      dragging={true}
+      touchZoom={true}
+      doubleClickZoom={true}
       className="h-full w-full"
+      style={{ touchAction: "auto" }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

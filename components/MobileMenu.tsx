@@ -21,12 +21,14 @@ export default function MobileMenu({ profile, onLogout }: Props) {
       {/* Hamburger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="md:hidden flex flex-col gap-1.5 p-2"
+        className="md:hidden relative z-[9997] flex flex-col gap-1.5 p-1.5 -mr-1.5"
         title="メニュー"
+        aria-label="メニューを開く"
+        aria-expanded={isOpen}
       >
-        <span className={`w-6 h-0.5 bg-white transition-all ${isOpen ? "rotate-45 translate-y-2" : ""}`} />
-        <span className={`w-6 h-0.5 bg-white transition-all ${isOpen ? "opacity-0" : ""}`} />
-        <span className={`w-6 h-0.5 bg-white transition-all ${isOpen ? "-rotate-45 -translate-y-2" : ""}`} />
+        <span className={`w-6 h-0.5 bg-white transition-all duration-300 ${isOpen ? "rotate-45 translate-y-2" : ""}`} />
+        <span className={`w-6 h-0.5 bg-white transition-all duration-300 ${isOpen ? "opacity-0" : ""}`} />
+        <span className={`w-6 h-0.5 bg-white transition-all duration-300 ${isOpen ? "-rotate-45 -translate-y-2" : ""}`} />
       </button>
 
       {/* Drawer Menu */}
@@ -34,12 +36,13 @@ export default function MobileMenu({ profile, onLogout }: Props) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
             onClick={handleClose}
+            aria-hidden="true"
           />
 
           {/* Menu Panel */}
-          <div className="fixed right-0 top-0 bottom-0 bg-slate-900 text-white w-72 z-50 md:hidden shadow-2xl overflow-y-auto">
+          <div className="fixed right-0 top-0 bottom-0 bg-slate-900 text-white w-72 z-[9999] md:hidden shadow-2xl overflow-y-auto" role="navigation" aria-label="メニュー">
             {/* Menu Header */}
             <div className="border-b border-slate-700 px-4 py-4">
               <div className="text-right">

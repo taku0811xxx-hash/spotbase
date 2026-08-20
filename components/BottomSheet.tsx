@@ -125,7 +125,9 @@ export default function BottomSheet({
         {/* Handle */}
         <div
           ref={handleRef}
-          className="flex justify-center py-2 cursor-grab active:cursor-grabbing bg-gray-50 border-b border-gray-100"
+          className="flex justify-center py-2 cursor-grab active:cursor-grabbing bg-gray-50 border-b border-gray-100 pointer-events-auto"
+          role="slider"
+          aria-label="ボトムシートの高さを調整"
         >
           <div className="w-12 h-1 bg-gray-300 rounded-full" />
         </div>

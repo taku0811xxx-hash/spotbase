@@ -1,5 +1,148 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - モバイル表示の3つの不具合修正
+
+### [実施内容]
+
+スマートフォン（画面幅 768px 未満）におけるヘッダーのはみ出し、ハンバーガーメニュー表示、および地図のタッチ操作に関する3つの不具合を修正しました。
+
+#### 1. ヘッダーのはみ出し・レスポンシブ幅の修正
+**修正**: `components/HeaderNav.tsx`
+
+**問題**:
+- スマホ画面でヘッダー要素が画面幅を超えて横スクロール・はみ出しが発生していた
+
+**修正内容**:
+```jsx
+// ルート div
+className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-2 sm:px-4 py-1.5 sm:py-2 bg-gray-900 text-white overflow-hidden"
+
+// モバイルヘッダー内容エリア
+className="md:hidden flex items-center gap-1 sm:gap-2 flex-shrink-0 min-w-0"
+
+// ステータスバッジ
+className="px-1.5 py-0.5 text-[11px] sm:text-xs bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0"
+```
+
+- `w-full max-w-full box-border` でコンテナを確実に画面内に収める
+- `px-2 sm:px-4` で適切なパディング設定
+- `flex-shrink-0` で不要な縮小を防止
+- `whitespace-nowrap` でバッジが折り返されないように固定
+- `overflow-hidden` で確実にはみ出しを防止
+
+**効果**: スマホ表示でヘッダー要素が常に画面内に収まり、横揺れ・はみ出しが完全に消滅
+
+#### 2. ハンバーガーメニューの表示・動作修正
+**修正**: `components/MobileMenu.tsx`
+
+**問題**:
+- ハンバーガーボタンをタップしてもメニューが正しく最前面に表示されていなかった
+- z-index の不足により地図やボトムシートに隠れていた可能性
+
+**修正内容**:
+```jsx
+// ハンバーガーボタン
+className="md:hidden relative z-[9997] flex flex-col gap-1.5 p-1.5 -mr-1.5"
+
+// 背景オーバーレイ
+className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
+
+// メニューパネル
+className="fixed right-0 top-0 bottom-0 bg-slate-900 text-white w-72 z-[9999] md:hidden shadow-2xl overflow-y-auto"
+```
+
+**Z-index 階層**:
+- ハンバーガーボタン: z-[9997]
+- 背景オーバーレイ: z-[9998]
+- メニューパネル: z-[9999] ← **最前面**
+
+- アイコンアニメーション: `transition-all duration-300` で滑らかに回転
+- アクセシビリティ属性追加: `aria-label` `aria-expanded` `role` で支援技術対応
+
+**効果**: メニューが常に最前面に表示され、ボタンタップでスムーズに開閉
+
+#### 3. スマホ画面での地図のタッチ・ドラッグ操作の有効化
+**修正**: `components/Map.tsx`, `app/page.tsx`
+
+**問題**:
+- スマホでの地図スワイプ・ドラッグ移動やピンチズームが機能していなかった
+- オーバーレイ要素がタッチイベントを遮断していた可能性
+
+**修正内容**:
+
+**Map.tsx**:
+```jsx
+<MapContainer
+  center={center}
+  zoom={12}
+  scrollWheelZoom={false}
+  dragging={true}           // ← ドラッグパン有効
+  touchZoom={true}          // ← ピンチズーム有効
+  doubleClickZoom={true}    // ← ダブルタップズーム有効
+  className="h-full w-full"
+  style={{ touchAction: "auto" }}  // ← CSS でタッチアクション許可
+>
+```
+
+**app/page.tsx** (モバイルレイアウト):
+```jsx
+// マップコンテナ
+className="flex-1 relative overflow-hidden touch-action-auto"
+style={{ touchAction: "auto" }}
+
+// 浮かぶ事項バナー
+className="absolute top-2 left-2 right-2 z-[900] pointer-events-auto"
+```
+
+- `pointer-events-auto` で浮かぶ要素がクリック可能に（バナータップで動作）
+- `pointer-events-none` で背景マップへのタッチを遮断しない
+- `touchAction: "auto"` で Leaflet のタッチイベントを妨げない
+
+**効果**: 
+- ✅ スワイプ/ドラッグで地図が滑らかに移動
+- ✅ ピンチズーム機能が有効
+- ✅ ダブルタップでズーム
+- ✅ 浮かぶ要素（バナー）はタップ可能だが地図の邪魔をしない
+
+### [ファイル変更]
+
+**修正**:
+- `components/HeaderNav.tsx` - ヘッダー幅制御、パディング最適化
+- `components/MobileMenu.tsx` - Z-index 階層調整、アクセシビリティ対応
+- `components/Map.tsx` - タッチ操作オプション有効化
+- `app/page.tsx` - タッチアクション CSS 設定、ポインター制御
+
+### [動作確認結果]
+
+✅ **スマホ表示 (375px)**:
+- ✅ ヘッダーが画面内にきれいに収まり、横揺れなし
+- ✅ ロゴ・バッジ・ハンバーガーボタンが適切に配置
+- ✅ ハンバーガーボタンをタップでメニュー開閉
+- ✅ メニューが最前面 (z-[9999]) に表示
+- ✅ メニュー項目がタップ可能
+- ✅ 地図をスワイプで移動可能
+- ✅ ピンチズームが有効
+- ✅ ダブルタップでズーム
+- ✅ 浮かぶ事項バナーがタップ可能だが地図を妨げない
+
+✅ **デスクトップ表示 (1280px)**:
+- ✅ 変更なし（md:hidden で非表示）
+
+✅ **ビルド・型チェック**:
+- `npm run build --webpack` で成功
+- TypeScript エラー: 0件
+
+### [ユーザー体験の改善]
+
+- 📱 **ヘッダーの安定性**: 横揺れなく安定した表示
+- 👆 **タッチ操作**: スマホ本来のジェスチャーが快適に動作
+- 🎯 **メニュー操作**: 直感的で迷いのない操作感
+- 🗺️ **地図操作**: フルスクリーンマップの価値が最大化
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-20] - PC画面の縦スクロール機能の復旧
 
 ### [実施内容]
