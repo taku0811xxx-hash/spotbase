@@ -15,11 +15,11 @@ export default function HeaderNav({ profile, onLogout }: Props) {
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative z-50 flex flex-row items-center justify-between px-2 sm:px-5 py-2 sm:py-2.5 bg-gray-900 text-white overflow-x-auto">
+    <div className="relative z-50 flex flex-row items-center justify-between px-1.5 sm:px-5 py-1.5 sm:py-2.5 bg-gray-900 text-white overflow-x-auto">
       <Link href="/" className="flex-shrink-0">
         <Logo className="text-white" />
       </Link>
-      <div className="flex flex-row items-center gap-0.5 sm:gap-2 flex-shrink-0">
+      <div className="flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0">
         {profile && (
           <div className="hidden sm:block text-right text-xs text-gray-300 leading-tight mr-0.5">
             <p className="text-[10px] sm:text-xs">{profile.organizationName} / {profile.category}</p>
@@ -35,10 +35,10 @@ export default function HeaderNav({ profile, onLogout }: Props) {
           <div className="relative z-50" ref={adminMenuRef}>
             <button
               onClick={() => setAdminMenuOpen(!adminMenuOpen)}
-              className="text-white text-[10px] sm:text-xs font-medium rounded-lg px-1.5 sm:px-2.5 py-1 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 flex items-center gap-0.5 sm:gap-1 whitespace-nowrap flex-shrink-0"
+              className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 flex items-center gap-0.5 whitespace-nowrap flex-shrink-0"
             >
-              ⚙️ <span className="hidden sm:inline">管理</span>
-              <span className={`text-[10px] transition-transform ${adminMenuOpen ? "rotate-180" : ""}`}>
+              ⚙️ <span>管理</span>
+              <span className={`text-[9px] transition-transform ${adminMenuOpen ? "rotate-180" : ""}`}>
                 ▼
               </span>
             </button>
@@ -75,32 +75,31 @@ export default function HeaderNav({ profile, onLogout }: Props) {
         {/* 出動記録関連 */}
         <Link
           href="/dispatch"
-          className="text-white text-[10px] sm:text-xs font-medium rounded-lg px-1.5 sm:px-2.5 py-1 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
         >
-          📋 <span className="hidden sm:inline">出動記録一覧</span>
+          📋 <span>記録一覧</span>
         </Link>
 
         <Link
           href="/dispatch/import"
-          className="text-white text-[10px] sm:text-xs font-medium rounded-lg px-1.5 sm:px-2.5 py-1 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
         >
-          📄 <span className="hidden sm:inline">報告書</span>
+          📄 <span>報告書</span>
         </Link>
 
         <Link
           href="/dispatch/new"
-          className="text-white text-[10px] sm:text-xs font-medium rounded-lg px-1.5 sm:px-2.5 py-1 sm:py-1.5 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
         >
-          + <span className="hidden sm:inline">新規出動</span>
+          + <span>出動</span>
         </Link>
 
         {/* ログアウト */}
         <button
           onClick={onLogout}
-          className="text-gray-300 text-[10px] sm:text-xs rounded-lg px-1.5 sm:px-2.5 py-1 sm:py-1.5 hover:bg-gray-800 hover:text-white transition-all duration-150 whitespace-nowrap flex-shrink-0"
+          className="text-gray-300 text-[9px] sm:text-xs rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 hover:bg-gray-800 hover:text-white transition-all duration-150 whitespace-nowrap flex-shrink-0"
         >
-          <span className="hidden sm:inline">ログアウト</span>
-          <span className="sm:hidden">🚪</span>
+          ログアウト
         </button>
       </div>
     </div>

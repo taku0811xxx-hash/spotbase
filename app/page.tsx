@@ -17,6 +17,7 @@ import SearchLocationPanel from "@/components/SearchLocationPanel";
 import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
 import IncidentAlert from "@/components/IncidentAlert";
+import BottomSheet from "@/components/BottomSheet";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -245,51 +246,109 @@ export default function Home() {
           <IncidentAlert incidents={incidents} />
         )}
 
-        <div className="flex-1 flex flex-col lg:flex-row gap-4 sm:gap-6 overflow-hidden">
-          {selectedPin ? (
-            <PinSidePanel
-              pin={selectedPin}
-              onClose={handleCloseSidePanel}
-              onDeleted={handlePinDeleted}
-              roadSuggestions={roadSuggestions}
-              loadingRoads={loadingRoads}
-              stopSuggestions={stopSuggestions}
-              loadingStops={loadingStops}
-              onHoverRoad={setHoveredRoadKey}
-            />
-          ) : searchMarker ? (
-            <SearchLocationPanel
-              label={searchMarker.label}
-              address={searchMarker.address}
-              lat={searchMarker.lat}
-              lng={searchMarker.lng}
-              onClose={handleCloseSidePanel}
-              roadSuggestions={roadSuggestions}
-              loadingRoads={loadingRoads}
-              stopSuggestions={stopSuggestions}
-              loadingStops={loadingStops}
-              onHoverRoad={setHoveredRoadKey}
-            />
-          ) : (
-            <aside className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48 lg:min-h-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-10">
-                <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  📍 現場一覧
+        {/* レイアウト: モバイル時は flex-row で 1/4 と 3/4 の分割、デスクトップ時も flex-row を継続 */}
+        <div className="flex-1 flex flex-row gap-2 sm:gap-4 lg:gap-6 overflow-hidden">
+          {/* サイドパネル: デスクトップのみ表示、モバイルはボトムシート */}
+          {selectedPin && (
+            <>
+              {/* Desktop side panel */}
+              <div className="hidden md:flex flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
+                <div className="w-full">
+                  <PinSidePanel
+                    pin={selectedPin}
+                    onClose={handleCloseSidePanel}
+                    onDeleted={handlePinDeleted}
+                    roadSuggestions={roadSuggestions}
+                    loadingRoads={loadingRoads}
+                    stopSuggestions={stopSuggestions}
+                    loadingStops={loadingStops}
+                    onHoverRoad={setHoveredRoadKey}
+                  />
+                </div>
+              </div>
+
+              {/* Mobile bottom sheet */}
+              <BottomSheet
+                isOpen={selectedPin !== null}
+                onClose={handleCloseSidePanel}
+                title={selectedPin.name}
+              >
+                <PinSidePanel
+                  pin={selectedPin}
+                  onClose={handleCloseSidePanel}
+                  onDeleted={handlePinDeleted}
+                  roadSuggestions={roadSuggestions}
+                  loadingRoads={loadingRoads}
+                  stopSuggestions={stopSuggestions}
+                  loadingStops={loadingStops}
+                  onHoverRoad={setHoveredRoadKey}
+                />
+              </BottomSheet>
+            </>
+          )}
+
+          {searchMarker && !selectedPin && (
+            <>
+              {/* Desktop side panel */}
+              <div className="hidden md:flex flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
+                <div className="w-full">
+                  <SearchLocationPanel
+                    label={searchMarker.label}
+                    address={searchMarker.address}
+                    lat={searchMarker.lat}
+                    lng={searchMarker.lng}
+                    onClose={handleCloseSidePanel}
+                    roadSuggestions={roadSuggestions}
+                    loadingRoads={loadingRoads}
+                    stopSuggestions={stopSuggestions}
+                    loadingStops={loadingStops}
+                    onHoverRoad={setHoveredRoadKey}
+                  />
+                </div>
+              </div>
+
+              {/* Mobile bottom sheet */}
+              <BottomSheet
+                isOpen={searchMarker !== null}
+                onClose={handleCloseSidePanel}
+                title={searchMarker.label}
+              >
+                <SearchLocationPanel
+                  label={searchMarker.label}
+                  address={searchMarker.address}
+                  lat={searchMarker.lat}
+                  lng={searchMarker.lng}
+                  onClose={handleCloseSidePanel}
+                  roadSuggestions={roadSuggestions}
+                  loadingRoads={loadingRoads}
+                  stopSuggestions={stopSuggestions}
+                  loadingStops={loadingStops}
+                  onHoverRoad={setHoveredRoadKey}
+                />
+              </BottomSheet>
+            </>
+          )}
+
+          {!selectedPin && !searchMarker && (
+            <aside className="w-1/4 md:flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-3 md:px-4 py-2 md:py-3 z-10">
+                <h2 className="text-[11px] md:text-sm font-semibold text-gray-900 flex items-center gap-1 md:gap-2 truncate">
+                  📍 <span className="truncate">現場一覧</span>
                 </h2>
               </div>
-              {loading && <p className="p-3 text-sm text-gray-500">読み込み中...</p>}
+              {loading && <p className="p-2 md:p-3 text-[11px] md:text-sm text-gray-500">読み込み中...</p>}
               {!loading && filtered.length === 0 && (
-                <p className="p-3 text-sm text-gray-500">該当する現場がありません</p>
+                <p className="p-2 md:p-3 text-[11px] md:text-sm text-gray-500">該当する現場がありません</p>
               )}
               <ul>
                 {filtered.map((pin) => (
                   <li key={pin.id} className="border-b border-gray-100 last:border-0">
                     <button
                       onClick={() => handleSelectPin(pin)}
-                      className="w-full text-left p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                      className="w-full text-left p-2 md:p-3 hover:bg-gray-50 rounded-lg transition-colors text-[11px] md:text-sm"
                     >
-                      <p className="font-medium text-gray-900">{pin.name}</p>
-                      <p className="text-xs text-gray-500">{pin.address}</p>
+                      <p className="font-medium text-gray-900 truncate">{pin.name}</p>
+                      <p className="text-[10px] md:text-xs text-gray-500 truncate">{pin.address}</p>
                     </button>
                   </li>
                 ))}
@@ -297,7 +356,7 @@ export default function Home() {
             </aside>
           )}
 
-          <main className="aspect-square h-full flex-shrink-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-48 lg:min-h-auto">
+          <main className="flex-1 rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-48">
             <Map
               pins={filtered}
               flyTo={flyTo}
