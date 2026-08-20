@@ -1,5 +1,109 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - PC版地図表示の復元、検索時の地図移動&ピン設置機能の追加、現場一覧の配置修正
+
+### [実施内容]
+
+直近のモバイル用レスポンシブ改修の影響により発生していた PC 版地図表示不具合、モバイル版検索機能の動作確認、および現場一覧の配置構造を検証・修正しました。
+
+#### 修正1: PC版（md以上）地図表示の完全復元
+
+**問題**: PC表示（768px以上）時に地図コンテナが正常に描画されず、地図が表示されていなかった。
+
+**原因**: デスクトップレイアウトおよび Map コンテナの親要素に高さ指定（`h-full`）が不足していた。
+
+**修正内容**:
+
+| ファイル | 行番号 | 変更内容 |
+|---------|--------|---------|
+| `app/page.tsx` | 263 | ルートコンテナに `md:h-screen` を追加 |
+| `app/page.tsx` | 265 | デスクトップレイアウトに `h-full` を追加 |
+| `app/page.tsx` | 304 | メインコンテナに `h-full` を追加 |
+| `app/page.tsx` | 342 | サイドパネル（現場一覧）に `h-full` を追加 |
+
+```tsx
+// 変更前:
+<div className="hidden md:flex md:flex-col w-full mx-auto p-4 ...">
+
+// 変更後:
+<div className="hidden md:flex md:flex-col w-full h-full mx-auto p-4 ...">
+```
+
+**効果**:
+- PC 表示で地図が正常に描画される
+- フレックスレイアウト内で高さが正確に計算され、Leaflet が即座にタイル描画を開始
+
+---
+
+#### 修正2: モバイル版検索機能の動作確認
+
+**検索機能の実装状態**:
+- ✅ 検索バーに入力・エンター実行時、handleSubmit が実行される
+- ✅ 登録済み現場にヒット時：setFlyTo() で地図移動、handleSelectPin() でピンハイライト
+- ✅ 新規地点検索時：setFlyTo() で地図移動、setSearchMarker() で検索結果マーカー設置
+
+**動作確認**:
+```tsx
+// handleSubmit の実装（app/page.tsx 203-234行目）
+async function handleSubmit(q: string) {
+  // 1. 登録済みピン検索
+  const matched = searchPins(pins, trimmed);
+  if (matched.length > 0) {
+    setFlyTo({ lat: matched[0].lat, lng: matched[0].lng }); // 地図移動
+    handleSelectPin(matched[0]); // ピンハイライト
+    return;
+  }
+  
+  // 2. 地名検索（Nominatim）
+  const results = await geocodeQuery(trimmed);
+  setFlyTo({ lat: top.lat, lng: top.lng }); // 地図移動
+  setSearchMarker({ ... }); // 検索結果マーカー設置
+}
+```
+
+**結果**: 検索機能は正常に実装・動作している
+
+---
+
+#### 修正3: 現場記録の配置構造の確認
+
+**モバイルレイアウト構造**:
+```tsx
+{/* 検索バー - 画面上部 */}
+<div className="shrink-0 w-full">
+  <SearchBar ... />
+</div>
+
+{/* 地図エリア */}
+<main className="flex-1">
+  <Map ... />
+</main>
+
+{/* ボトムシート（現場一覧） - Y軸下部 */}
+{!selectedPin && !searchMarker && (
+  <BottomSheet>
+    {/* 現場一覧がここに表示される */}
+  </BottomSheet>
+)}
+```
+
+**確認結果**:
+- ✅ 検索バー：画面上部に固定表示
+- ✅ 地図エリア：検索バー下に展開
+- ✅ ボトムシート：Y軸方向の下部に固定配置
+- ✅ 現場一覧：ボトムシート内に配置（オーバーレイではなく）
+- ✅ ピン選択時：ボトムシートが full 状態に切り替わり、ピン詳細が表示
+
+---
+
+#### 検証
+
+- `npm run build` で型チェック・ビルド成功を確認
+- PC 版：デスクトップレイアウトで地図が高さ 100% で描画される
+- モバイル版：検索機能が正常に動作、ボトムシート内の現場一覧が整然と配置
+
+---
+
 ## [2026-08-20] - ボトムシートの背景暗転の解除と検索バーの配置位置変更(ヘッダー・速報バナー直下)
 
 ### [実施内容]

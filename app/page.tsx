@@ -260,9 +260,9 @@ export default function Home() {
   }
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto md:overflow-x-auto">
+    <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:min-h-screen md:h-screen">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
-      <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
+      <div className="hidden md:flex md:flex-col w-full h-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
         <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
@@ -301,7 +301,7 @@ export default function Home() {
         )}
 
         {/* Desktop Layout */}
-        <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 min-h-[600px] sm:min-h-[650px]">
+        <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 h-full min-h-[600px] sm:min-h-[650px]">
           {selectedPin && (
             <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
               <div className="w-full">
@@ -339,7 +339,7 @@ export default function Home() {
           )}
 
           {!selectedPin && !searchMarker && (
-            <aside className="w-1/4 md:w-72 overflow-y-auto bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm min-h-[600px] sm:min-h-[650px] flex-shrink-0">
+            <aside className="w-1/4 md:w-72 h-full overflow-y-auto bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm min-h-[600px] sm:min-h-[650px] flex-shrink-0">
               <div className="sticky top-0 bg-white border-b border-gray-100 px-2 md:px-3 py-2 md:py-2.5 z-10">
                 <h2 className="text-[10px] md:text-xs font-semibold text-gray-900 flex items-center gap-1 truncate">
                   📍 <span className="truncate">現場一覧</span>
