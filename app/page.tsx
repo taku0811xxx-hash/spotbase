@@ -44,6 +44,8 @@ export default function Home() {
   const [hoveredRoadKey, setHoveredRoadKey] = useState<string | null>(null);
 
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [activeDispatchCount, setActiveDispatchCount] = useState(0);
+  const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
   useEffect(() => {
     if (authLoading) return;
@@ -105,8 +107,14 @@ export default function Home() {
           incidentsData = generateTestIncidents(profile.organizationId);
         }
 
+        // Calculate active dispatch count
+        const activeCount = dispatchRecords.filter(
+          (r) => r.status && r.status !== "完了"
+        ).length;
+
         setPins(pinsData);
         setIncidents(incidentsData);
+        setActiveDispatchCount(activeCount);
       })
       .catch((error) => {
         console.error("Unexpected error loading data:", error);
@@ -240,12 +248,14 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col bg-gray-100 min-h-screen">
-      <div className="flex flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
+    <div className="flex flex-col bg-gray-100 min-h-screen md:min-h-screen">
+      {/* ========== DESKTOP LAYOUT (md+) ========== */}
+      <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3 flex-1">
         <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
+            activeDispatchCount={activeDispatchCount}
           />
           <div className="border-t border-gray-100 relative z-40">
             <SearchBar
@@ -266,7 +276,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 速報アラートパネル (コンパクトな横一行バナー) */}
+        {/* 速報アラートパネル */}
         {incidents.length > 0 && (
           <IncidentAlert
             incidents={incidents}
@@ -278,33 +288,11 @@ export default function Home() {
           />
         )}
 
-        {/* レイアウト: モバイル時は flex-row で 1/4 と 3/4 の分割、デスクトップ時も flex-row を継続 */}
+        {/* Desktop Layout */}
         <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 min-h-[600px] sm:min-h-[650px]">
-          {/* サイドパネル: デスクトップのみ表示、モバイルはボトムシート */}
           {selectedPin && (
-            <>
-              {/* Desktop side panel */}
-              <div className="hidden md:flex flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
-                <div className="w-full">
-                  <PinSidePanel
-                    pin={selectedPin}
-                    onClose={handleCloseSidePanel}
-                    onDeleted={handlePinDeleted}
-                    roadSuggestions={roadSuggestions}
-                    loadingRoads={loadingRoads}
-                    stopSuggestions={stopSuggestions}
-                    loadingStops={loadingStops}
-                    onHoverRoad={setHoveredRoadKey}
-                  />
-                </div>
-              </div>
-
-              {/* Mobile bottom sheet */}
-              <BottomSheet
-                isOpen={selectedPin !== null}
-                onClose={handleCloseSidePanel}
-                title={selectedPin.name}
-              >
+            <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
+              <div className="w-full">
                 <PinSidePanel
                   pin={selectedPin}
                   onClose={handleCloseSidePanel}
@@ -315,36 +303,13 @@ export default function Home() {
                   loadingStops={loadingStops}
                   onHoverRoad={setHoveredRoadKey}
                 />
-              </BottomSheet>
-            </>
+              </div>
+            </div>
           )}
 
           {searchMarker && !selectedPin && (
-            <>
-              {/* Desktop side panel */}
-              <div className="hidden md:flex flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
-                <div className="w-full">
-                  <SearchLocationPanel
-                    label={searchMarker.label}
-                    address={searchMarker.address}
-                    lat={searchMarker.lat}
-                    lng={searchMarker.lng}
-                    onClose={handleCloseSidePanel}
-                    roadSuggestions={roadSuggestions}
-                    loadingRoads={loadingRoads}
-                    stopSuggestions={stopSuggestions}
-                    loadingStops={loadingStops}
-                    onHoverRoad={setHoveredRoadKey}
-                  />
-                </div>
-              </div>
-
-              {/* Mobile bottom sheet */}
-              <BottomSheet
-                isOpen={searchMarker !== null}
-                onClose={handleCloseSidePanel}
-                title={searchMarker.label}
-              >
+            <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
+              <div className="w-full">
                 <SearchLocationPanel
                   label={searchMarker.label}
                   address={searchMarker.address}
@@ -357,8 +322,8 @@ export default function Home() {
                   loadingStops={loadingStops}
                   onHoverRoad={setHoveredRoadKey}
                 />
-              </BottomSheet>
-            </>
+              </div>
+            </div>
           )}
 
           {!selectedPin && !searchMarker && (
@@ -409,6 +374,151 @@ export default function Home() {
               incidents={incidents}
             />
           </main>
+        </div>
+      </div>
+
+      {/* ========== MOBILE LAYOUT (<md) ========== */}
+      <div className="md:hidden flex flex-col w-full h-screen">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 flex-shrink-0">
+          <HeaderNav
+            profile={profile}
+            onLogout={handleLogout}
+            activeDispatchCount={activeDispatchCount}
+          />
+        </div>
+
+        {/* Full-screen Map Container */}
+        <div className="flex-1 relative overflow-hidden">
+          {/* Floating Incident Banner */}
+          {incidents.length > 0 && (
+            <div className="absolute top-2 left-2 right-2 z-[900]">
+              <IncidentAlert
+                incidents={incidents}
+                onMapNavigate={(lat, lng) => {
+                  setFlyTo({ lat, lng });
+                  setSearchMarker(null);
+                  setSelectedPin(null);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Map */}
+          <Map
+            pins={filtered}
+            flyTo={flyTo}
+            searchMarker={searchMarker}
+            onSelectPin={handleSelectPin}
+            roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
+            stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
+            hoveredRoadKey={hoveredRoadKey}
+            incidents={incidents}
+          />
+
+          {/* Mobile Bottom Sheet - Site List (peek/half/full states) */}
+          {!selectedPin && !searchMarker && (
+            <BottomSheet
+              isOpen={true}
+              onClose={() => {}}
+              isPeekable={true}
+              peekHeight={70}
+              onStateChange={(state) => {
+                // Handle state changes if needed
+              }}
+            >
+              {/* Search Bar in expanded state */}
+              <div className="mb-3">
+                <SearchBar
+                  onSearch={setQuery}
+                  onSubmit={handleSubmit}
+                  loading={geocoding}
+                  onClear={() => {
+                    setSearchMarker(null);
+                    setSelectedPin(null);
+                    setRoadSuggestions([]);
+                    setStopSuggestions([]);
+                    setGeocodeError("");
+                  }}
+                />
+              </div>
+
+              {/* Site List */}
+              <div className="mb-2">
+                <h3 className="text-xs font-semibold text-gray-900 mb-2 px-2">📍 現場一覧</h3>
+                {loading && <p className="text-[10px] text-gray-500 px-2">読み込み中...</p>}
+                {!loading && filtered.length === 0 && (
+                  <p className="text-[10px] text-gray-500 px-2">該当する現場がありません</p>
+                )}
+                <ul className="space-y-1">
+                  {filtered.map((pin) => (
+                    <li key={pin.id}>
+                      <button
+                        onClick={() => handleSelectPin(pin)}
+                        className="w-full text-left px-2 py-2 hover:bg-gray-100 rounded transition-colors text-[12px]"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{pin.name}</p>
+                            <p className="text-[11px] text-gray-500 truncate">{pin.address}</p>
+                          </div>
+                          {pin.dispatchCount && pin.dispatchCount > 0 && (
+                            <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
+                              {pin.dispatchCount}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </BottomSheet>
+          )}
+
+          {/* Mobile Bottom Sheet - Pin Details */}
+          {selectedPin && (
+            <BottomSheet
+              isOpen={selectedPin !== null}
+              onClose={handleCloseSidePanel}
+              title={selectedPin.name}
+              isPeekable={false}
+            >
+              <PinSidePanel
+                pin={selectedPin}
+                onClose={handleCloseSidePanel}
+                onDeleted={handlePinDeleted}
+                roadSuggestions={roadSuggestions}
+                loadingRoads={loadingRoads}
+                stopSuggestions={stopSuggestions}
+                loadingStops={loadingStops}
+                onHoverRoad={setHoveredRoadKey}
+              />
+            </BottomSheet>
+          )}
+
+          {/* Mobile Bottom Sheet - Search Location Details */}
+          {searchMarker && !selectedPin && (
+            <BottomSheet
+              isOpen={searchMarker !== null}
+              onClose={handleCloseSidePanel}
+              title={searchMarker.label}
+              isPeekable={false}
+            >
+              <SearchLocationPanel
+                label={searchMarker.label}
+                address={searchMarker.address}
+                lat={searchMarker.lat}
+                lng={searchMarker.lng}
+                onClose={handleCloseSidePanel}
+                roadSuggestions={roadSuggestions}
+                loadingRoads={loadingRoads}
+                stopSuggestions={stopSuggestions}
+                loadingStops={loadingStops}
+                onHoverRoad={setHoveredRoadKey}
+              />
+            </BottomSheet>
+          )}
         </div>
       </div>
     </div>

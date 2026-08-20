@@ -3,14 +3,16 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
+import MobileMenu from "./MobileMenu";
 import type { UserProfile } from "@/lib/userProfile";
 
 interface Props {
   profile: UserProfile | null;
   onLogout: () => void;
+  activeDispatchCount?: number;
 }
 
-export default function HeaderNav({ profile, onLogout }: Props) {
+export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0 }: Props) {
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
@@ -19,9 +21,21 @@ export default function HeaderNav({ profile, onLogout }: Props) {
       <Link href="/" className="flex-shrink-0">
         <Logo className="text-white" />
       </Link>
-      <div className="flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0 relative">
+
+      {/* Mobile Header: Status Badge + Hamburger */}
+      <div className="md:hidden flex items-center gap-2">
+        {activeDispatchCount > 0 && (
+          <span className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg font-medium">
+            🚨 出動中 {activeDispatchCount}件
+          </span>
+        )}
+        <MobileMenu profile={profile} onLogout={onLogout} />
+      </div>
+
+      {/* Desktop Header: Full Menu */}
+      <div className="hidden md:flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0 relative">
         {profile && (
-          <div className="hidden sm:block text-right text-xs text-gray-300 leading-tight mr-0.5">
+          <div className="text-right text-xs text-gray-300 leading-tight mr-0.5">
             <p className="text-[10px] sm:text-xs">{profile.organizationName} / {profile.category}</p>
             <p className="text-gray-400 text-[9px] sm:text-xs">
               {profile.name}
@@ -78,7 +92,7 @@ export default function HeaderNav({ profile, onLogout }: Props) {
           className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2 py-0.5 sm:py-1 bg-red-600 border border-red-700 hover:bg-red-700 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
           title="現在対応中の案件を管理"
         >
-          🚨 <span className="hidden sm:inline">出動中</span>
+          🚨 <span>出動中</span>
         </Link>
 
         <Link
