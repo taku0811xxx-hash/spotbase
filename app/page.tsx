@@ -187,14 +187,25 @@ export default function Home() {
             onLogout={handleLogout}
           />
           <div className="border-t border-gray-100 relative z-40">
-            <SearchBar onSearch={setQuery} onSubmit={handleSubmit} loading={geocoding} />
+            <SearchBar
+              onSearch={setQuery}
+              onSubmit={handleSubmit}
+              loading={geocoding}
+              onClear={() => {
+                setSearchMarker(null);
+                setSelectedPin(null);
+                setRoadSuggestions([]);
+                setStopSuggestions([]);
+                setGeocodeError("");
+              }}
+            />
             {geocodeError && (
               <p className="px-4 sm:px-5 pb-3 text-xs text-red-600">{geocodeError}</p>
             )}
           </div>
         </div>
 
-        <div className="flex-1 flex gap-4 sm:gap-6 overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row gap-4 sm:gap-6 overflow-hidden">
           {selectedPin ? (
             <PinSidePanel
               pin={selectedPin}
@@ -220,7 +231,7 @@ export default function Home() {
               onHoverRoad={setHoveredRoadKey}
             />
           ) : (
-            <aside className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm hidden sm:block">
+            <aside className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48 lg:min-h-auto">
               <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-10">
                 <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                   📍 現場一覧
@@ -246,7 +257,7 @@ export default function Home() {
             </aside>
           )}
 
-          <main className="aspect-square h-full flex-shrink-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+          <main className="aspect-square h-full flex-shrink-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-48 lg:min-h-auto">
             <Map
               pins={filtered}
               flyTo={flyTo}

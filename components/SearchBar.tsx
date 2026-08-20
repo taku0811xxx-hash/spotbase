@@ -6,14 +6,26 @@ type Props = {
   onSearch: (query: string) => void;
   onSubmit?: (query: string) => void;
   loading?: boolean;
+  onClear?: () => void;
 };
 
-export default function SearchBar({ onSearch, onSubmit, loading }: Props) {
+export default function SearchBar({ onSearch, onSubmit, loading, onClear }: Props) {
   const [value, setValue] = useState("");
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       onSubmit?.(value);
+    }
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const newValue = e.target.value;
+    setValue(newValue);
+    onSearch(newValue);
+
+    // 検索キーワードが完全に消された場合、リセット処理を実行
+    if (newValue === "") {
+      onClear?.();
     }
   }
 
@@ -35,10 +47,7 @@ export default function SearchBar({ onSearch, onSubmit, loading }: Props) {
         <input
           type="text"
           value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            onSearch(e.target.value);
-          }}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder="現場名・住所・地名で検索(Enterで場所を検索)"
           className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
