@@ -127,7 +127,7 @@ export default function Map({
     <MapContainer
       center={center}
       zoom={12}
-      scrollWheelZoom
+      scrollWheelZoom={false}
       className="h-full w-full"
     >
       <TileLayer

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
 import { generateTestIncidents } from "@/lib/incidentsTest";
+import { getDispatchRecords } from "@/lib/dispatchRecords";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { geocodeQuery } from "@/lib/geocode";
@@ -59,13 +60,37 @@ export default function Home() {
         isAdmin: profile.accessLevel === "admin",
       }),
       getHighUrgencyIncidents(profile.organizationId),
+      getDispatchRecords({
+        organizationId: profile.organizationId,
+        category: profile.category,
+        isAdmin: profile.accessLevel === "admin",
+      }),
     ])
       .then((results) => {
         const pinsResult = results[0];
         const incidentsResult = results[1];
+        const dispatchResult = results[2];
 
-        const pinsData =
+        let pinsData =
           pinsResult.status === "fulfilled" ? pinsResult.value : [];
+
+        // Calculate dispatch count for each pin
+        const dispatchRecords =
+          dispatchResult.status === "fulfilled" ? dispatchResult.value : [];
+
+        const dispatchCountByLocation: Record<string, number> = {};
+        dispatchRecords.forEach((record) => {
+          const key = `${record.locationName}`;
+          dispatchCountByLocation[key] = (dispatchCountByLocation[key] || 0) + 1;
+        });
+
+        // Sort pins by dispatch count (descending)
+        pinsData = pinsData
+          .map((pin) => ({
+            ...pin,
+            dispatchCount: dispatchCountByLocation[pin.name] || 0,
+          }))
+          .sort((a, b) => (b.dispatchCount || 0) - (a.dispatchCount || 0));
 
         let incidentsData: Incident[] = [];
         if (incidentsResult.status === "fulfilled") {
@@ -354,8 +379,17 @@ export default function Home() {
                       onClick={() => handleSelectPin(pin)}
                       className="w-full text-left p-2 hover:bg-gray-50 rounded-lg transition-colors text-[10px] md:text-xs"
                     >
-                      <p className="font-medium text-gray-900 truncate text-[10px] md:text-xs">{pin.name}</p>
-                      <p className="text-[9px] md:text-[10px] text-gray-500 truncate">{pin.address}</p>
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate text-[10px] md:text-xs">{pin.name}</p>
+                          <p className="text-[9px] md:text-[10px] text-gray-500 truncate">{pin.address}</p>
+                        </div>
+                        {pin.dispatchCount && pin.dispatchCount > 0 && (
+                          <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
+                            出動: {pin.dispatchCount}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   </li>
                 ))}

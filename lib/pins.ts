@@ -33,6 +33,7 @@ export type Pin = {
   category: string; // 分類(記者、カメラマンなど)
   recordedBy: string;
   recordedAt: Timestamp | null;
+  dispatchCount?: number; // 出動回数（フロントエンドで計算される）
 };
 
 const PINS_COLLECTION = "pins";
