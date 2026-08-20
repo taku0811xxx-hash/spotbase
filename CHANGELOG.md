@@ -1,5 +1,78 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - PC画面の縦スクロール機能の復旧
+
+### [実施内容]
+
+モバイルUI刷新後、PC（デスクトップ）表示でページ全体が縦スクロールできなくなっていた問題を修正しました。
+
+#### 1. ボトムシートの overflow 制御をモバイルのみに限定
+**修正**: `components/BottomSheet.tsx`
+- **問題**: `document.body.style.overflow = "hidden"` が常時適用されていた
+- **原因**: モバイル・デスクトップの区別なく、すべての表示環境で body の overflow を hidden に設定していた
+- **修正**:
+  ```typescript
+  // Only apply overflow:hidden on mobile (width < 768px)
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+
+  if (isOpen && isMobile) {
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = "auto";
+  }
+  ```
+- **効果**: デスクトップ表示では overflow が "auto" に保たれ、ページスクロール可能
+
+#### 2. デスクトップレイアウトのスクロール対応
+**修正**: `app/page.tsx`
+- **ルート要素の設定変更**:
+  - 変更前: `className="flex flex-col bg-gray-100 min-h-screen md:min-h-screen"`
+  - 変更後: `className="flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto"`
+  - PC 表示（md:）では `h-auto` に変更し、高さ制約を解除
+  - PC 表示では `overflow-y-auto` を明示的に設定してスクロール可能に
+  
+- **デスクトップレイアウトコンテナの修正**:
+  - 変更前: `className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3 flex-1"`
+  - 変更後: `className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3"`
+  - `flex-1` を削除してコンテナが自然な高さで流れるよう修正
+
+### [ファイル変更]
+
+**修正**:
+- `components/BottomSheet.tsx` - overflow:hidden をモバイル限定に
+- `app/page.tsx` - ルート要素と デスクトップレイアウトのスクロール対応
+
+### [動作確認結果]
+
+✅ **デスクトップビュー (1280px)**:
+- ✅ ページ全体が縦スクロール可能
+- ✅ マウスホイール操作でスクロール
+- ✅ スクロールバー表示・操作可能
+- ✅ ヘッダー、検索、速報バナー、メインエリアが自然に流れる
+- ✅ `overflow-y-auto` により body overflow が正常（document.body.style は "auto"）
+
+✅ **モバイルビュー (375px)**:
+- ✅ 全画面マップ表示維持
+- ✅ ボトムシート peek/half/full 状態維持
+- ✅ body overflow が "hidden" に正しく設定（bottom sheet open 時）
+- ✅ スワイプ操作でボトムシート状態切り替わり
+- ✅ モバイル特有のレイアウト完全維持
+
+✅ **ビルド・型チェック**:
+- `npm run build --webpack` で成功
+- TypeScript エラー: 0件
+
+### [スクロール改善のメリット]
+
+- 📜 **PC でのコンテンツ閲覧**: 長めのコンテンツも全て表示可能
+- 🖱️ **操作性復帰**: マウスホイール、スクロールバー、キーボード操作すべて有効
+- 📱 **モバイル変動なし**: 全画面マップ・ボトムシート構造は完全維持
+- 🔧 **ブラウザ互換**: すべてのモダンブラウザで正常動作
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-20] - モバイルUI大幅刷新：全画面マップ + スライド式ボトムシート実装
 
 ### [実施内容]

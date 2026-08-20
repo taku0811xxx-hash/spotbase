@@ -248,9 +248,9 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col bg-gray-100 min-h-screen md:min-h-screen">
+    <div className="flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
-      <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3 flex-1">
+      <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
         <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}

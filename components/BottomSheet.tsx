@@ -29,7 +29,10 @@ export default function BottomSheet({
   const [startY, setStartY] = useState(0);
 
   useEffect(() => {
-    if (isOpen) {
+    // Only apply overflow:hidden on mobile (width < 768px)
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+
+    if (isOpen && isMobile) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "auto";
