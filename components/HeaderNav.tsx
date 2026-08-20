@@ -3,16 +3,16 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
-import MobileMenu from "./MobileMenu";
 import type { UserProfile } from "@/lib/userProfile";
 
 interface Props {
   profile: UserProfile | null;
   onLogout: () => void;
   activeDispatchCount?: number;
+  onToggleMenu?: () => void;
 }
 
-export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0 }: Props) {
+export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0, onToggleMenu }: Props) {
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +29,17 @@ export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0 }
             🚨 {activeDispatchCount}件
           </span>
         )}
-        <MobileMenu profile={profile} onLogout={onLogout} />
+        {/* Hamburger Button - Menu Portal でレンダリングされるメニューを開く */}
+        <button
+          onClick={onToggleMenu}
+          className="md:hidden relative z-50 flex flex-col gap-1 p-1 -mr-1"
+          title="メニュー"
+          aria-label="メニューを開く"
+        >
+          <span className="w-6 h-0.5 bg-white transition-all duration-300" />
+          <span className="w-6 h-0.5 bg-white transition-all duration-300" />
+          <span className="w-6 h-0.5 bg-white transition-all duration-300" />
+        </button>
       </div>
 
       {/* Desktop Header: Full Menu */}

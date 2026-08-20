@@ -1,5 +1,184 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - ハンバーガーメニューのReact Portal化によるZ軸埋没解消とタッチイベント遮断の修正
+
+### [実施内容]
+
+スマートフォン（画面幅 768px 未満）における**ハンバーガーメニュー埋没**「タッチ・スクロール不能」「ハイドレーション崩れ」の根本原因を調査し、以下の根本的な修正を実装しました:
+
+#### 1. ハンバーガーメニュー埋没の根本解決（スタッキングコンテキスト解放）
+
+**原因**: メニューコンポーネントが HeaderNav（ヘッダー内）にネストされており、親要素のスタッキングコンテキスト（z-index: 50, position: relative など）に閉じ込められていました。
+
+**解決策**: React Portal を使用してメニューを document.body 直下にレンダリング
+
+**修正内容**:
+
+**新規コンポーネント `components/MobileMenuPortal.tsx`**:
+```tsx
+// React Portal で document.body 直下にレンダリング
+return createPortal(
+  <メニューコンテンツ />,
+  document.body
+);
+```
+
+**修正点**:
+1. MobileMenuPortal コンポーネントを新規作成
+2. ハイドレーション対応として `mounted` フラグを useEffect で管理
+3. createPortal で document.body に直下に配置
+4. Backdrop: `z-[99998]`, Menu Panel: `z-[99999]`（最前面）
+
+**スタッキングコンテキスト解放**:
+```
+修正前（埋没していた状態）:
+┌─ body
+  └─ app/page.tsx
+     └─ <header> (z-50, position: relative)
+        ├─ HeaderNav
+        │  └─ MobileMenu ← スタッキングコンテキスト内に閉じ込められている
+
+修正後（Portal で解放）:
+┌─ body
+  ├─ <html> 通常フロー
+  │  └─ app/page.tsx
+  │     └─ <header> (z-50)
+  │        ├─ HeaderNav
+  │        │  └─ ハンバーガーボタンのみ
+  │        └─ MobileMenuPortal（空）
+  │
+  └─ MobileMenuPortal（React Portal → document.body 直下） ← 親のスタッキング制約から解放！
+     ├─ Backdrop (z-[99998])
+     └─ Menu Panel (z-[99999]) ← 最前面で表示可能
+```
+
+#### 2. HeaderNav の責任分割
+
+**修正対象**: `components/HeaderNav.tsx`, `app/page.tsx`
+
+**修正内容**:
+- MobileMenu のインポートを削除
+- ハンバーガーボタンのみを HeaderNav で直接実装
+- `onToggleMenu` コールバック props を追加
+- app/page.tsx で menu 状態を管理
+
+```tsx
+// HeaderNav - ボタンのみ
+<button onClick={onToggleMenu} className="...">
+  {/* ハンバーガーアイコン */}
+</button>
+
+// app/page.tsx - Portal でメニューコンテンツ管理
+<MobileMenuPortal
+  isOpen={menuOpen}
+  onClose={() => setMenuOpen(false)}
+  profile={profile}
+  onLogout={handleLogout}
+/>
+```
+
+**効果**:
+✅ メニュー本体が HeaderNav の影響を受けない
+✅ ボタンはヘッダーに留置（常に操作可能）
+✅ Portal でメニューが document.body 直下に配置
+
+#### 3. ハイドレーション・表示崩れの防止
+
+**修正対象**: `components/MobileMenuPortal.tsx`, `app/page.tsx`
+
+**問題**: SSR 時と クライアント側のレンダリング結果が異なり、hydration error やチラつきが発生していました。
+
+**修正内容**:
+
+**MobileMenuPortal での mounted フラグ**:
+```tsx
+const [mounted, setMounted] = useState(false);
+useEffect(() => {
+  setMounted(true);
+}, []);
+
+if (!mounted) {
+  return null;  // SSR 時は何もレンダリングしない
+}
+
+return createPortal(...);  // クライアント側のみ Portal を使用
+```
+
+**app/page.tsx での mounted フラグ**:
+```tsx
+const [mounted, setMounted] = useState(false);
+useEffect(() => {
+  setMounted(true);
+}, []);
+
+useEffect(() => {
+  if (!mounted) return;  // hydration 完了後に実行
+  
+  const handleResize = () => {
+    setIsMobile(window.innerWidth < 768);
+  };
+  // ...
+}, [mounted]);
+```
+
+**効果**:
+✅ SSR 時に Portal コンポーネントは null を返す
+✅ クライアント hydration 完了後に Portal でレンダリング
+✅ hydration mismatch エラー完全排除
+✅ isMobile のちらつき排除
+
+#### 4. pointer-events の最適化（既に実装済み確認）
+
+**確認内容**:
+- BottomSheet 外側: `pointer-events-none`（イベント透過）
+- BottomSheet 内側: `pointer-events-auto`（操作可能）
+- Backdrop: `pointer-events-auto`（クリックで閉じられる）
+- Map: `pointer-events-auto`（タッチ操作可能）
+
+**結果**: タッチイベント遮断の問題なし
+
+---
+
+### [技術的詳細：Portal による解放のメカニズム]
+
+**スタッキングコンテキスト形成の条件**:
+- `position` が `static` 以外かつ `z-index` が `auto` 以外
+- `opacity` が 1 未満
+- `transform`, `filter`, `will-change` など特定の CSS プロパティ
+- `isolation: isolate`
+
+**Portal の利点**:
+- createPortal で指定した DOM ツリーに移動
+- 親要素のスタッキングコンテキスト制約から完全に解放
+- ボタンはヘッダーに留置可能（Portal は内容のみ移動）
+
+---
+
+### [動作確認結果]
+
+✅ **モバイル表示（375x812）での確認**:
+- ハンバーガーボタン: ヘッダーに表示
+- ボタンクリック: メニューが document.body 直下から z-[99999] で表示
+- メニューコンテンツ: 地図の完全に上に表示（埋没なし）
+- メニューリンク: 全てタップ可能
+- メニュー閉じる: Backdrop クリック / × ボタン で動作
+- ボトムシート: 地図の上に正常表示
+- タッチ操作: 正常に機能
+- hydration: エラーなし、ちらつきなし
+- ビルド: エラーなし（npm run build 成功）
+
+---
+
+### [関連修正ファイル]
+
+- `components/MobileMenuPortal.tsx`: 新規作成（React Portal メニュー）
+- `components/HeaderNav.tsx`: ボタンのみに責任縮小
+- `app/page.tsx`: menu 状態管理、mounted フラグ追加
+- `components/MobileMenu.tsx`: 変更なし（既に実装済み）
+- `components/BottomSheet.tsx`: 変更なし（pointer-events 正しく設定）
+
+---
+
 ## [2026-08-20] - モバイル版のハンバーガーメニュー(Z軸)および現場一覧ボトムシート(Y軸/Z軸)の配置修正
 
 ### [実施内容]

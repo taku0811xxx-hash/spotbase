@@ -19,6 +19,7 @@ import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
 import IncidentAlert from "@/components/IncidentAlert";
 import BottomSheet from "@/components/BottomSheet";
+import MobileMenuPortal from "@/components/MobileMenuPortal";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -47,16 +48,28 @@ export default function Home() {
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
+  // メニュー開閉状態管理
+  const [menuOpen, setMenuOpen] = useState(false);
+
   // Track viewport width to conditionally render layouts
   const [isMobile, setIsMobile] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    // ハイドレーション完了を示す
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
     };
     handleResize(); // Set initial value
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -396,6 +409,7 @@ export default function Home() {
             profile={profile}
             onLogout={handleLogout}
             activeDispatchCount={activeDispatchCount}
+            onToggleMenu={() => setMenuOpen(!menuOpen)}
           />
         </header>
 
@@ -534,6 +548,16 @@ export default function Home() {
           </BottomSheet>
         )}
       </div>
+
+      {/* Mobile Menu Portal - document.body 直下にレンダリング */}
+      {mounted && (
+        <MobileMenuPortal
+          isOpen={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          profile={profile}
+          onLogout={handleLogout}
+        />
+      )}
     </div>
   );
 }
