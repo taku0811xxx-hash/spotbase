@@ -30,37 +30,39 @@ export default function IncidentAlert({ incidents, onMapNavigate }: Props) {
     }
   };
 
+  // 最初の数件のみ表示（スペース節約）
+  const displayIncidents = incidents.slice(0, 3);
+
   return (
     <>
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 sm:p-4">
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Header */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-lg sm:text-2xl animate-pulse">🚨</span>
-            <span className="font-bold text-gray-900 text-sm sm:text-base whitespace-nowrap">
-              もしかして今起きてる？
-            </span>
-          </div>
-
-          {/* Event Chips */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {incidents.map((incident) => (
-              <button
-                key={incident.id}
-                onClick={() => setSelectedIncident(incident)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-300 text-red-700 rounded-lg hover:bg-red-100 hover:border-red-400 transition-colors active:scale-[0.95] text-xs sm:text-sm font-medium whitespace-nowrap"
-              >
-                <span>[{incident.category}]</span>
-                <span className="truncate max-w-[200px]">{incident.title}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Count Badge */}
-          <span className="text-xs sm:text-sm text-gray-500 ml-auto flex-shrink-0">
-            ({incidents.length}件)
+      {/* Slim Single-Line Banner */}
+      <div className="bg-gradient-to-r from-red-100 to-orange-100 border border-red-300 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 sm:gap-3 overflow-x-auto">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-lg sm:text-xl animate-pulse">🚨</span>
+          <span className="font-bold text-red-900 text-xs sm:text-sm whitespace-nowrap">
+            もしかして今起きてる？
           </span>
         </div>
+
+        {/* Event Chips (Scrollable on mobile) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 flex-1">
+          {displayIncidents.map((incident) => (
+            <button
+              key={incident.id}
+              onClick={() => setSelectedIncident(incident)}
+              className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors active:scale-[0.95] text-[10px] sm:text-xs font-medium whitespace-nowrap flex-shrink-0"
+            >
+              <span>[{incident.category}]</span>
+              <span className="hidden sm:inline truncate max-w-[150px]">{incident.title}</span>
+              <span className="sm:hidden truncate max-w-[80px]">{incident.title.slice(0, 5)}...</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Count Badge */}
+        <span className="text-[10px] sm:text-xs text-red-700 font-medium flex-shrink-0">
+          ({incidents.length}件)
+        </span>
       </div>
 
       {/* Modal */}

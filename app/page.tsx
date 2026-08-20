@@ -215,9 +215,9 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      <div className="flex flex-col flex-1 max-w-6xl w-full mx-auto p-6 sm:p-10 gap-4 sm:gap-6 overflow-hidden">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-shrink-0">
+    <div className="flex flex-col bg-gray-100 min-h-screen">
+      <div className="flex flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
+        <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
@@ -236,12 +236,12 @@ export default function Home() {
               }}
             />
             {geocodeError && (
-              <p className="px-4 sm:px-5 pb-3 text-xs text-red-600">{geocodeError}</p>
+              <p className="px-3 sm:px-4 pb-2 text-xs text-red-600">{geocodeError}</p>
             )}
           </div>
         </div>
 
-        {/* 速報アラートパネル */}
+        {/* 速報アラートパネル (コンパクトな横一行バナー) */}
         {incidents.length > 0 && (
           <IncidentAlert
             incidents={incidents}
@@ -254,7 +254,7 @@ export default function Home() {
         )}
 
         {/* レイアウト: モバイル時は flex-row で 1/4 と 3/4 の分割、デスクトップ時も flex-row を継続 */}
-        <div className="flex-1 flex flex-row gap-2 sm:gap-4 lg:gap-6 overflow-hidden">
+        <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 min-h-[600px] sm:min-h-[650px]">
           {/* サイドパネル: デスクトップのみ表示、モバイルはボトムシート */}
           {selectedPin && (
             <>
@@ -337,7 +337,7 @@ export default function Home() {
           )}
 
           {!selectedPin && !searchMarker && (
-            <aside className="w-1/4 md:w-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48 flex-shrink-0">
+            <aside className="w-1/4 md:w-72 overflow-y-auto bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm min-h-[600px] sm:min-h-[650px] flex-shrink-0">
               <div className="sticky top-0 bg-white border-b border-gray-100 px-2 md:px-3 py-2 md:py-2.5 z-10">
                 <h2 className="text-[10px] md:text-xs font-semibold text-gray-900 flex items-center gap-1 truncate">
                   📍 <span className="truncate">現場一覧</span>
@@ -363,7 +363,7 @@ export default function Home() {
             </aside>
           )}
 
-          <main className="flex-1 rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-48">
+          <main className="flex-1 rounded-lg sm:rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-[600px] sm:min-h-[650px]">
             <Map
               pins={filtered}
               flyTo={flyTo}

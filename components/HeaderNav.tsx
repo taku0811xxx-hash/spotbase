@@ -15,7 +15,7 @@ export default function HeaderNav({ profile, onLogout }: Props) {
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative z-50 flex flex-row items-center justify-between px-1.5 sm:px-5 py-1.5 sm:py-2.5 bg-gray-900 text-white overflow-x-auto">
+    <div className="relative z-50 flex flex-row items-center justify-between px-1.5 sm:px-4 py-1.5 sm:py-2 bg-gray-900 text-white overflow-x-auto">
       <Link href="/" className="flex-shrink-0">
         <Logo className="text-white" />
       </Link>
@@ -73,6 +73,14 @@ export default function HeaderNav({ profile, onLogout }: Props) {
         )}
 
         {/* 出動記録関連 */}
+        <Link
+          href="/dispatch/active"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2 py-0.5 sm:py-1 bg-red-600 border border-red-700 hover:bg-red-700 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
+          title="現在対応中の案件を管理"
+        >
+          🚨 <span className="hidden sm:inline">出動中</span>
+        </Link>
+
         <Link
           href="/dispatch"
           className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"

@@ -48,6 +48,11 @@ export type EditLogEntry = {
   changedFields: string[]; // 変更された項目名の一覧(例: ["駐車場所", "危険箇所・注意事項"])
 };
 
+export type Memo = {
+  timestamp: string | Timestamp; // ISO 8601 or Firestore Timestamp
+  text: string; // メモテキスト
+};
+
 export type DispatchRecord = {
   id: string;
   locationName: string; // 場所名
@@ -76,11 +81,13 @@ export type DispatchRecord = {
   organizationId: string; // 組織(NHK、日本テレビなど)
   category: string; // 分類(記者、カメラマンなど)
   recordedBy: string; // 出動者名
-  status: 'draft' | 'published'; // ステータス(下書き or 正式提出)
+  createdBy?: string; // 作成者名（現場アクティブ管理用）
+  status: 'draft' | 'published' | '準備中' | '移動中' | '現場対応中' | '完了'; // ステータス
   draftSavedAt?: Timestamp | null; // 下書き保存日時
   publishedAt?: Timestamp | null; // 正式提出日時
   history: EditLogEntry[]; // 編集履歴(誰が・いつ・何を変えたか)
   createdAt: Timestamp | null;
+  memos?: Memo[]; // リアルタイム現場メモ（FPU回線確保、中継車設営完了など）
   sourceFileHash?: string; // インポート時のソースファイルハッシュ（重複防止用）
 };
 
