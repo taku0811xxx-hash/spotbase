@@ -121,7 +121,7 @@ export default function BottomSheet({
         onTouchStart={handleTouchStart}
         onMouseUp={handleMouseUp}
         onTouchEnd={handleTouchEnd}
-        style={{ touchAction: "auto" }}
+        style={{ touchAction: "pan-y" }}
       >
         {/* Handle */}
         <div
@@ -149,7 +149,10 @@ export default function BottomSheet({
         )}
 
         {/* Content */}
-        <div className={`${state === "peek" ? "px-4 py-2 h-full" : "px-4 pb-6"} ${state !== "peek" ? "overflow-y-auto" : "overflow-hidden"}`}>
+        <div
+          className={`${state === "peek" ? "px-4 py-2 h-full" : "px-4 pb-6"} ${state !== "peek" ? "overflow-y-auto" : "overflow-hidden"}`}
+          style={{ touchAction: "pan-y" }}
+        >
           {children}
         </div>
       </div>

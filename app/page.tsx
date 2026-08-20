@@ -402,7 +402,7 @@ export default function Home() {
       </div>
 
       {/* ========== MOBILE LAYOUT (<md) ========== */}
-      <div className="md:hidden flex flex-col h-[100dvh] w-full max-w-[100vw] overflow-hidden fixed inset-0">
+      <div className="md:hidden flex flex-col h-[100dvh] w-full max-w-[100vw] fixed inset-0">
         {/* Header - Fixed height at top */}
         <header className="w-full max-w-full shrink-0 h-14 px-3 box-border flex items-center justify-between overflow-hidden bg-slate-900 text-white border-b border-slate-700 z-50">
           <HeaderNav

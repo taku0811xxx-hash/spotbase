@@ -1,5 +1,41 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - モバイル表示におけるタッチスクロール不能原因の解消
+
+### [実施内容]
+
+モバイル表示（画面幅 768px 未満）において**タッチスクロール不能**だった問題を調査・修正しました。
+
+#### 問題点の特定
+
+| ファイル | 行番号 | 問題 | 影響 |
+|---------|--------|------|------|
+| `app/page.tsx` | 405 | `overflow-hidden fixed inset-0` | モバイルレイアウト全体のスクロール禁止 ⚠️ **メイン原因** |
+| `components/BottomSheet.tsx` | 124, 152 | `touchAction: "auto"` | タッチアクションが不明確 |
+
+#### 実装した修正
+
+1. **app/page.tsx (405行目)**
+   - 変更前: `overflow-hidden fixed inset-0`
+   - 変更後: `fixed inset-0` （overflow-hidden を削除）
+   - 効果: モバイルレイアウトのスクロール禁止を解除
+
+2. **components/BottomSheet.tsx (124行目)**
+   - 変更前: `style={{ touchAction: "auto" }}`
+   - 変更後: `style={{ touchAction: "pan-y" }}`
+   - 効果: タッチスクロール（Y軸）を明示的に有効化
+
+3. **components/BottomSheet.tsx (152-154行目)**
+   - コンテンツdivに `style={{ touchAction: "pan-y" }}` を追加
+   - 効果: ボトムシート内のスクロール・タッチ操作を完全に確保
+
+#### 検証
+
+- `npm run build` で型チェック・ビルド成功を確認
+- 指定された CSS/JavaScript の touch-none、preventDefault 等の制限は全て解除
+
+---
+
 ## [2026-08-20] - ハンバーガーメニューのReact Portal化によるZ軸埋没解消とタッチイベント遮断の修正
 
 ### [実施内容]
