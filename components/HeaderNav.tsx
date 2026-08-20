@@ -17,7 +17,7 @@ export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0 }
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-2 sm:px-4 py-1.5 sm:py-2 bg-gray-900 text-white overflow-hidden">
+    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-3 sm:px-4 py-1.5 sm:py-2 bg-gray-900 text-white overflow-hidden" style={{ width: "100%", maxWidth: "100%" }}>
       <Link href="/" className="flex-shrink-0 min-w-0">
         <Logo className="text-white text-sm sm:text-base" />
       </Link>

@@ -248,7 +248,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto">
+    <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto md:overflow-x-auto">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
       <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
         <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
@@ -378,7 +378,7 @@ export default function Home() {
       </div>
 
       {/* ========== MOBILE LAYOUT (<md) ========== */}
-      <div className="md:hidden flex flex-col w-full h-screen">
+      <div className="md:hidden flex flex-col w-full max-w-full h-screen overflow-x-hidden">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 flex-shrink-0">
           <HeaderNav
@@ -389,18 +389,20 @@ export default function Home() {
         </div>
 
         {/* Full-screen Map Container */}
-        <div className="flex-1 relative overflow-hidden touch-action-auto" style={{ touchAction: "auto" }}>
-          {/* Floating Incident Banner */}
+        <div className="flex-1 relative overflow-hidden" style={{ touchAction: "manipulation" }}>
+          {/* Floating Incident Banner - use pointer-events-none on wrapper to allow map touch */}
           {incidents.length > 0 && (
-            <div className="absolute top-2 left-2 right-2 z-[900] pointer-events-auto">
-              <IncidentAlert
-                incidents={incidents}
-                onMapNavigate={(lat, lng) => {
-                  setFlyTo({ lat, lng });
-                  setSearchMarker(null);
-                  setSelectedPin(null);
-                }}
-              />
+            <div className="absolute top-2 left-2 right-2 z-[900] pointer-events-none">
+              <div className="pointer-events-auto">
+                <IncidentAlert
+                  incidents={incidents}
+                  onMapNavigate={(lat, lng) => {
+                    setFlyTo({ lat, lng });
+                    setSearchMarker(null);
+                    setSelectedPin(null);
+                  }}
+                />
+              </div>
             </div>
           )}
 

@@ -104,11 +104,11 @@ export default function BottomSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-40 md:hidden">
-      {/* Backdrop (only show in half/full state) */}
+    <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none" style={{ maxHeight: "100vh" }}>
+      {/* Backdrop (only show in half/full state) - pointer-events-auto for closing */}
       {isPeekable && state !== "peek" && (
         <div
-          className="absolute inset-0 bg-black/40 transition-opacity duration-300"
+          className="fixed inset-0 bg-black/40 transition-opacity duration-300 z-[39] pointer-events-auto"
           onClick={onClose}
         />
       )}
@@ -116,11 +116,12 @@ export default function BottomSheet({
       {/* Bottom Sheet */}
       <div
         ref={sheetRef}
-        className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 ${heightClass}`}
+        className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto ${heightClass}`}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onMouseUp={handleMouseUp}
         onTouchEnd={handleTouchEnd}
+        style={{ touchAction: "auto" }}
       >
         {/* Handle */}
         <div

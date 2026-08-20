@@ -36,13 +36,13 @@ export default function MobileMenu({ profile, onLogout }: Props) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
+            className="fixed inset-0 bg-black/80 z-[99998] md:hidden pointer-events-auto"
             onClick={handleClose}
             aria-hidden="true"
           />
 
           {/* Menu Panel */}
-          <div className="fixed right-0 top-0 bottom-0 bg-slate-900 text-white w-72 z-[9999] md:hidden shadow-2xl overflow-y-auto" role="navigation" aria-label="メニュー">
+          <div className="fixed inset-0 right-auto w-72 top-0 bottom-0 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto" role="navigation" aria-label="メニュー" style={{ maxHeight: "100vh", overflowY: "auto" }}>
             {/* Menu Header */}
             <div className="border-b border-slate-700 px-4 py-4">
               <div className="text-right">

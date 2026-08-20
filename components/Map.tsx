@@ -131,8 +131,8 @@ export default function Map({
       dragging={true}
       touchZoom={true}
       doubleClickZoom={true}
-      className="h-full w-full"
-      style={{ touchAction: "auto" }}
+      className="h-full w-full pointer-events-auto"
+      style={{ touchAction: "manipulation", WebkitTouchCallout: "none" }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
