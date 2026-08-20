@@ -311,6 +311,17 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Quick Location Filter - Below search bar */}
+        <QuickLocationFilter
+          pins={filtered}
+          selectedFilter={selectedLocationFilter}
+          onFilterChange={(location) => {
+            setSelectedLocationFilter(location);
+            setSelectedPin(null);
+            setSearchMarker(null);
+          }}
+        />
+
         {/* 速報アラートパネル */}
         {incidents.length > 0 && (
           <IncidentAlert
@@ -368,32 +379,11 @@ export default function Home() {
                   📍 <span className="truncate">現場一覧</span>
                 </h2>
               </div>
-              {loading && <p className="p-2 text-[10px] md:text-xs text-gray-500">読み込み中...</p>}
-              {!loading && filtered.length === 0 && (
-                <p className="p-2 text-[10px] md:text-xs text-gray-500">該当する現場がありません</p>
-              )}
-              <ul>
-                {filtered.map((pin) => (
-                  <li key={pin.id} className="border-b border-gray-100 last:border-0">
-                    <button
-                      onClick={() => handleSelectPin(pin)}
-                      className="w-full text-left p-2 hover:bg-gray-50 rounded-lg transition-colors text-[10px] md:text-xs"
-                    >
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate text-[10px] md:text-xs">{pin.name}</p>
-                          <p className="text-[9px] md:text-[10px] text-gray-500 truncate">{pin.address}</p>
-                        </div>
-                        {pin.dispatchCount && pin.dispatchCount > 0 && (
-                          <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
-                            出動: {pin.dispatchCount}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <GroupedPinList
+                pins={filteredByLocation}
+                onSelectPin={handleSelectPin}
+                loading={loading}
+              />
             </aside>
           )}
 

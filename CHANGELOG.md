@@ -1,5 +1,141 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - PC版サイドバーおよび検索バー下へのグループ化リストとフィルターチップの適用
+
+### [実施内容]
+
+PC表示（画面幅768px以上）での左側サイドパネル（現場一覧）および検索バー直下にグループ化機能を適用し、PC版・モバイル版両方でグループ化されたUI と フィルター機能が動作するようにしました。
+
+#### 1. PC版サイドバー（現場一覧）への GroupedPinList 適用
+
+**修正箇所**: app/page.tsx 364-398行目
+
+**変更内容**:
+```tsx
+// 修正前: 平坦なリスト表示
+{filtered.map((pin) => (
+  <li key={pin.id}>
+    {/* ピン情報 */}
+  </li>
+))}
+
+// 修正後: グループ化表示
+<GroupedPinList
+  pins={filteredByLocation}
+  onSelectPin={handleSelectPin}
+  loading={loading}
+/>
+```
+
+**表示効果**:
+- 🏛️ 左側サイドパネルが「建物・地名」ごとにグループ化
+- 「🏛️ 国立競技場 (2件)」「🏛️ 財務省 (3件)」などの見出し表示
+- 見出し配下に詳細スポット（「千駄木付近」「正面玄関」等）を配置
+- 出動回数表示で優先順位を判断可能
+
+---
+
+#### 2. PC版検索バー直下への QuickLocationFilter 配置
+
+**修正箇所**: app/page.tsx 312-323行目（検索バーとIncidentAlertの間）
+
+**配置内容**:
+```tsx
+{/* Quick Location Filter - Below search bar */}
+<QuickLocationFilter
+  pins={filtered}
+  selectedFilter={selectedLocationFilter}
+  onFilterChange={(location) => {
+    setSelectedLocationFilter(location);
+    setSelectedPin(null);
+    setSearchMarker(null);
+  }}
+/>
+```
+
+**レイアウト**:
+- 🔍 検索バーの直下に配置
+- z-index: 20（地図 z-10 より上）
+- style: `bg-white border-b border-gray-100`
+
+**チップ表示**:
+- 「すべて」（全ピン表示）
+- 「国立競技場 (2)」「財務省 (3)」等（件数付き）
+- 横スクロール対応
+
+**タップ時の動作**:
+- selectedLocationFilter が更新
+- filteredByLocation が再計算
+- 左側サイドパネルが絞り込まれ
+- 地図が該当座標へパン移動
+- 地図上に該当ピンのみ表示
+
+---
+
+#### 3. PC版・モバイル版での統一実装
+
+**マッピング状況**:
+| 要素 | PC版 | モバイル版 |
+|-----|------|----------|
+| Map コンポーネント | filteredByLocation | filteredByLocation |
+| サイドパネル | GroupedPinList | N/A |
+| ボトムシート | N/A | GroupedPinList |
+| クイックフィルター | QuickLocationFilter | QuickLocationFilter |
+
+**効果**:
+- PC・モバイル両方でグループ化表示が統一
+- フィルター機能が両方式で同じ動作
+- ユーザー体験が一貫性を持つ
+
+---
+
+#### 4. parentLocation フィールドの整合性確認
+
+**データフロー**:
+```
+1. ユーザーが PinForm で「代表地名・建物名」を入力
+   ↓
+2. createPin / updatePin で parentLocation を Firestore に保存
+   ↓
+3. getAllPins で Firestore から parentLocation を含めて取得
+   ↓
+4. QuickLocationFilter で集計（ユニークな parentLocation を数える）
+   ↓
+5. GroupedPinList でグループ化（parentLocation でグループ分け）
+   ↓
+6. filteredByLocation で selectedLocationFilter に合致するピンをフィルター
+```
+
+**確認項目**:
+- ✅ 全ピンデータで parentLocation が正しく値を持つ
+- ✅ 新規登録時に parentLocation が保存される
+- ✅ 編集時に parentLocation が更新される
+- ✅ Firestore から取得時に parentLocation が含まれる
+
+---
+
+#### 検証
+
+✅ **ビルド確認**: `npm run build` 成功
+```
+✓ Compiled successfully in 1498ms
+✓ Running TypeScript ... Finished TypeScript in 948ms
+✓ Generating static pages (26/26) in 262ms
+```
+
+✅ **PC版動作確認**:
+- 左側サイドパネルが GroupedPinList で表示
+- 建物・地名ごとにグループ化
+- クイックフィルターが検索バー直下に表示
+- チップをタップで絞り込み＆地図移動
+
+✅ **モバイル版動作確認**:
+- ボトムシート内が GroupedPinList で表示
+- クイックフィルターが検索バー直下に表示
+- チップをタップで絞り込み＆地図移動
+
+---
+
 ## [2026-08-20] - 既存ピンデータへの parentLocation 付与と初期表示でのグループ化UI適用
 
 ### [実施内容]
