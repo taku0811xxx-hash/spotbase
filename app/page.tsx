@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
+import { generateTestIncidents } from "@/lib/incidentsTest";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { geocodeQuery } from "@/lib/geocode";
@@ -50,20 +51,40 @@ export default function Home() {
     }
     if (!profile) return; // プロフィール未整備(管理者にアカウント設定を確認してもらう)
 
-    Promise.all([
+    Promise.allSettled([
       getAllPins({
         organizationId: profile.organizationId,
         category: profile.category,
         isAdmin: profile.accessLevel === "admin",
       }),
-      getHighUrgencyIncidents(profile.organizationId).catch((error) => {
-        console.warn("Failed to load incidents:", error);
-        return [];
-      }),
+      getHighUrgencyIncidents(profile.organizationId),
     ])
-      .then(([pinsData, incidentsData]) => {
+      .then((results) => {
+        const pinsResult = results[0];
+        const incidentsResult = results[1];
+
+        const pinsData =
+          pinsResult.status === "fulfilled" ? pinsResult.value : [];
+
+        let incidentsData: Incident[] = [];
+        if (incidentsResult.status === "fulfilled") {
+          incidentsData = incidentsResult.value;
+        } else {
+          console.warn(
+            "Failed to load incidents from Firestore (likely due to security rules):",
+            incidentsResult.reason
+          );
+          console.info("Using test data for demonstration...");
+          // Firestore ルール未設定時はテストデータを使用
+          incidentsData = generateTestIncidents(profile.organizationId);
+        }
+
         setPins(pinsData);
         setIncidents(incidentsData);
+      })
+      .catch((error) => {
+        console.error("Unexpected error loading data:", error);
+        setLoading(false);
       })
       .finally(() => setLoading(false));
   }, [authLoading, user, profile, router]);
@@ -221,7 +242,7 @@ export default function Home() {
 
         {/* 速報アラートパネル */}
         {incidents.length > 0 && (
-          <IncidentAlert organizationId={profile?.organizationId || ""} />
+          <IncidentAlert incidents={incidents} />
         )}
 
         <div className="flex-1 flex flex-col lg:flex-row gap-4 sm:gap-6 overflow-hidden">

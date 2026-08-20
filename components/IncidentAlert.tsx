@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Incident } from "@/lib/incidents";
-import { getHighUrgencyIncidents } from "@/lib/incidents";
 
 interface Props {
-  organizationId: string;
+  incidents: Incident[];
+  organizationId?: string;
 }
 
 const urgencyColors = {
@@ -29,28 +28,9 @@ const categoryEmojis: Record<string, string> = {
   その他: "⚠️",
 };
 
-export default function IncidentAlert({ organizationId }: Props) {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function IncidentAlert({ incidents }: Props) {
 
-  useEffect(() => {
-    async function loadIncidents() {
-      try {
-        const data = await getHighUrgencyIncidents(organizationId, 5);
-        setIncidents(data);
-      } catch (error) {
-        console.warn("Failed to load incidents (permissions or not initialized):", error);
-        // Firestore ルールが未設定の場合は空配列を返す（エラーは無視）
-        setIncidents([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadIncidents();
-  }, [organizationId]);
-
-  if (loading || incidents.length === 0) {
+  if (incidents.length === 0) {
     return null;
   }
 
