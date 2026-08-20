@@ -16,7 +16,8 @@ import { db, storage } from "./firebase";
 
 export type Pin = {
   id: string;
-  name: string; // 現場名
+  parentLocation?: string; // 代表地名または建物名（例: "国立競技場", "財務省"）
+  name: string; // 現場名・詳細な場所・条件（例: "千駄木付近", "正面玄関前"）
   address: string; // 住所
   lat: number;
   lng: number;
@@ -50,6 +51,7 @@ export type NewPinInput = Omit<
   photos: File[];
   shootingPhotos: File[];
   hazardPhotos: File[];
+  parentLocation?: string;
 };
 
 async function uploadPhotos(

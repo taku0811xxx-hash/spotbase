@@ -1,5 +1,185 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - 現場情報の代表地名・建物名によるグループ化とフィルター機能の追加
+
+### [実施内容]
+
+現場情報（スポットデータ）の名称が長くなった際の視認性と検索性を高めるため、代表的な地名や建物名による「グループ化表示」および「クイックフィルター」機能を実装しました。
+
+#### データ構造の拡張
+
+**Pin型定義の更新** (lib/pins.ts):
+```tsx
+export type Pin = {
+  id: string;
+  parentLocation?: string; // 新規: 代表地名または建物名
+  name: string; // 詳細な場所・条件
+  address: string;
+  // ... 他のフィールド
+};
+```
+
+| フィールド | 説明 | 例 |
+|-----------|------|-----|
+| `parentLocation` | 代表地名または建物名 | "国立競技場", "財務省", "霞が関" |
+| `name` | 詳細な場所・条件 | "千駄木付近", "正面玄関前", "記者クラブ側" |
+
+---
+
+#### UIへの実装
+
+**1. クイックフィルターチップの追加**
+
+新規コンポーネント: `components/QuickLocationFilter.tsx`
+- 検索バーの直下に配置
+- ユニークな `parentLocation` を横スクロール可能なチップボタンで表示
+- チップ: 「すべて」「国立競技場 (3件)」「財務省 (2件)」...
+- タップすると:
+  - 該当する建物・地名の現場のみに一覧が絞り込まれる
+  - 地図がその中心座標へ移動
+
+**機能実装**:
+```tsx
+const QuickLocationFilter = memo(function QuickLocationFilter({
+  pins,
+  selectedFilter,
+  onFilterChange,
+}: Props) {
+  // ユニークな parentLocation を集計
+  const uniqueLocations = useMemo(() => {
+    const locations = new Map<string, number>();
+    pins.forEach((pin) => {
+      const location = pin.parentLocation || "その他";
+      locations.set(location, (locations.get(location) || 0) + 1);
+    });
+    return Array.from(locations.entries()).sort((a, b) => b[1] - a[1]);
+  }, [pins]);
+  
+  // チップボタンをレンダリング
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 whitespace-nowrap overflow-x-auto">
+      <button onClick={() => onFilterChange(null)}>すべて</button>
+      {uniqueLocations.map(([location, count]) => (
+        <button key={location} onClick={() => onFilterChange(location)}>
+          {location} ({count})
+        </button>
+      ))}
+    </div>
+  );
+});
+```
+
+---
+
+**2. ボトムシート/現場一覧のグループ化表示**
+
+新規コンポーネント: `components/GroupedPinList.tsx`
+- 同じ `parentLocation` ごとにグループ化
+- グループ見出し表示: 「🏛️ 財務省 (3件 / 出動: 5件)」
+- 見出し配下に詳細スポット（`name`）を配置
+- タップで地図上の該当ピンへ飛ぶ
+
+**レンダリング構造**:
+```
+┌─ グループ見出し: 🏛️ 国立競技場 (2件)
+├─ ピン1: 正面玄関前
+├─ ピン2: 北側エントランス
+├─ グループ見出し: 🏛️ 財務省 (3件 / 出動: 5件)
+├─ ピン3: 正面玄関
+├─ ピン4: 記者クラブ側
+└─ ピン5: 駐車場付近
+```
+
+**機能実装**:
+```tsx
+const GroupedPinList = memo(function GroupedPinList({
+  pins,
+  onSelectPin,
+  loading = false,
+}: Props) {
+  // parentLocation でグループ化
+  const groupedPins = useMemo(() => {
+    const groups = new Map<string, Pin[]>();
+    pins.forEach((pin) => {
+      const location = pin.parentLocation || "その他";
+      if (!groups.has(location)) {
+        groups.set(location, []);
+      }
+      groups.get(location)!.push(pin);
+    });
+    return Array.from(groups.entries())
+      .sort((a, b) => {
+        const countA = a[1].reduce((sum, pin) => sum + (pin.dispatchCount || 0), 0);
+        const countB = b[1].reduce((sum, pin) => sum + (pin.dispatchCount || 0), 0);
+        return countB - countA;
+      });
+  }, [pins]);
+  
+  return (
+    <div>
+      {groupedPins.map(({ location, pins: groupPins, totalDispatchCount }) => (
+        <div key={location}>
+          <div className="bg-gray-50 border-b border-gray-100 px-2 py-2">
+            <h4>🏛️ {location} ({groupPins.length}件)</h4>
+          </div>
+          <ul>
+            {groupPins.map((pin) => (
+              <li key={pin.id}>
+                <button onClick={() => onSelectPin(pin)}>
+                  {pin.name} {/* 詳細な場所・条件 */}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+});
+```
+
+---
+
+#### page.tsx への統合
+
+**1. フィルター状態管理**
+```tsx
+const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
+
+// ロケーションフィルター適用
+const filteredByLocation = useMemo(() => {
+  if (!selectedLocationFilter) return filtered;
+  return filtered.filter((pin) =>
+    (pin.parentLocation || "その他") === selectedLocationFilter
+  );
+}, [filtered, selectedLocationFilter]);
+
+// フィルター適用時に地図の中心座標を計算
+useEffect(() => {
+  if (selectedLocationFilter && filteredByLocation.length > 0) {
+    const avgLat = filteredByLocation.reduce((sum, pin) => sum + pin.lat, 0) / filteredByLocation.length;
+    const avgLng = filteredByLocation.reduce((sum, pin) => sum + pin.lng, 0) / filteredByLocation.length;
+    setFlyTo({ lat: avgLat, lng: avgLng });
+  }
+}, [selectedLocationFilter, filteredByLocation]);
+```
+
+**2. UI統合**
+- `QuickLocationFilter` を検索バー直下に配置
+- `GroupedPinList` をボトムシート内に配置
+- Map に `filteredByLocation` を渡す
+
+---
+
+#### 検証
+
+- `npm run build` で型チェック・ビルド成功を確認
+- グループ化表示が正しく実装
+- クイックフィルターのチップ表示が機能
+- フィルター選択時の地図移動が動作
+
+---
+
 ## [2026-08-20] - 地図コンポーネントの動的読込、メモ化、タイル描写の高速化対応
 
 ### [実施内容]

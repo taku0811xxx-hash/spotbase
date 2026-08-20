@@ -20,6 +20,8 @@ import HeaderNav from "@/components/HeaderNav";
 import IncidentAlert from "@/components/IncidentAlert";
 import BottomSheet from "@/components/BottomSheet";
 import MobileMenuPortal from "@/components/MobileMenuPortal";
+import QuickLocationFilter from "@/components/QuickLocationFilter";
+import GroupedPinList from "@/components/GroupedPinList";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -50,6 +52,9 @@ export default function Home() {
 
   // メニュー開閉状態管理
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // グループ化フィルター選択状態
+  const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
 
   // ハイドレーション完了フラグ（Portal用途のみ）
   const [mounted, setMounted] = useState(false);
@@ -142,6 +147,23 @@ export default function Home() {
 
   // 検索結果のメモ化 - 検索クエリまたはピン配列が変更された場合のみ再計算
   const filtered = useMemo(() => searchPins(pins, query), [pins, query]);
+
+  // ロケーションフィルター適用 - parentLocation が選択されている場合のみフィルタリング
+  const filteredByLocation = useMemo(() => {
+    if (!selectedLocationFilter) return filtered;
+    return filtered.filter((pin) =>
+      (pin.parentLocation || "その他") === selectedLocationFilter
+    );
+  }, [filtered, selectedLocationFilter]);
+
+  // フィルター適用時に地図の中心座標を計算
+  useEffect(() => {
+    if (selectedLocationFilter && filteredByLocation.length > 0) {
+      const avgLat = filteredByLocation.reduce((sum, pin) => sum + pin.lat, 0) / filteredByLocation.length;
+      const avgLng = filteredByLocation.reduce((sum, pin) => sum + pin.lng, 0) / filteredByLocation.length;
+      setFlyTo({ lat: avgLat, lng: avgLng });
+    }
+  }, [selectedLocationFilter, filteredByLocation]);
 
   // 検索結果(登録済みピン)が1件に絞られたら、その場所へ地図を自動的に移動する
   useEffect(() => {
@@ -377,7 +399,7 @@ export default function Home() {
 
           <main className="flex-1 h-full w-full rounded-lg sm:rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-[600px] sm:min-h-[650px]">
             <Map
-              pins={filtered}
+              pins={filteredByLocation}
               flyTo={flyTo}
               searchMarker={searchMarker}
               onSelectPin={handleSelectPin}
@@ -437,11 +459,22 @@ export default function Home() {
           )}
         </div>
 
+        {/* Quick Location Filter - Below search bar */}
+        <QuickLocationFilter
+          pins={filtered}
+          selectedFilter={selectedLocationFilter}
+          onFilterChange={(location) => {
+            setSelectedLocationFilter(location);
+            setSelectedPin(null);
+            setSearchMarker(null);
+          }}
+        />
+
         {/* Map Container - Takes remaining space */}
         <main className="flex-1 h-full w-full relative overflow-hidden z-10" style={{ touchAction: "manipulation" }}>
           {/* Map */}
           <Map
-            pins={filtered}
+            pins={filteredByLocation}
             flyTo={flyTo}
             searchMarker={searchMarker}
             onSelectPin={handleSelectPin}
@@ -463,36 +496,12 @@ export default function Home() {
               // Handle state changes if needed
             }}
           >
-            {/* Site List - Search bar is now above the map */}
-            <div className="mb-2">
-              <h3 className="text-xs font-semibold text-gray-900 mb-2 px-2">📍 現場一覧</h3>
-              {loading && <p className="text-[10px] text-gray-500 px-2">読み込み中...</p>}
-              {!loading && filtered.length === 0 && (
-                <p className="text-[10px] text-gray-500 px-2">該当する現場がありません</p>
-              )}
-              <ul className="space-y-1">
-                {filtered.map((pin) => (
-                  <li key={pin.id}>
-                    <button
-                      onClick={() => handleSelectPin(pin)}
-                      className="w-full text-left px-2 py-2 hover:bg-gray-100 rounded transition-colors text-[12px]"
-                    >
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{pin.name}</p>
-                          <p className="text-[11px] text-gray-500 truncate">{pin.address}</p>
-                        </div>
-                        {pin.dispatchCount && pin.dispatchCount > 0 && (
-                          <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
-                            {pin.dispatchCount}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Site List - Grouped by parentLocation */}
+            <GroupedPinList
+              pins={filteredByLocation}
+              onSelectPin={handleSelectPin}
+              loading={loading}
+            />
           </BottomSheet>
         )}
 
