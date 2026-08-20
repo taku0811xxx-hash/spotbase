@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
+import { compressImage } from "./imageCompression";
 
 export type Pin = {
   id: string;
@@ -61,11 +62,20 @@ async function uploadPhotos(
 ): Promise<string[]> {
   const urls: string[] = [];
   for (const [i, file] of files.entries()) {
+    // クライアントサイドで画像を圧縮
+    const compressedResult = await compressImage(file, {
+      maxWidth: 1920,
+      maxHeight: 1920,
+      quality: 0.8,
+      format: "webp",
+      maxSizeKB: 500,
+    });
+
     const storageRef = ref(
       storage,
-      `pins/${pinId}/${folder}/${Date.now()}-${i}-${file.name}`
+      `pins/${pinId}/${folder}/${Date.now()}-${i}-${compressedResult.file.name}`
     );
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, compressedResult.file);
     urls.push(await getDownloadURL(storageRef));
   }
   return urls;

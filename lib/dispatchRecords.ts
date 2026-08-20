@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
+import { compressImage } from "./imageCompression";
 
 export type Checkpoint = {
   time: string; // ISO文字列
@@ -129,11 +130,20 @@ async function uploadSectionPhotos(
 ): Promise<SectionPhotos> {
   const result: SectionPhotos = [];
   for (const [i, { file, caption }] of files.entries()) {
+    // クライアントサイドで画像を圧縮
+    const compressedResult = await compressImage(file, {
+      maxWidth: 1920,
+      maxHeight: 1920,
+      quality: 0.8,
+      format: "webp",
+      maxSizeKB: 500,
+    });
+
     const storageRef = ref(
       storage,
-      `dispatch_records/${recordId}/${category}/${Date.now()}-${i}-${file.name}`
+      `dispatch_records/${recordId}/${category}/${Date.now()}-${i}-${compressedResult.file.name}`
     );
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, compressedResult.file);
     const url = await getDownloadURL(storageRef);
     result.push({ url, caption: caption || "" });
   }
@@ -148,11 +158,20 @@ export async function createDispatchRecord(
   // 汎用の現場写真をアップロード
   const photos: DispatchPhoto[] = [];
   for (const [i, { file, caption }] of input.photos.entries()) {
+    // クライアントサイドで画像を圧縮
+    const compressedResult = await compressImage(file, {
+      maxWidth: 1920,
+      maxHeight: 1920,
+      quality: 0.8,
+      format: "webp",
+      maxSizeKB: 500,
+    });
+
     const storageRef = ref(
       storage,
-      `dispatch_records/${docRef.id}/general/${Date.now()}-${i}-${file.name}`
+      `dispatch_records/${docRef.id}/general/${Date.now()}-${i}-${compressedResult.file.name}`
     );
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, compressedResult.file);
     const url = await getDownloadURL(storageRef);
     photos.push({ url, caption });
   }

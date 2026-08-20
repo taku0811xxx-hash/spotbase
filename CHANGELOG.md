@@ -1,5 +1,124 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - クライアントサイド画像自動圧縮によるFirebase Storageコスト削減と送信高速化
+
+### [実施内容]
+
+ブラウザ側で画像を自動圧縮・リサイズしてからFirebase Storageにアップロードする処理を実装し、ストレージ容量と転送コストを最適化しました。
+
+#### 1. クライアントサイド画像圧縮ユーティリティの作成
+
+**新規ファイル**: lib/imageCompression.ts
+
+**主要機能**:
+- HTML5 Canvas API を使用した画像リサイズ・圧縮
+- 最大解像度（長辺）: 1920px
+- 出力フォーマット: WebP（非対応環境では JPEG にフォールバック）
+- 品質: 0.8 (80%)
+- 最大ファイルサイズ目標: 500KB 以下
+
+**実装詳細**:
+```typescript
+export interface CompressionOptions {
+  maxWidth?: number; // デフォルト: 1920px
+  maxHeight?: number; // デフォルト: 1920px
+  quality?: number; // デフォルト: 0.8 (0-1)
+  format?: "webp" | "jpeg" | "png";
+  maxSizeKB?: number; // デフォルト: 500KB
+}
+
+export interface CompressionResult {
+  file: File; // 圧縮後のファイル
+  originalSize: number; // 元のサイズ（バイト）
+  compressedSize: number; // 圧縮後のサイズ（バイト）
+  ratio: number; // 圧縮率
+  format: string; // 実際に使用されたフォーマット
+  width: number; // 圧縮後の幅
+  height: number; // 圧縮後の高さ
+}
+```
+
+**提供関数**:
+- `compressImage()`: 単一の画像を圧縮
+- `compressImages()`: 複数の画像を圧縮
+- `formatFileSize()`: ファイルサイズを人間が読める形式に変換
+- `getCompressionPercentage()`: 圧縮率をパーセンテージで返す
+
+#### 2. Pin画像アップロード処理への組み込み
+
+**修正ファイル**: lib/pins.ts
+
+**修正内容**:
+- `uploadPhotos()` 関数に画像圧縮処理を追加
+- 各ファイルアップロード前に `compressImage()` で自動圧縮
+- 圧縮結果のファイルを Firebase Storage にアップロード
+
+```typescript
+async function uploadPhotos(
+  pinId: string,
+  folder: string,
+  files: File[]
+): Promise<string[]> {
+  const urls: string[] = [];
+  for (const [i, file] of files.entries()) {
+    // クライアントサイドで画像を圧縮
+    const compressedResult = await compressImage(file, {
+      maxWidth: 1920,
+      maxHeight: 1920,
+      quality: 0.8,
+      format: "webp",
+      maxSizeKB: 500,
+    });
+
+    const storageRef = ref(
+      storage,
+      `pins/${pinId}/${folder}/${Date.now()}-${i}-${compressedResult.file.name}`
+    );
+    await uploadBytes(storageRef, compressedResult.file);
+    urls.push(await getDownloadURL(storageRef));
+  }
+  return urls;
+}
+```
+
+#### 3. Dispatch記録画像アップロード処理への組み込み
+
+**修正ファイル**: lib/dispatchRecords.ts
+
+**修正内容**:
+- `uploadSectionPhotos()` 関数に画像圧縮処理を追加
+- 汎用の現場写真アップロード処理に画像圧縮処理を追加
+- 各セクション（駐車場、撮影ポイント、IP伝送、FPU、危険箇所、現場情報）の写真を圧縮
+
+### [期待される効果]
+
+**ストレージコスト削減**:
+- 5MB の画像 → 400-500KB に圧縮（80-90% の容量削減）
+- 1000枚の画像で約4.5GB のストレージ節約
+
+**転送速度向上**:
+- ブラウザから Firebase Storage への転送時間が大幅短縮
+- ユーザーの待機時間を削減
+
+**画像品質維持**:
+- 1920px の解像度を保持（報道現場での確認に十分）
+- WebP フォーマットで視認性を維持
+
+### [ビルド・デプロイ結果]
+
+```bash
+npm run build --webpack
+# ✓ Compiled successfully in 1347ms
+# ✓ TypeScript type check: Passed
+# ✓ Generating static pages using 11 workers (26/26) in 270ms
+```
+
+- ビルド成功
+- TypeScript 型チェック: 正常
+- すべてのルート生成完了
+
+---
+
 ## [2026-08-20] - parentLocation フォールバック処理の実装（グループ化・フィルター動作確認）
 
 ### [実施内容]
