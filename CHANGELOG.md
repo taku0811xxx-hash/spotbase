@@ -1,5 +1,142 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - モバイル版のハンバーガーメニュー(Z軸)および現場一覧ボトムシート(Y軸/Z軸)の配置修正
+
+### [実施内容]
+
+スマートフォン（画面幅 768px 未満）における**ハンバーガーメニュー**と**現場一覧（ボトムシート）**の Z軸・Y軸配置を最適化し、以下の問題を完全に解決しました:
+
+#### 1. ハンバーガーメニューの Z軸 最前面化
+**修正対象**: `components/MobileMenu.tsx`
+
+**現状の設定**（既に完璧に実装済み）:
+```jsx
+// Backdrop
+<div className="fixed inset-0 bg-black/80 z-[99998] md:hidden pointer-events-auto" />
+
+// Menu Panel
+<div className="fixed inset-0 right-auto w-72 top-0 bottom-0 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl">
+```
+
+**Z軸階層の確認**:
+- Menu Backdrop: `z-[99998]`（全画面黒暗幕）
+- Menu Panel: `z-[99999]`（ドロワーメニュー、最前面）
+- ボトムシート Backdrop: `z-[39]`
+- 地図: `z-10`（修正で追加）
+- ボトムシート: `z-40`
+
+**効果**:
+✅ メニュータップ時にドロワーが地図の上に最前面で表示
+✅ 黒い半透過背景で地図をダークオーバーレイ
+✅ メニュー内全要素（リンク・ボタン）がタップ可能
+✅ Escape キー or 背景クリックでメニューを閉じられる
+
+#### 2. 現場一覧（ボトムシート）の Y軸・Z軸配置修正
+**修正対象**: `app/page.tsx`, `components/BottomSheet.tsx`
+
+**Y軸方向（垂直位置）**:
+```jsx
+// app/page.tsx - メインエリアに z-10 を追加
+<main className="flex-1 w-full relative overflow-hidden z-10">
+
+// components/BottomSheet.tsx - fixed bottom-0 で最下部に固定
+<div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none shadow-lg">
+```
+
+- `fixed bottom-0`: 画面最下部にピタッと固定配置
+- Y 軸方向で下から上に 0px に固定（スクロール時も動かない）
+
+**Z軸方向（奥行き）**:
+- 地図: `z-10`（奥側）
+- ボトムシート: `z-40`（地図の手前）
+- メニュー: `z-[99999]`（最前面）
+
+**構造図**:
+```
+┌─────────────────────────────┐ z-[99999]
+│  ハンバーガーメニュー        │  (最前面)
+│  (固定 inset-0 + ドロワー)   │
+└─────────────────────────────┘
+
+┌─────────────────────────────┐ z-40
+│  現場一覧（ボトムシート）    │  (地図より前)
+│  (固定 bottom-0 Y軸)         │  Y軸: 最下部
+└─────────────────────────────┘
+
+┌─────────────────────────────┐ z-10
+│  地図（Leaflet）            │  (奥側)
+│  (flex-1 で残り空間占有)    │
+└─────────────────────────────┘
+```
+
+**Peek 状態での表示**:
+- 初期高さ: `peekHeight={64}` = `h-16` (64px)
+- ボトムシート画面下部に 64px だけ表示
+- ハンドルバーとサイト一覧の先頭が見える
+- スワイプ/タップで展開可能
+
+**修正内容の詳細**:
+
+1. **メインエリアに z-10 を追加** (`app/page.tsx`):
+```jsx
+// 修正前
+<main className="flex-1 w-full relative overflow-hidden">
+
+// 修正後
+<main className="flex-1 w-full relative overflow-hidden z-10">
+```
+
+2. **ボトムシート外側コンテナに shadow-lg を追加** (`components/BottomSheet.tsx`):
+```jsx
+// 修正前
+<div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none">
+
+// 修正後
+<div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none shadow-lg">
+```
+
+**効果**:
+✅ ボトムシートが地図の上に浮かんで見える（shadow-lg で立体感）
+✅ Y軸で画面最下部に固定（スクロール時も動かない）
+✅ Z軸で地図より前（常に地図の上に表示）
+✅ Peek 状態で 64px のみ表示（操作性向上）
+
+---
+
+### [Z軸レイヤー構成の最終確認]
+
+| レイヤー | z-index | 要素 | 状態 |
+|---------|---------|------|------|
+| 最前面 | `z-[99999]` | ハンバーガーメニューパネル | 固定 inset-0 right-auto w-72 |
+| | `z-[99998]` | メニュー背景（黒暗幕） | 固定 inset-0 |
+| 中層 | `z-40` | 現場一覧（ボトムシート） | 固定 bottom-0 left-0 right-0 |
+| | `z-[39]` | ボトムシート背景（black/40） | 固定 inset-0（展開時のみ） |
+| 奥側 | `z-10` | 地図（Leaflet） | 相対配置 flex-1 |
+
+---
+
+### [動作確認結果]
+
+✅ **モバイル表示（375x812）での確認**:
+- ハンバーガーメニュー開閉: **正常**（z-[99999] で地図の上に表示）
+- メニュー背景: **正常**（黒い半透過で地図ダークオーバーレイ）
+- メニューリンク・ボタン: **タップ可能**（pointer-events-auto で機能）
+- ボトムシート位置: **Y軸下部に固定**（bottom-0 で最下部）
+- ボトムシート奥行き: **Z軸前面**（z-40 で地図の上に表示）
+- ボトムシート Peek: **64px 表示**（初期状態で見える）
+- shadow-lg: **立体感確認**（ボトムシートが浮かんで見える）
+- ビルド: **エラーなし**（npm run build 成功）
+
+---
+
+### [関連修正ファイル]
+
+- `app/page.tsx`: メインエリアに z-10 を追加
+- `components/BottomSheet.tsx`: 外側コンテナに shadow-lg を追加
+- `components/MobileMenu.tsx`: 既に完璧に実装済み（z-[99999]）
+
+---
+
 ## [2026-08-20] - モバイル表示のレイアウト崩れ修正とボトムシート配置の最適化
 
 ### [実施内容]

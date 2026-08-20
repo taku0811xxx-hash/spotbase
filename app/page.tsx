@@ -416,7 +416,7 @@ export default function Home() {
         )}
 
         {/* Map Container - Takes remaining space */}
-        <main className="flex-1 w-full relative overflow-hidden" style={{ touchAction: "manipulation" }}>
+        <main className="flex-1 w-full relative overflow-hidden z-10" style={{ touchAction: "manipulation" }}>
           {/* Map */}
           <Map
             pins={filtered}

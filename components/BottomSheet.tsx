@@ -104,7 +104,7 @@ export default function BottomSheet({
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none" style={{ maxHeight: "100vh" }}>
+    <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none shadow-lg" style={{ maxHeight: "100vh" }}>
       {/* Backdrop (only show in half/full state) - pointer-events-auto for closing */}
       {isPeekable && state !== "peek" && (
         <div
