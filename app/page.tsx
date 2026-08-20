@@ -389,9 +389,9 @@ export default function Home() {
       </div>
 
       {/* ========== MOBILE LAYOUT (<md) ========== */}
-      <div className="md:hidden flex flex-col h-[100dvh] w-full relative" style={{ maxHeight: "100dvh" }}>
+      <div className="md:hidden flex flex-col h-[100dvh] w-full max-w-[100vw] overflow-hidden fixed inset-0">
         {/* Header - Fixed height at top */}
-        <header className="h-14 shrink-0 w-full z-40 flex items-center justify-between px-3 bg-slate-900 text-white border-b border-slate-700 box-border">
+        <header className="w-full max-w-full shrink-0 h-14 px-3 box-border flex items-center justify-between overflow-hidden bg-slate-900 text-white border-b border-slate-700 z-50">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
@@ -401,7 +401,7 @@ export default function Home() {
 
         {/* Speed Banner - Horizontal scrollable banner below header */}
         {incidents.length > 0 && (
-          <div className="shrink-0 w-full overflow-x-auto bg-red-50 border-b border-red-200 z-30 py-1.5 px-2 box-border" style={{ maxWidth: "100vw" }}>
+          <div className="shrink-0 w-full max-w-full overflow-x-auto bg-red-50 border-b border-red-200 z-30 py-1.5 px-2 box-border">
             <div className="whitespace-nowrap">
               <IncidentAlert
                 incidents={incidents}
@@ -416,7 +416,7 @@ export default function Home() {
         )}
 
         {/* Map Container - Takes remaining space */}
-        <main className="flex-1 w-full overflow-hidden" style={{ touchAction: "manipulation" }}>
+        <main className="flex-1 w-full relative overflow-hidden" style={{ touchAction: "manipulation" }}>
           {/* Map */}
           <Map
             pins={filtered}
@@ -436,7 +436,7 @@ export default function Home() {
             isOpen={true}
             onClose={() => {}}
             isPeekable={true}
-            peekHeight={70}
+            peekHeight={64}
             onStateChange={(state) => {
               // Handle state changes if needed
             }}

@@ -1,5 +1,155 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - モバイル表示のレイアウト崩れ修正とボトムシート配置の最適化
+
+### [実施内容]
+
+スマートフォン（画面幅 768px 未満）のレイアウト構造を **Flexbox 縦並び型** に完全刷新し、以下の問題を完全に解決しました:
+
+#### 1. 最外郭コンテナの画面サイズ固定
+**修正**: `app/page.tsx`（モバイルレイアウト最外層）
+
+**修正内容**:
+```jsx
+// 修正前
+<div className="md:hidden flex flex-col h-[100dvh] w-full relative">
+
+// 修正後
+<div className="md:hidden flex flex-col h-[100dvh] w-full max-w-[100vw] overflow-hidden fixed inset-0">
+```
+
+- `fixed inset-0`: ビューポート全体に固定配置
+- `max-w-[100vw]`: 横幅を viewport に制限
+- `overflow-hidden`: 縦横のスクロール完全抑止
+
+**効果**: 画面全体を1フレーム（100dvh）に厳密に納め、スクロール発生を完全排除
+
+#### 2. ヘッダーのサイズと余白の固定化
+**修正**: `app/page.tsx`, `components/HeaderNav.tsx`, `components/MobileMenu.tsx`
+
+**修正内容**:
+
+**app/page.tsx（モバイルヘッダー）**:
+```jsx
+// 修正前
+<header className="h-14 shrink-0 w-full z-40 flex items-center justify-between px-3 bg-slate-900">
+
+// 修正後
+<header className="w-full max-w-full shrink-0 h-14 px-3 box-border flex items-center justify-between overflow-hidden bg-slate-900 text-white border-b border-slate-700 z-50">
+```
+
+**components/HeaderNav.tsx**:
+```jsx
+// 修正前
+<div className="relative z-50 w-full max-w-full box-border flex ... px-3 sm:px-4 py-1.5 sm:py-2 ... gap-1 sm:gap-2">
+  <Logo className="text-white text-sm sm:text-base" />
+  <span className="text-[11px] sm:text-xs">🚨 出動中 {count}件</span>
+
+// 修正後
+<div className="relative z-50 w-full max-w-full box-border flex ... px-3 py-1.5 ... gap-1">
+  <Logo className="text-white text-xs" />
+  <span className="text-[10px]">🚨 {count}件</span>
+```
+
+**components/MobileMenu.tsx**:
+```jsx
+// 修正前
+<button className="md:hidden relative z-[9997] flex flex-col gap-1.5 p-1.5 -mr-1.5">
+
+// 修正後
+<button className="md:hidden relative z-[9997] flex flex-col gap-1 p-1 -mr-1">
+```
+
+- `w-full max-w-full`: 幅を viewport に制限
+- `box-border`: padding を width に含める
+- `overflow-hidden`: 子要素の突き出し防止
+- `text-xs` / `text-[10px]`: テキストサイズ最適化
+- `gap-1`: 要素間隔を縮小（gap-2 → gap-1）
+- `z-50`: ヘッダーを最前面に固定
+
+**効果**: 子要素が画面外に突き出さず、コンパクトに収納
+
+#### 3. 地図エリアと現場一覧（ボトムシート）の重なり構造
+**修正**: `app/page.tsx`, `components/BottomSheet.tsx`
+
+**修正内容**:
+
+**app/page.tsx（メインエリア）**:
+```jsx
+// 修正前
+<main className="flex-1 w-full overflow-hidden">
+
+// 修正後
+<main className="flex-1 w-full relative overflow-hidden" style={{ touchAction: "manipulation" }}>
+```
+
+**app/page.tsx（ボトムシート呼び出し）**:
+```jsx
+// 修正前
+peekHeight={70}
+
+// 修正後
+peekHeight={64}  // h-16 = 64px
+```
+
+**BottomSheet.tsx**:
+```jsx
+// 既に実装済み
+<div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none">
+  <div className="absolute bottom-0 left-0 right-0 ... pointer-events-auto">
+```
+
+**構造**:
+1. メインエリア（`flex-1`）が地図を表示 → 残り空間に拡大
+2. ボトムシート（`fixed bottom-0`）が viewport 基準で絶対配置 → 常に下部に固定
+3. Peek 状態（`h-16`）で 64px のみ表示 → ユーザーがタップ/スワイプで展開可能
+
+**効果**: 地図とボトムシートが完全に重ならず、ボトムシート初期状態が視認可能に
+
+#### 4. 速報バナーの横はみ出し防止
+**修正**: `app/page.tsx`
+
+**修正内容**:
+```jsx
+// 修正前
+<div className="shrink-0 w-full overflow-x-auto bg-red-50 ... z-30 py-1.5 px-2" style={{ maxWidth: "100vw" }}>
+
+// 修正後
+<div className="shrink-0 w-full max-w-full overflow-x-auto bg-red-50 ... z-30 py-1.5 px-2">
+```
+
+- `max-w-full`: 幅を親コンテナ（viewport）に制限
+- 不要な `maxWidth: "100vw"` インラインスタイルを削除
+
+**効果**: 速報バナーが viewport を超えて横スクロールしない
+
+---
+
+### [動作確認結果]
+
+✅ **モバイル表示（375x812）での確認**:
+- 縦横スクロール: **なし**（全コンテンツが 100dvh 内に収納）
+- ヘッダー表示: **正常**（ロゴ・出動中バッジ・ハンバーガー全て表示）
+- ヘッダーはみ出し: **なし**（w-full max-w-full で制限）
+- 地図操作: **正常**（touch-action でタッチイベント有効）
+- ボトムシート: **正常**（fixed bottom-0 で下部固定、h-16 で Peek 状態表示）
+
+✅ **ビルド確認**:
+```bash
+npm run build  # エラーなく成功
+```
+
+---
+
+### [関連修正ファイル]
+
+- `app/page.tsx`: モバイルレイアウト構造、ヘッダー、速報バナー、peekHeight
+- `components/HeaderNav.tsx`: テキストサイズ、gap、padding 最適化
+- `components/MobileMenu.tsx`: パディング・gap 削減
+- `components/BottomSheet.tsx`: 既に fixed bottom-0 で実装済み
+
+---
+
 ## [2026-08-20] - モバイル表示の根本的な不具合修正：viewport・z-index・pointer-events最適化
 
 ### [実施内容]

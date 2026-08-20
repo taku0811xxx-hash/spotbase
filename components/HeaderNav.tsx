@@ -17,16 +17,16 @@ export default function HeaderNav({ profile, onLogout, activeDispatchCount = 0 }
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-3 sm:px-4 py-1.5 sm:py-2 bg-gray-900 text-white overflow-hidden" style={{ width: "100%", maxWidth: "100%" }}>
+    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-3 py-1.5 bg-gray-900 text-white overflow-hidden">
       <Link href="/" className="flex-shrink-0 min-w-0">
-        <Logo className="text-white text-sm sm:text-base" />
+        <Logo className="text-white text-xs" />
       </Link>
 
       {/* Mobile Header: Status Badge + Hamburger */}
-      <div className="md:hidden flex items-center gap-1 sm:gap-2 flex-shrink-0 min-w-0">
+      <div className="md:hidden flex items-center gap-1 flex-shrink-0 min-w-0">
         {activeDispatchCount > 0 && (
-          <span className="px-1.5 py-0.5 text-[11px] sm:text-xs bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0">
-            🚨 出動中 {activeDispatchCount}件
+          <span className="px-1.5 py-0.5 text-[10px] bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0">
+            🚨 {activeDispatchCount}件
           </span>
         )}
         <MobileMenu profile={profile} onLogout={onLogout} />

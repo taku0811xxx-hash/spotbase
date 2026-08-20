@@ -21,7 +21,7 @@ export default function MobileMenu({ profile, onLogout }: Props) {
       {/* Hamburger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="md:hidden relative z-[9997] flex flex-col gap-1.5 p-1.5 -mr-1.5"
+        className="md:hidden relative z-[9997] flex flex-col gap-1 p-1 -mr-1"
         title="メニュー"
         aria-label="メニューを開く"
         aria-expanded={isOpen}
