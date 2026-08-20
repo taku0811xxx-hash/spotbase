@@ -417,6 +417,25 @@ export default function Home() {
           </div>
         )}
 
+        {/* Search Bar - Below speed banner */}
+        <div className="shrink-0 w-full bg-white border-b border-gray-100 z-20 box-border">
+          <SearchBar
+            onSearch={setQuery}
+            onSubmit={handleSubmit}
+            loading={geocoding}
+            onClear={() => {
+              setSearchMarker(null);
+              setSelectedPin(null);
+              setRoadSuggestions([]);
+              setStopSuggestions([]);
+              setGeocodeError("");
+            }}
+          />
+          {geocodeError && (
+            <p className="px-3 pb-2 text-xs text-red-600">{geocodeError}</p>
+          )}
+        </div>
+
         {/* Map Container - Takes remaining space */}
         <main className="flex-1 h-full w-full relative overflow-hidden z-10" style={{ touchAction: "manipulation" }}>
           {/* Map */}
@@ -443,23 +462,7 @@ export default function Home() {
               // Handle state changes if needed
             }}
           >
-            {/* Search Bar in expanded state */}
-            <div className="mb-3">
-              <SearchBar
-                onSearch={setQuery}
-                onSubmit={handleSubmit}
-                loading={geocoding}
-                onClear={() => {
-                  setSearchMarker(null);
-                  setSelectedPin(null);
-                  setRoadSuggestions([]);
-                  setStopSuggestions([]);
-                  setGeocodeError("");
-                }}
-              />
-            </div>
-
-            {/* Site List */}
+            {/* Site List - Search bar is now above the map */}
             <div className="mb-2">
               <h3 className="text-xs font-semibold text-gray-900 mb-2 px-2">📍 現場一覧</h3>
               {loading && <p className="text-[10px] text-gray-500 px-2">読み込み中...</p>}

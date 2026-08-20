@@ -98,13 +98,7 @@ export default function BottomSheet({
       className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none shadow-lg md:shadow-none"
       style={{ maxHeight: "100vh", height: state === "full" || !isPeekable ? "85vh" : state === "half" ? "50vh" : `${peekHeight}px` }}
     >
-      {/* Backdrop (only show in half/full state) - pointer-events-auto for closing */}
-      {isPeekable && state !== "peek" && (
-        <div
-          className="fixed inset-0 bg-black/40 transition-opacity duration-300 z-[39] pointer-events-auto"
-          onClick={onClose}
-        />
-      )}
+      {/* Backdrop is removed - no darkening effect when sheet is expanded */}
 
       {/* Bottom Sheet */}
       <div
