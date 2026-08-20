@@ -166,6 +166,9 @@ export default function PinForm({
   const { profile } = useAuth();
   const isEdit = !!existingPin;
 
+  const [parentLocation, setParentLocation] = useState(
+    existingPin?.parentLocation ?? ""
+  );
   const [name, setName] = useState(existingPin?.name ?? initialName ?? "");
   const [address, setAddress] = useState(
     existingPin?.address ?? initialAddress ?? ""
@@ -308,6 +311,7 @@ export default function PinForm({
     try {
       if (isEdit && existingPin) {
         await updatePin(existingPin.id, {
+          parentLocation,
           name,
           address,
           lat: position.lat,
@@ -329,6 +333,7 @@ export default function PinForm({
         setTimeout(() => router.push(`/pin/${existingPin.id}`), 600);
       } else {
         const id = await createPin({
+          parentLocation,
           name,
           address,
           lat: position.lat,
@@ -402,6 +407,17 @@ export default function PinForm({
                 <Spinner className="w-3 h-3" /> 場所を検索中...
               </p>
             )}
+          </Field>
+          <Field label="代表地名・建物名">
+            <input
+              value={parentLocation}
+              onChange={(e) => setParentLocation(e.target.value)}
+              placeholder="例: 国立競技場、財務省、霞が関（グループ化に使用）"
+              className={inputClass}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              複数の現場を同じ建物や地名でまとめる場合に入力してください（省略可）
+            </p>
           </Field>
           <Field label="住所" required>
             <input

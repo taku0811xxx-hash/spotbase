@@ -88,6 +88,7 @@ export async function createPin(input: NewPinInput): Promise<string> {
   );
 
   await setDoc(pinRef, {
+    parentLocation: input.parentLocation,
     name: input.name,
     address: input.address,
     lat: input.lat,
@@ -136,6 +137,7 @@ export async function updatePin(pinId: string, input: UpdatePinInput) {
   );
 
   await updateDoc(doc(db, PINS_COLLECTION, pinId), {
+    parentLocation: input.parentLocation,
     name: input.name,
     address: input.address,
     lat: input.lat,

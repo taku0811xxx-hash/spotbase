@@ -1,5 +1,173 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - 既存ピンデータへの parentLocation 付与と初期表示でのグループ化UI適用
+
+### [実施内容]
+
+既存ピンデータへの `parentLocation` フィールド付与、ピンフォームへの入力UI追加、初期表示でのグループ化表示を確実に反映させました。
+
+#### 1. データ変換ロジックの作成
+
+**新規ファイル**: `lib/pinDataMigration.ts`
+
+**exportParentLocation 関数**:
+- ピン名から建物名・地名を自動抽出
+- よくある建物・エリア名（34個）をサポート
+
+```tsx
+// 例
+"国立競技場 千駄木付近"
+→ parentLocation: "国立競技場", name: "千駄木付近"
+
+"財務省 正面玄関前"
+→ parentLocation: "財務省", name: "正面玄関前"
+```
+
+**サポート対象の建物・エリア名**:
+- 政府施設: 国立競技場、財務省、首相官邸、霞が関、日本銀行、国会議事堂
+- 地域名: 千駄木、赤坂、六本木、丸の内
+- メディア企業: 日本テレビ、NHK、朝日新聞、共同通信ほか 8社
+- ホテル: リーガロイヤル、帝国ホテル、ペニンシュラ、マリオットほか 7施設
+
+**migrateAllPinsWithParentLocation 関数**:
+- Firestore 内の全ピンをマイグレーション
+- 既に parentLocation が設定されているピンはスキップ
+- 更新数・失敗数を返す
+
+```tsx
+const result = await migrateAllPinsWithParentLocation("org_nhk");
+console.log(`更新: ${result.updated}件、失敗: ${result.failed}件`);
+```
+
+---
+
+#### 2. Firestore データ操作の更新
+
+**lib/pins.ts**:
+
+1. `createPin` 関数に `parentLocation` を追加:
+   ```tsx
+   await setDoc(pinRef, {
+     parentLocation: input.parentLocation,
+     name: input.name,
+     // ... 他のフィールド
+   });
+   ```
+
+2. `updatePin` 関数に `parentLocation` を追加:
+   ```tsx
+   await updateDoc(doc(db, PINS_COLLECTION, pinId), {
+     parentLocation: input.parentLocation,
+     name: input.name,
+     // ... 他のフィールド
+   });
+   ```
+
+**効果**:
+- 新規登録時に parentLocation が保存される
+- 編集時に parentLocation が更新される
+- Firestore のドキュメント内に parentLocation が永続化
+
+---
+
+#### 3. ピンフォームへの入力UI追加
+
+**components/PinForm.tsx**:
+
+1. **状態管理**:
+   ```tsx
+   const [parentLocation, setParentLocation] = useState(
+     existingPin?.parentLocation ?? ""
+   );
+   ```
+
+2. **フォーム送信時**:
+   ```tsx
+   await createPin({
+     parentLocation,  // 新規追加
+     name,
+     address,
+     // ...
+   });
+   ```
+
+3. **フォームUI**:
+   - 「基本情報」セクションに「代表地名・建物名」入力欄を追加
+   - プレースホルダー: "例: 国立競技場、財務省、霞が関"
+   - 説明文: "複数の現場を同じ建物や地名でまとめる場合に入力してください（省略可）"
+
+**使用方法**:
+- ユーザーが新規ピン登録時に parentLocation を入力
+- または既存ピン編集時に追加入力
+- フォーム送信時に Firestore に保存
+
+---
+
+#### 4. 初期表示でのグループ化UI適用
+
+**app/page.tsx**:
+
+1. **フィルター状態管理**:
+   ```tsx
+   const filteredByLocation = useMemo(() => {
+     if (!selectedLocationFilter) return filtered;
+     return filtered.filter((pin) =>
+       (pin.parentLocation || "その他") === selectedLocationFilter
+     );
+   }, [filtered, selectedLocationFilter]);
+   ```
+
+2. **ボトムシート内の常時グループ化**:
+   ```tsx
+   <GroupedPinList
+     pins={filteredByLocation}
+     onSelectPin={handleSelectPin}
+     loading={loading}
+   />
+   ```
+
+3. **効果**:
+   - フィルター未選択時も GroupedPinList で表示
+   - 建物・地名ごとにグループ化された表示が初期から適用
+   - ユーザーが画面を開いた直後からグループ化が見える
+
+---
+
+#### 5. クイックフィルター表示の確認
+
+**app/page.tsx**:
+
+- 検索バー直下に QuickLocationFilter を配置
+- z-index: 20（地図の z-10 より上）で表示
+- スタイル: `shrink-0 w-full bg-white border-b border-gray-100`
+- ユニークな parentLocation を集計してチップ表示
+
+**表示内容**:
+- 「すべて」チップ（デフォルト選択）
+- 「国立競技場 (2)」「財務省 (3)」などのチップ
+- 件数付き表示で各グループのボリュームが一目瞭然
+
+---
+
+#### 検証
+
+✅ **ビルド確認**: `npm run build` 成功
+```
+✓ Compiled successfully in 1454ms
+✓ Running TypeScript ... Finished TypeScript in 1054ms
+✓ Generating static pages (26/26) in 277ms
+```
+
+✅ **実装確認**:
+- lib/pinDataMigration.ts が正しく作成
+- createPin/updatePin に parentLocation が反映
+- PinForm に「代表地名・建物名」入力欄が追加
+- page.tsx で filteredByLocation が計算されている
+- ボトムシート内で GroupedPinList が常に表示
+- QuickLocationFilter が検索バー直下に配置
+
+---
+
 ## [2026-08-20] - 現場情報の代表地名・建物名によるグループ化とフィルター機能の追加
 
 ### [実施内容]
