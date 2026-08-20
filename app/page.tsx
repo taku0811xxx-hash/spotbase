@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -46,6 +46,17 @@ export default function Home() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
+
+  // Track viewport width to conditionally render layouts
+  const [isMobile, setIsMobile] = useState(true);
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize(); // Set initial value
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -250,7 +261,7 @@ export default function Home() {
   return (
     <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto md:overflow-x-auto">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
-      <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
+      <div className="!hidden md:!flex md:!flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3" style={{ display: isMobile ? "none" : "flex" }}>
         <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
@@ -378,34 +389,34 @@ export default function Home() {
       </div>
 
       {/* ========== MOBILE LAYOUT (<md) ========== */}
-      <div className="md:hidden flex flex-col w-full max-w-full h-screen overflow-x-hidden">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 flex-shrink-0">
+      <div className="md:hidden flex flex-col h-[100dvh] w-full relative" style={{ maxHeight: "100dvh" }}>
+        {/* Header - Fixed height at top */}
+        <header className="h-14 shrink-0 w-full z-40 flex items-center justify-between px-3 bg-slate-900 text-white border-b border-slate-700 box-border">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
             activeDispatchCount={activeDispatchCount}
           />
-        </div>
+        </header>
 
-        {/* Full-screen Map Container */}
-        <div className="flex-1 relative overflow-hidden" style={{ touchAction: "manipulation" }}>
-          {/* Floating Incident Banner - use pointer-events-none on wrapper to allow map touch */}
-          {incidents.length > 0 && (
-            <div className="absolute top-2 left-2 right-2 z-[900] pointer-events-none">
-              <div className="pointer-events-auto">
-                <IncidentAlert
-                  incidents={incidents}
-                  onMapNavigate={(lat, lng) => {
-                    setFlyTo({ lat, lng });
-                    setSearchMarker(null);
-                    setSelectedPin(null);
-                  }}
-                />
-              </div>
+        {/* Speed Banner - Horizontal scrollable banner below header */}
+        {incidents.length > 0 && (
+          <div className="shrink-0 w-full overflow-x-auto bg-red-50 border-b border-red-200 z-30 py-1.5 px-2 box-border" style={{ maxWidth: "100vw" }}>
+            <div className="whitespace-nowrap">
+              <IncidentAlert
+                incidents={incidents}
+                onMapNavigate={(lat, lng) => {
+                  setFlyTo({ lat, lng });
+                  setSearchMarker(null);
+                  setSelectedPin(null);
+                }}
+              />
             </div>
-          )}
+          </div>
+        )}
 
+        {/* Map Container - Takes remaining space */}
+        <main className="flex-1 w-full overflow-hidden" style={{ touchAction: "manipulation" }}>
           {/* Map */}
           <Map
             pins={filtered}
@@ -417,111 +428,111 @@ export default function Home() {
             hoveredRoadKey={hoveredRoadKey}
             incidents={incidents}
           />
+        </main>
 
-          {/* Mobile Bottom Sheet - Site List (peek/half/full states) */}
-          {!selectedPin && !searchMarker && (
-            <BottomSheet
-              isOpen={true}
-              onClose={() => {}}
-              isPeekable={true}
-              peekHeight={70}
-              onStateChange={(state) => {
-                // Handle state changes if needed
-              }}
-            >
-              {/* Search Bar in expanded state */}
-              <div className="mb-3">
-                <SearchBar
-                  onSearch={setQuery}
-                  onSubmit={handleSubmit}
-                  loading={geocoding}
-                  onClear={() => {
-                    setSearchMarker(null);
-                    setSelectedPin(null);
-                    setRoadSuggestions([]);
-                    setStopSuggestions([]);
-                    setGeocodeError("");
-                  }}
-                />
-              </div>
+        {/* Mobile Bottom Sheet - Site List (peek/half/full states) */}
+        {!selectedPin && !searchMarker && (
+          <BottomSheet
+            isOpen={true}
+            onClose={() => {}}
+            isPeekable={true}
+            peekHeight={70}
+            onStateChange={(state) => {
+              // Handle state changes if needed
+            }}
+          >
+            {/* Search Bar in expanded state */}
+            <div className="mb-3">
+              <SearchBar
+                onSearch={setQuery}
+                onSubmit={handleSubmit}
+                loading={geocoding}
+                onClear={() => {
+                  setSearchMarker(null);
+                  setSelectedPin(null);
+                  setRoadSuggestions([]);
+                  setStopSuggestions([]);
+                  setGeocodeError("");
+                }}
+              />
+            </div>
 
-              {/* Site List */}
-              <div className="mb-2">
-                <h3 className="text-xs font-semibold text-gray-900 mb-2 px-2">📍 現場一覧</h3>
-                {loading && <p className="text-[10px] text-gray-500 px-2">読み込み中...</p>}
-                {!loading && filtered.length === 0 && (
-                  <p className="text-[10px] text-gray-500 px-2">該当する現場がありません</p>
-                )}
-                <ul className="space-y-1">
-                  {filtered.map((pin) => (
-                    <li key={pin.id}>
-                      <button
-                        onClick={() => handleSelectPin(pin)}
-                        className="w-full text-left px-2 py-2 hover:bg-gray-100 rounded transition-colors text-[12px]"
-                      >
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 truncate">{pin.name}</p>
-                            <p className="text-[11px] text-gray-500 truncate">{pin.address}</p>
-                          </div>
-                          {pin.dispatchCount && pin.dispatchCount > 0 && (
-                            <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
-                              {pin.dispatchCount}
-                            </span>
-                          )}
+            {/* Site List */}
+            <div className="mb-2">
+              <h3 className="text-xs font-semibold text-gray-900 mb-2 px-2">📍 現場一覧</h3>
+              {loading && <p className="text-[10px] text-gray-500 px-2">読み込み中...</p>}
+              {!loading && filtered.length === 0 && (
+                <p className="text-[10px] text-gray-500 px-2">該当する現場がありません</p>
+              )}
+              <ul className="space-y-1">
+                {filtered.map((pin) => (
+                  <li key={pin.id}>
+                    <button
+                      onClick={() => handleSelectPin(pin)}
+                      className="w-full text-left px-2 py-2 hover:bg-gray-100 rounded transition-colors text-[12px]"
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{pin.name}</p>
+                          <p className="text-[11px] text-gray-500 truncate">{pin.address}</p>
                         </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </BottomSheet>
-          )}
+                        {pin.dispatchCount && pin.dispatchCount > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
+                            {pin.dispatchCount}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </BottomSheet>
+        )}
 
-          {/* Mobile Bottom Sheet - Pin Details */}
-          {selectedPin && (
-            <BottomSheet
-              isOpen={selectedPin !== null}
+        {/* Mobile Bottom Sheet - Pin Details */}
+        {selectedPin && (
+          <BottomSheet
+            isOpen={selectedPin !== null}
+            onClose={handleCloseSidePanel}
+            title={selectedPin.name}
+            isPeekable={false}
+          >
+            <PinSidePanel
+              pin={selectedPin}
               onClose={handleCloseSidePanel}
-              title={selectedPin.name}
-              isPeekable={false}
-            >
-              <PinSidePanel
-                pin={selectedPin}
-                onClose={handleCloseSidePanel}
-                onDeleted={handlePinDeleted}
-                roadSuggestions={roadSuggestions}
-                loadingRoads={loadingRoads}
-                stopSuggestions={stopSuggestions}
-                loadingStops={loadingStops}
-                onHoverRoad={setHoveredRoadKey}
-              />
-            </BottomSheet>
-          )}
+              onDeleted={handlePinDeleted}
+              roadSuggestions={roadSuggestions}
+              loadingRoads={loadingRoads}
+              stopSuggestions={stopSuggestions}
+              loadingStops={loadingStops}
+              onHoverRoad={setHoveredRoadKey}
+            />
+          </BottomSheet>
+        )}
 
-          {/* Mobile Bottom Sheet - Search Location Details */}
-          {searchMarker && !selectedPin && (
-            <BottomSheet
-              isOpen={searchMarker !== null}
+        {/* Mobile Bottom Sheet - Search Location Details */}
+        {searchMarker && !selectedPin && (
+          <BottomSheet
+            isOpen={searchMarker !== null}
+            onClose={handleCloseSidePanel}
+            title={searchMarker.label}
+            isPeekable={false}
+          >
+            <SearchLocationPanel
+              label={searchMarker.label}
+              address={searchMarker.address}
+              lat={searchMarker.lat}
+              lng={searchMarker.lng}
               onClose={handleCloseSidePanel}
-              title={searchMarker.label}
-              isPeekable={false}
-            >
-              <SearchLocationPanel
-                label={searchMarker.label}
-                address={searchMarker.address}
-                lat={searchMarker.lat}
-                lng={searchMarker.lng}
-                onClose={handleCloseSidePanel}
-                roadSuggestions={roadSuggestions}
-                loadingRoads={loadingRoads}
-                stopSuggestions={stopSuggestions}
-                loadingStops={loadingStops}
-                onHoverRoad={setHoveredRoadKey}
-              />
-            </BottomSheet>
-          )}
-        </div>
+              roadSuggestions={roadSuggestions}
+              loadingRoads={loadingRoads}
+              stopSuggestions={stopSuggestions}
+              loadingStops={loadingStops}
+              onHoverRoad={setHoveredRoadKey}
+            />
+          </BottomSheet>
+        )}
       </div>
     </div>
   );

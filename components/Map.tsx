@@ -101,6 +101,34 @@ type Props = {
   incidents?: Incident[]; // 速報事案
 };
 
+// CSS for Leaflet controls positioning
+const mapStyles = `
+  .leaflet-control-zoom {
+    margin-right: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  .leaflet-control-zoom a {
+    width: 36px;
+    height: 36px;
+    line-height: 36px;
+    font-size: 18px;
+  }
+  @media (max-width: 767px) {
+    .leaflet-control-zoom {
+      margin-right: 8px;
+      margin-bottom: 80px;
+    }
+    .leaflet-control-zoom a {
+      width: 32px;
+      height: 32px;
+      line-height: 32px;
+      font-size: 16px;
+    }
+  }
+`;
+
 // 検索結果などで特定の場所にフォーカスした時に地図を移動させるための内部コンポーネント
 function FlyToLocation({ target }: { target: { lat: number; lng: number } | null | undefined }) {
   const map = useMap();
@@ -109,6 +137,19 @@ function FlyToLocation({ target }: { target: { lat: number; lng: number } | null
       map.flyTo([target.lat, target.lng], 16);
     }
   }, [target, map]);
+  return null;
+}
+
+// Inject Leaflet control styles
+function MapStyleInjector() {
+  useEffect(() => {
+    const styleTag = document.createElement("style");
+    styleTag.textContent = mapStyles;
+    document.head.appendChild(styleTag);
+    return () => {
+      document.head.removeChild(styleTag);
+    };
+  }, []);
   return null;
 }
 
@@ -124,16 +165,19 @@ export default function Map({
   incidents = [],
 }: Props) {
   return (
-    <MapContainer
-      center={center}
-      zoom={12}
-      scrollWheelZoom={false}
-      dragging={true}
-      touchZoom={true}
-      doubleClickZoom={true}
-      className="h-full w-full pointer-events-auto"
-      style={{ touchAction: "manipulation", WebkitTouchCallout: "none" }}
-    >
+    <>
+      <MapStyleInjector />
+      <MapContainer
+        center={center}
+        zoom={12}
+        scrollWheelZoom={false}
+        dragging={true}
+        touchZoom={true}
+        doubleClickZoom={true}
+        zoomControl={true}
+        className="h-full w-full pointer-events-auto"
+        style={{ touchAction: "manipulation", WebkitTouchCallout: "none" }}
+      >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -269,6 +313,7 @@ export default function Map({
       })}
 
       <FlyToLocation target={flyTo} />
-    </MapContainer>
+      </MapContainer>
+    </>
   );
 }
