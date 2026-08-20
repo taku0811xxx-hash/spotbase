@@ -12,6 +12,7 @@ import {
   type TrackPoint,
   type NoteEntry,
 } from "@/lib/dispatchRecords";
+import { getIncident } from "@/lib/incidents";
 import { useAuth } from "@/components/AuthProvider";
 import { parseCsv } from "@/lib/csv";
 import { geocodeQuery, reverseGeocode } from "@/lib/geocode";
@@ -137,13 +138,43 @@ function NewDispatchForm() {
     const lng = searchParams.get("lng");
     const name = searchParams.get("locationName");
     const draftId = searchParams.get("draftId");
+    const incidentId = searchParams.get("incidentId");
     // draftId がある場合はスキップ（上記の useEffect で処理済み）
     if (draftId) return;
+    // incidentId がある場合は別の useEffect で処理
+    if (incidentId) return;
     if (lat && lng) {
       positionLockedRef.current = true;
       setPosition({ lat: parseFloat(lat), lng: parseFloat(lng) });
     }
     if (name) setAddress(name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 速報事案（incident）から出動記録を作成する場合、
+  // 速報の場所・日時・概要が入力された状態で初期化
+  useEffect(() => {
+    const incidentId = searchParams.get("incidentId");
+    if (!incidentId) return;
+
+    (async () => {
+      try {
+        const incident = await getIncident(incidentId);
+        if (incident) {
+          positionLockedRef.current = true;
+          setPosition({ lat: incident.latitude, lng: incident.longitude });
+          setLocationName(incident.locationName);
+          setAddress(incident.locationName);
+          setIncidentType(incident.category);
+          // 速報の詳細をサイト情報に記載
+          setSiteInfo(
+            `【速報】${incident.title}\n${incident.description}\n緊急度: ${incident.urgency}`
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load incident:", err);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

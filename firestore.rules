@@ -45,5 +45,11 @@ service cloud.firestore {
     match /dispatches/{dispatchId} {
       allow read, write: if isSignedIn();
     }
+
+    match /incidents/{incidentId} {
+      allow read: if canView(resource.data);
+      allow create: if isSignedIn() && isOwnOrgData(request.resource.data);
+      allow update, delete: if canView(resource.data);
+    }
   }
 }

@@ -1,5 +1,147 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - リアルタイム速報検知機能プロトタイプ実装
+
+### [実施内容]
+
+#### 1. Firestore `incidents` コレクション型定義
+**新規作成**: `lib/incidents.ts`
+- **コレクション名**: `incidents`
+- **フィールド定義**:
+  - `id`: ドキュメント ID
+  - `organizationId`: 組織 ID（組織ごとにデータ分離）
+  - `title`: 事象タイトル（15文字以内）
+  - `description`: 詳細説明（50文字以内）
+  - `category`: 事象種別（火災/事故/災害/通信障害/その他）
+  - `locationName`: 推定場所名
+  - `latitude`, `longitude`: 推定座標
+  - `urgency`: 緊急度（high/medium/low）
+  - `status`: ステータス（unverified/verified/dismissed）
+  - `detectedAt`: 検知日時（Timestamp）
+  - `createdAt`, `updatedAt`: 作成・更新日時
+  - `sourceText`: 元の速報テキスト
+
+**提供関数**:
+- `getHighUrgencyIncidents()`: 高緊急度の速報をリアルタイム取得
+- `getIncident()`: 特定の速報を ID で取得
+- `createIncident()`: 新規速報を作成
+- `updateIncidentStatus()`: ステータス更新
+
+#### 2. Claude API による速報解析
+**新規作成**: `/api/incidents/analyze`
+**機能**:
+- 速報テキスト（例：「渋谷駅ハチ公前付近でビル火災の通報。煙が充満中」）を受け取り
+- Claude 3.5 Haiku でリアルタイム解析
+- JSON として以下を構造化抽出：
+  - 事象種別（category）
+  - 推定場所（locationName）
+  - 想定座標（latitude/longitude）
+  - 緊急度（urgency）
+- Firestore の `incidents` コレクションに自動登録
+
+**パラメータ**:
+- `text`: 速報テキスト
+- `organizationId`: 組織 ID
+
+**レスポンス**: JSON（抽出結果 + Firestore ドキュメント ID）
+
+#### 3. トップページに「もしかして今起きてる？」パネル追加
+**新規作成**: `components/IncidentAlert.tsx`
+**機能**:
+- 直近で検知された未確認・高緊急度事象をカード形式で表示
+- 赤色パルス点滅「🚨」アイコン付き
+- 各カード：
+  - 事象カテゴリアイコン（🔥火災 / 🚗事故 / ⛈️災害 / 📡通信障害）
+  - 緊急度バッジ（🔴緊急 / 🟡中 / 🔵低）
+  - タイトル・説明・場所名
+  - 「📍 マップで見る」ボタン（将来実装）
+  - 「🎥 出動作成」ボタン（出動作成ページへ遷移）
+
+**デザイン**:
+- グラデーション背景（赤→オレンジ）
+- ボーダー赤色（2px）
+- ホバー時のシャドウ効果
+
+#### 4. Leaflet 地図への速報ピン表示
+**修正**: `components/Map.tsx`
+**機能**:
+- 通常の現場ピン（青色）と区別して、速報ピン（赤色・パルス点滅）を地図上に表示
+- 速報ピンのアイコン：
+  - SVG で自前描画（赤色グラデーション）
+  - 中央に白地の「!」アイコン
+  - パルス点滅アニメーション（1.5 秒周期）
+- ピンクリック時：
+  - ポップアップ表示
+  - 「🎥 出動作成」ボタン（`/dispatch/new?incidentId=...` へ遷移）
+
+#### 5. 出動作成ページへの初期補完機能
+**修正**: `app/dispatch/new/page.tsx`
+**機能**:
+- URL パラメータ `?incidentId=...` で速報データを受け取る
+- 速報の情報を自動補完：
+  - `locationName`: 推定場所を「場所名」に設定
+  - `position`: 座標を地図ピンに設定
+  - `incidentType`: 事象種別を「出動内容」に設定
+  - `siteInfo`: 速報タイトル・説明・緊急度を「現場情報」に記載
+- ユーザーは補完データをそのまま送信、または編集可能
+
+#### 6. テスト用ダミー速報データ投入
+**新規作成**: `scripts/seed-incidents.mjs`
+**投入データ**（5 件）:
+1. 「渋谷スクランブル交差点付近の多車線事故」- 高緊急度
+2. 「品川駅周辺での大規模停電」- 高緊急度
+3. 「横浜港付近での特殊火災」- 高緊急度
+4. 「東京駅丸の内口での爆発予告」- 高緊急度
+5. 「新宿駅東口での大規模混雑」- 中緊急度
+
+**実行方法**:
+```bash
+node scripts/seed-incidents.mjs
+```
+
+#### 7. Firestore セキュリティルール更新
+**修正**: `firestore.rules`
+**追加ルール**:
+- `incidents` コレクションへのアクセス制御
+- 読み取り: `canView()` （同組織・同分類または管理者）
+- 作成: `isOwnOrgData()` （同組織・同分類のユーザーのみ）
+- 更新/削除: `canView()` 
+
+**重要**: このルール変更は Firebase Console から手動で「公開」ボタンを押す必要があります。
+
+### [動作確認結果]
+✅ `npm run build` で型チェック・ビルド成功
+✅ ダミー速報データ 5 件を Firestore に投入
+✅ IncidentAlert コンポーネントが正常に読み込まれる（エラーハンドリング機能付き）
+✅ Map コンポーネントに incidents props が正常に渡される
+✅ 出動作成ページが incidentId パラメータを受け取り、データを初期補完
+
+### [今後の手順（Firestore ルール デプロイ）]
+1. Firebase Console にログイン
+2. 「Cloud Firestore」 > 「ルール」タブ
+3. `firestore.rules` の `incidents` セクションの内容をコピー
+4. Firebase Console のエディタに貼り付け
+5. 「公開」ボタンをクリック
+
+これにより、IncidentAlert パネルと速報ピンが実際に Firestore からデータを取得して表示されます。
+
+### [修正・追加ファイル]
+**新規**:
+- `lib/incidents.ts` - incidents コレクション型定義・関数
+- `components/IncidentAlert.tsx` - 速報パネルコンポーネント
+- `app/api/incidents/analyze/route.ts` - Claude AI 解析 API
+- `scripts/seed-incidents.mjs` - ダミーデータ投入スクリプト
+
+**修正**:
+- `components/Map.tsx` - 速報ピン表示機能追加
+- `app/page.tsx` - IncidentAlert 統合・incidents 読み込み
+- `app/dispatch/new/page.tsx` - incidentId パラメータ処理・初期補完機能
+- `firestore.rules` - incidents コレクションのアクセスルール追加
+
+**ビルド状態**: ✅ 成功
+
+---
+
 ## [2026-08-20] - トップページ・ヘッダーのレスポンシブ改善・検索機能強化
 
 ### [実施内容]

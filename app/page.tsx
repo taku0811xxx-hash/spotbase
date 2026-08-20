@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, type Pin } from "@/lib/pins";
+import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { geocodeQuery } from "@/lib/geocode";
@@ -14,6 +15,7 @@ import PinSidePanel from "@/components/PinSidePanel";
 import SearchLocationPanel from "@/components/SearchLocationPanel";
 import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
+import IncidentAlert from "@/components/IncidentAlert";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -38,6 +40,8 @@ export default function Home() {
   const [loadingStops, setLoadingStops] = useState(false);
   const [hoveredRoadKey, setHoveredRoadKey] = useState<string | null>(null);
 
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -45,12 +49,22 @@ export default function Home() {
       return;
     }
     if (!profile) return; // プロフィール未整備(管理者にアカウント設定を確認してもらう)
-    getAllPins({
-      organizationId: profile.organizationId,
-      category: profile.category,
-      isAdmin: profile.accessLevel === "admin",
-    })
-      .then(setPins)
+
+    Promise.all([
+      getAllPins({
+        organizationId: profile.organizationId,
+        category: profile.category,
+        isAdmin: profile.accessLevel === "admin",
+      }),
+      getHighUrgencyIncidents(profile.organizationId).catch((error) => {
+        console.warn("Failed to load incidents:", error);
+        return [];
+      }),
+    ])
+      .then(([pinsData, incidentsData]) => {
+        setPins(pinsData);
+        setIncidents(incidentsData);
+      })
       .finally(() => setLoading(false));
   }, [authLoading, user, profile, router]);
 
@@ -205,6 +219,11 @@ export default function Home() {
           </div>
         </div>
 
+        {/* 速報アラートパネル */}
+        {incidents.length > 0 && (
+          <IncidentAlert organizationId={profile?.organizationId || ""} />
+        )}
+
         <div className="flex-1 flex flex-col lg:flex-row gap-4 sm:gap-6 overflow-hidden">
           {selectedPin ? (
             <PinSidePanel
@@ -266,6 +285,7 @@ export default function Home() {
               roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
               stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
               hoveredRoadKey={hoveredRoadKey}
+              incidents={incidents}
             />
           </main>
         </div>

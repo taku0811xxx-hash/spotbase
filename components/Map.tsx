@@ -13,6 +13,7 @@ import "leaflet/dist/leaflet.css";
 import { useEffect } from "react";
 import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
+import type { Incident } from "@/lib/incidents";
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
 const defaultIcon = L.icon({
@@ -54,6 +55,38 @@ const searchIcon = L.divIcon({
   popupAnchor: [0, -38],
 });
 
+// 速報事案用のアイコン（赤色でパルス点滅効果付き）
+const incidentIcon = L.divIcon({
+  className: "incident-marker",
+  html: `
+    <style>
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+      }
+      .incident-marker {
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+    </style>
+    <svg width="40" height="50" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="urgentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff0000"/>
+          <stop offset="100%" stop-color="#cc0000"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="20" cy="48" rx="9" ry="2.5" fill="rgba(0,0,0,0.4)"/>
+      <path d="M20 2C9 2 0 11 0 22c0 14 20 28 20 28s20-14 20-28c0-11-9-20-20-20z"
+            fill="url(#urgentGrad)" stroke="#990000" stroke-width="2"/>
+      <circle cx="20" cy="22" r="8" fill="white" opacity="0.95"/>
+      <text x="20" y="28" text-anchor="middle" font-size="14" font-weight="bold" fill="#ff0000">!</text>
+    </svg>
+  `,
+  iconSize: [40, 50],
+  iconAnchor: [20, 50],
+  popupAnchor: [0, -45],
+});
+
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
 type Props = {
@@ -65,6 +98,7 @@ type Props = {
   roadSuggestions?: RoadSuggestion[]; // 駐車の候補道路
   stopSuggestions?: RoadSuggestion[]; // 駐停車の候補道路
   hoveredRoadKey?: string | null; // 一覧でホバー中の道路(park-123 / stop-456 の形式)
+  incidents?: Incident[]; // 速報事案
 };
 
 // 検索結果などで特定の場所にフォーカスした時に地図を移動させるための内部コンポーネント
@@ -87,6 +121,7 @@ export default function Map({
   roadSuggestions = [],
   stopSuggestions = [],
   hoveredRoadKey = null,
+  incidents = [],
 }: Props) {
   return (
     <MapContainer
@@ -138,6 +173,43 @@ export default function Map({
           </Popup>
         </Marker>
       )}
+
+      {incidents.map((incident) => (
+        <Marker
+          key={`incident-${incident.id}`}
+          position={[incident.latitude, incident.longitude]}
+          icon={incidentIcon}
+        >
+          <Popup>
+            <div className="space-y-2 w-56">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg font-bold text-red-600">
+                    {incident.urgency === "high"
+                      ? "🔴"
+                      : incident.urgency === "medium"
+                        ? "🟡"
+                        : "🔵"}
+                  </span>
+                  <h4 className="font-bold text-gray-900">{incident.title}</h4>
+                </div>
+                <p className="text-sm text-gray-700">{incident.description}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  📍 {incident.locationName}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={`/dispatch/new?incidentId=${incident.id}`}
+                  className="flex-1 text-center text-sm bg-red-600 text-white hover:bg-red-700 rounded px-2 py-1.5 transition-colors font-medium"
+                >
+                  🎥 出動作成
+                </a>
+              </div>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
 
       {roadSuggestions.map((road) => {
         const key = `park-${road.id}`;
