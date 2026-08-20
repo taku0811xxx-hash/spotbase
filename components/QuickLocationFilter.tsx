@@ -9,6 +9,22 @@ interface Props {
   onFilterChange: (parentLocation: string | null) => void;
 }
 
+// ピンの parentLocation を取得（フォールバック処理付き）
+function getParentLocation(pin: Pin): string {
+  if (pin.parentLocation) {
+    return pin.parentLocation;
+  }
+
+  // parentLocation が空の場合、name から自動抽出
+  // スペース区切りの最初の単語を抽出
+  const nameParts = pin.name.trim().split(/\s+/);
+  if (nameParts.length > 0 && nameParts[0].length > 0) {
+    return nameParts[0];
+  }
+
+  return "その他";
+}
+
 const QuickLocationFilter = memo(function QuickLocationFilter({
   pins,
   selectedFilter,
@@ -18,7 +34,7 @@ const QuickLocationFilter = memo(function QuickLocationFilter({
   const uniqueLocations = useMemo(() => {
     const locations = new Map<string, number>();
     pins.forEach((pin) => {
-      const location = pin.parentLocation || "その他";
+      const location = getParentLocation(pin);
       locations.set(location, (locations.get(location) || 0) + 1);
     });
     return Array.from(locations.entries()).sort((a, b) => b[1] - a[1]);

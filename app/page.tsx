@@ -28,6 +28,22 @@ const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
+// ピンの parentLocation を取得（フォールバック処理付き）
+function getParentLocation(pin: Pin): string {
+  if (pin.parentLocation) {
+    return pin.parentLocation;
+  }
+
+  // parentLocation が空の場合、name から自動抽出
+  // スペース区切りの最初の単語を抽出
+  const nameParts = pin.name.trim().split(/\s+/);
+  if (nameParts.length > 0 && nameParts[0].length > 0) {
+    return nameParts[0];
+  }
+
+  return "その他";
+}
+
 export default function Home() {
   const router = useRouter();
   const { user, profile, loading: authLoading } = useAuth();
@@ -152,7 +168,7 @@ export default function Home() {
   const filteredByLocation = useMemo(() => {
     if (!selectedLocationFilter) return filtered;
     return filtered.filter((pin) =>
-      (pin.parentLocation || "その他") === selectedLocationFilter
+      getParentLocation(pin) === selectedLocationFilter
     );
   }, [filtered, selectedLocationFilter]);
 

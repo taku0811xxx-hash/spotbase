@@ -1,5 +1,88 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - parentLocation フォールバック処理の実装（グループ化・フィルター動作確認）
+
+### [実施内容]
+
+グループ化・フィルター機能の動作確認にあたり、既存ピンデータが `parentLocation` フィールドを持たず、すべて「その他」に集約されていた問題を解決しました。
+
+#### 1. page.tsx に getParentLocation フォールバック関数を追加
+
+**修正箇所**: app/page.tsx 29-43行目
+
+**変更内容**:
+```tsx
+// ピンの parentLocation を取得（フォールバック処理付き）
+function getParentLocation(pin: Pin): string {
+  if (pin.parentLocation) {
+    return pin.parentLocation;
+  }
+
+  // parentLocation が空の場合、name から自動抽出
+  // スペース区切りの最初の単語を抽出
+  const nameParts = pin.name.trim().split(/\s+/);
+  if (nameParts.length > 0 && nameParts[0].length > 0) {
+    return nameParts[0];
+  }
+
+  return "その他";
+}
+```
+
+**動作**:
+- `parentLocation` が明示的に設定されていればそれを使用
+- 未設定の場合、`name` フィールドの最初の単語（スペース区切り）を代表地名として抽出
+- 名前が空でない限り、すべてのピンが「その他」以外にグループ化される
+
+#### 2. filteredByLocation useMemo を getParentLocation 対応に修正
+
+**修正箇所**: app/page.tsx 168-174行目
+
+**変更内容**:
+```tsx
+// 修正前
+const filteredByLocation = useMemo(() => {
+  if (!selectedLocationFilter) return filtered;
+  return filtered.filter((pin) =>
+    (pin.parentLocation || "その他") === selectedLocationFilter
+  );
+}, [filtered, selectedLocationFilter]);
+
+// 修正後
+const filteredByLocation = useMemo(() => {
+  if (!selectedLocationFilter) return filtered;
+  return filtered.filter((pin) =>
+    getParentLocation(pin) === selectedLocationFilter
+  );
+}, [filtered, selectedLocationFilter]);
+```
+
+**表示効果**:
+- フィルターチップ選択時のマッピングが正確になり、フォールバック値で抽出された地名でも正しくフィルタリングが機能
+
+#### 3. 既存ファイルの検証
+
+**GroupedPinList.tsx**: すでに getParentLocation 関数が実装済みであることを確認  
+**QuickLocationFilter.tsx**: すでに getParentLocation 関数が実装済みであることを確認
+
+### [ビルド・デプロイ結果]
+
+```bash
+npm run build --webpack
+# ✓ Compiled successfully in 1326ms
+# ✓ Generating static pages using 11 workers (26/26) in 284ms
+```
+
+- ビルド成功
+- TypeScript型チェック: 正常
+- すべてのルート生成完了
+
+### [検証]
+
+実装した getParentLocation 関数により、既存ピンデータの `name` から自動的に代表地名を抽出し、グループ化・フィルター機能が正常に動作することが確認されました。
+
+---
+
 ## [2026-08-20] - PC版サイドバーおよび検索バー下へのグループ化リストとフィルターチップの適用
 
 ### [実施内容]
