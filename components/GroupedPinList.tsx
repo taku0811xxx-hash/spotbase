@@ -25,6 +25,19 @@ function getParentLocation(pin: Pin): string {
   return "その他";
 }
 
+// pin.name から parentLocation の重複を除去
+function getDisplayName(pin: Pin): string {
+  const parentLocation = getParentLocation(pin);
+  const name = pin.name.trim();
+
+  // parentLocation が name の先頭に含まれている場合は削除
+  if (name.startsWith(parentLocation)) {
+    return name.substring(parentLocation.length).trim();
+  }
+
+  return name;
+}
+
 const GroupedPinList = memo(function GroupedPinList({
   pins,
   onSelectPin,
@@ -68,36 +81,41 @@ const GroupedPinList = memo(function GroupedPinList({
       {groupedPins.map(({ location, pins: groupPins, totalDispatchCount }) => (
         <div key={location}>
           {/* グループ見出し */}
-          <div className="sticky top-0 bg-gray-50 border-t border-b border-gray-100 px-2 py-2 z-10">
-            <h4 className="text-xs font-semibold text-gray-900">
-              🏛️ {location} ({groupPins.length}件
-              {totalDispatchCount > 0 && ` / 出動: ${totalDispatchCount}件`})
+          <div className="sticky top-0 bg-slate-700 text-white px-3 py-2.5 z-10 rounded-t-md border-l-4 border-blue-500">
+            <h4 className="text-xs font-bold flex items-center justify-between">
+              <span>🏛️ {location}</span>
+              <span className="text-[11px] font-semibold ml-2">
+                {groupPins.length}件
+                {totalDispatchCount > 0 && ` / 出動: ${totalDispatchCount}件`}
+              </span>
             </h4>
           </div>
 
-          {/* グループ内のピン */}
-          <ul className="space-y-1">
-            {groupPins.map((pin) => (
-              <li key={pin.id}>
-                <button
-                  onClick={() => onSelectPin(pin)}
-                  className="w-full text-left px-2 py-2 hover:bg-gray-100 rounded transition-colors text-[12px]"
-                >
-                  <div className="flex items-start justify-between gap-1">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{pin.name}</p>
-                      <p className="text-[11px] text-gray-500 truncate">{pin.address}</p>
+          {/* グループ内のピン（階層構造を表示） */}
+          <div className="border-l-2 border-slate-300 pl-3 bg-slate-50">
+            <ul className="space-y-1 py-1">
+              {groupPins.map((pin) => (
+                <li key={pin.id}>
+                  <button
+                    onClick={() => onSelectPin(pin)}
+                    className="w-full text-left px-2 py-2 hover:bg-white rounded transition-colors text-[12px] bg-white hover:shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{getDisplayName(pin)}</p>
+                        <p className="text-[11px] text-gray-500 truncate">{pin.address}</p>
+                      </div>
+                      {pin.dispatchCount && pin.dispatchCount > 0 && (
+                        <span className="text-[9px] px-1.5 py-0.5 bg-blue-600 text-white rounded whitespace-nowrap flex-shrink-0 font-semibold">
+                          {pin.dispatchCount}
+                        </span>
+                      )}
                     </div>
-                    {pin.dispatchCount && pin.dispatchCount > 0 && (
-                      <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
-                        {pin.dispatchCount}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       ))}
     </div>

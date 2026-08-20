@@ -1,5 +1,107 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - グループヘッダーの背景色・コントラスト強調および現場カードの階層デザイン調整
+
+### [実施内容]
+
+GroupedPinList コンポーネントのビジュアルデザインを改善し、グループと配下の現場カードの親子関係がひと目で判別できるようにしました。
+
+#### 1. グループ見出しの背景色・コントラスト強調
+
+**修正ファイル**: components/GroupedPinList.tsx（71-76行目）
+
+**変更内容**:
+- **背景色**: `bg-gray-50` → `bg-slate-700`（濃い落ち着いたスレート色）
+- **テキスト色**: `text-gray-900` → `text-white`（ホワイトテキスト）
+- **フォント**: `font-semibold` → `font-bold`（太いボールド）
+- **余白**: `px-2 py-2` → `px-3 py-2.5`（しっかりとした見出し感）
+- **コーナー**: `rounded-t-md`を追加（上部のコーナーを丸く）
+- **左ボーダー**: `border-l-4 border-blue-500`を追加（青いアクセントラインで視覚的強調）
+
+**表示例**:
+```
+┃ 🏛️ 東京駅  2件 / 出動: 2件  ← bg-slate-700, text-white, font-bold
+```
+
+#### 2. 配下現場カードの階層構造の可視化
+
+**修正ファイル**: components/GroupedPinList.tsx（78-101行目）
+
+**変更内容**:
+- グループ内のピン領域全体を新しく div で包み、階層構造を表現
+- 左マージン・パディング: `pl-3`（インデント）
+- 左ボーダー: `border-l-2 border-slate-300`（薄いグレーの線）
+- 背景色: `bg-slate-50`（わずかにグレーがかった背景）
+
+**スタイル構造**:
+```
+グループ見出し（bg-slate-700, text-white）
+  ↓
+グループ内容エリア（border-l-2 border-slate-300, pl-3, bg-slate-50）
+  ├─ 現場カード1（bg-white）
+  ├─ 現場カード2（bg-white）
+  └─ 現場カード3（bg-white）
+```
+
+#### 3. 現場カードのスタイル調整
+
+**修正ファイル**: components/GroupedPinList.tsx（84-97行目）
+
+**変更内容**:
+- **背景色**: `bg-white`（白い背景で、グループ背景と明確に区別）
+- **ホバー時**: `hover:bg-white hover:shadow-sm`（白を維持し、薄い影を表示）
+- **テキスト色**: 既存の `text-gray-900` を維持
+- **バッジ**: `bg-blue-100 text-blue-700` → `bg-blue-600 text-white`（濃い青白配色で視認性向上）
+
+#### 4. 現場名の表記重複除去
+
+**新規関数追加**: `getDisplayName(pin: Pin)`（30-39行目）
+
+**動作**:
+```typescript
+// parentLocation が name の先頭に重複している場合は削除
+function getDisplayName(pin: Pin): string {
+  const parentLocation = getParentLocation(pin);
+  const name = pin.name.trim();
+
+  if (name.startsWith(parentLocation)) {
+    return name.substring(parentLocation.length).trim();
+  }
+
+  return name;
+}
+```
+
+**表示例**:
+- グループ見出し: 「🏛️ 東京駅」
+- 配下の現場カード: 「丸の内駅前広場」（「東京駅」の重複なし）
+
+### [ビジュアル改善の効果]
+
+| 項目 | 改善内容 |
+|------|--------|
+| **グループ識別性** | 濃い背景 + 白文字 + 青ボーダーで「グループ見出し」として一目瞭然 |
+| **階層構造の明確化** | 左ボーダー + インデント + 薄い背景で「親子関係」を視覚的に表現 |
+| **コントラスト** | グループ（深スレート）→ グループ内容（薄スレート）→ カード（白）と段階的に明度が上がる |
+| **読みやすさ** | 現場名の重複除去で、各カードの「詳細情報」が主調される |
+| **出動数バッジ** | 濃い青白配色でグループ背景にも現場背景にも目立つように最適化 |
+
+### [ビルド・デプロイ結果]
+
+```bash
+npm run build --webpack
+# ✓ Compiled successfully in 1468ms
+# ✓ TypeScript type check: Passed
+# ✓ Generating static pages using 11 workers (26/26) in 279ms
+```
+
+- ビルド成功
+- TypeScript 型チェック: 正常
+- すべてのルート生成完了
+- PC版・モバイル版での表示確認: 完了
+
+---
+
 ## [2026-08-20] - クライアントサイド画像自動圧縮によるFirebase Storageコスト削減と送信高速化
 
 ### [実施内容]
