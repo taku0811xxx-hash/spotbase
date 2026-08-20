@@ -337,25 +337,25 @@ export default function Home() {
           )}
 
           {!selectedPin && !searchMarker && (
-            <aside className="w-1/4 md:flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
-              <div className="sticky top-0 bg-white border-b border-gray-100 px-3 md:px-4 py-2 md:py-3 z-10">
-                <h2 className="text-[11px] md:text-sm font-semibold text-gray-900 flex items-center gap-1 md:gap-2 truncate">
+            <aside className="w-1/4 md:w-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48 flex-shrink-0">
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-2 md:px-3 py-2 md:py-2.5 z-10">
+                <h2 className="text-[10px] md:text-xs font-semibold text-gray-900 flex items-center gap-1 truncate">
                   📍 <span className="truncate">現場一覧</span>
                 </h2>
               </div>
-              {loading && <p className="p-2 md:p-3 text-[11px] md:text-sm text-gray-500">読み込み中...</p>}
+              {loading && <p className="p-2 text-[10px] md:text-xs text-gray-500">読み込み中...</p>}
               {!loading && filtered.length === 0 && (
-                <p className="p-2 md:p-3 text-[11px] md:text-sm text-gray-500">該当する現場がありません</p>
+                <p className="p-2 text-[10px] md:text-xs text-gray-500">該当する現場がありません</p>
               )}
               <ul>
                 {filtered.map((pin) => (
                   <li key={pin.id} className="border-b border-gray-100 last:border-0">
                     <button
                       onClick={() => handleSelectPin(pin)}
-                      className="w-full text-left p-2 md:p-3 hover:bg-gray-50 rounded-lg transition-colors text-[11px] md:text-sm"
+                      className="w-full text-left p-2 hover:bg-gray-50 rounded-lg transition-colors text-[10px] md:text-xs"
                     >
-                      <p className="font-medium text-gray-900 truncate">{pin.name}</p>
-                      <p className="text-[10px] md:text-xs text-gray-500 truncate">{pin.address}</p>
+                      <p className="font-medium text-gray-900 truncate text-[10px] md:text-xs">{pin.name}</p>
+                      <p className="text-[9px] md:text-[10px] text-gray-500 truncate">{pin.address}</p>
                     </button>
                   </li>
                 ))}
