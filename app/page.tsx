@@ -243,7 +243,14 @@ export default function Home() {
 
         {/* 速報アラートパネル */}
         {incidents.length > 0 && (
-          <IncidentAlert incidents={incidents} />
+          <IncidentAlert
+            incidents={incidents}
+            onMapNavigate={(lat, lng) => {
+              setFlyTo({ lat, lng });
+              setSearchMarker(null);
+              setSelectedPin(null);
+            }}
+          />
         )}
 
         {/* レイアウト: モバイル時は flex-row で 1/4 と 3/4 の分割、デスクトップ時も flex-row を継続 */}
