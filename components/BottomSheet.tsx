@@ -93,18 +93,11 @@ export default function BottomSheet({
 
   if (!isOpen) return null;
 
-  // Determine height based on state
-  let heightClass = "h-[85vh]"; // full
-  if (isPeekable) {
-    if (state === "peek") {
-      heightClass = `h-[${peekHeight}px]`;
-    } else if (state === "half") {
-      heightClass = "h-1/2";
-    }
-  }
-
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none shadow-lg" style={{ maxHeight: "100vh" }}>
+    <div
+      className="fixed bottom-0 left-0 right-0 z-40 md:hidden pointer-events-none shadow-lg md:shadow-none"
+      style={{ maxHeight: "100vh", height: state === "full" || !isPeekable ? "85vh" : state === "half" ? "50vh" : `${peekHeight}px` }}
+    >
       {/* Backdrop (only show in half/full state) - pointer-events-auto for closing */}
       {isPeekable && state !== "peek" && (
         <div
@@ -116,12 +109,12 @@ export default function BottomSheet({
       {/* Bottom Sheet */}
       <div
         ref={sheetRef}
-        className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto ${heightClass}`}
+        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto"
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onMouseUp={handleMouseUp}
         onTouchEnd={handleTouchEnd}
-        style={{ touchAction: "pan-y" }}
+        style={{ touchAction: "pan-y", height: state === "full" || !isPeekable ? "85vh" : state === "half" ? "50vh" : `${peekHeight}px` }}
       >
         {/* Handle */}
         <div

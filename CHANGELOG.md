@@ -1,5 +1,59 @@
 # SpotBase - 変更履歴
 
+## [2026-08-20] - 初期描画時のボトムシート全画面表示とLeaflet地図描画ラグの解消
+
+### [実施内容]
+
+モバイル表示（画面幅 768px 未満）において**初期表示時に現場一覧が画面全域を覆ってスクロール不能**になり、**タッチ・スワイプ操作を行うと遅れて突然地図が表示される**現象を調査・修正しました。
+
+#### 原因分析と根本修正
+
+| 項目 | 原因 | 修正内容 |
+|------|------|---------|
+| **JSステート依存レイアウト** | `isMobile` 状態変数と `useEffect` でのリサイズリスナーが、SSR/初期描画時の表示遅延を引き起こしていた | `isMobile` 関連コードを全削除し、Tailwindメディアクエリ（`md:hidden` / `hidden md:flex`）のみで制御 |
+| **レイアウト切り替え** | デスクトップレイアウトの inline style（`display: isMobile ? "none" : "flex"`）が pure CSS のメディアクエリと競合 | `!hidden md:!flex` を `hidden md:flex` に統一し、inline style を削除 |
+| **地図コンテナ高さ計算** | Leaflet 地図コンテナの親要素に `h-full w-full` が未指定で、タイル描画が遅延 | デスクトップ・モバイル両方の Map コンテナに明示的に `h-full w-full` を追加 |
+| **地図タイル描画遅延** | Dynamic Import（ssr: false）でレンダリング時に、Leaflet の `invalidateSize()` が実行されず、ユーザー操作（リサイズイベント）待ちの状態 | 新規コンポーネント `MapInitializer` を作成し、マウント時に即座に `map.invalidateSize()` を実行 |
+| **ボトムシート初期スタイル** | SSR時に Tailwind の動的 `heightClass` が計算されず、ボトムシートが画面全体（h-full）として描画 | CSS クラス依存を廃止し、inline style で確実に高さを制御（`height: state === "full" ? "85vh" : ...`） |
+
+#### 実装した修正内容
+
+**1. app/page.tsx**
+- 55-72行目: `isMobile` 状態変数と関連する `useEffect` を完全削除
+- 247行目: デスクトップレイアウトの inline style を削除し、pure CSS メディアクエリのみに依存
+- 389, 422行目: Map コンテナに `h-full w-full` を明示的に追加
+
+**2. components/Map.tsx**
+- 新規コンポーネント `MapInitializer` を追加
+  ```tsx
+  function MapInitializer() {
+    const map = useMap();
+    useEffect(() => {
+      map.invalidateSize();  // SSR/初期描画時にタイル描画を即座に開始
+    }, [map]);
+    return null;
+  }
+  ```
+- MapContainer 内で `<MapInitializer />` と `<FlyToLocation />` を実行
+- これにより、ユーザー操作待たずに地図が即座に描画される
+
+**3. components/BottomSheet.tsx**
+- 96-104行目: 動的な `heightClass` 定義を廃止
+- 108-109行目: inline style で確実に高さを制御
+  ```tsx
+  style={{
+    maxHeight: "100vh",
+    height: state === "full" || !isPeekable ? "85vh" : state === "half" ? "50vh" : `${peekHeight}px`
+  }}
+  ```
+
+#### 検証
+
+- `npm run build` で型チェック・ビルド成功を確認
+- デスクトップ・モバイル両方のメディアクエリが pure CSS のみで制御され、JS による切り替え遅延が解消
+
+---
+
 ## [2026-08-20] - モバイル表示におけるタッチスクロール不能原因の解消
 
 ### [実施内容]

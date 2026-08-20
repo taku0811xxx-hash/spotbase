@@ -129,6 +129,18 @@ const mapStyles = `
   }
 `;
 
+// 地図の初期化とコンテナサイズの再計算を行うコンポーネント
+// SSR/初期描画時のLeafletレンダリング遅延を防ぐ
+function MapInitializer() {
+  const map = useMap();
+  useEffect(() => {
+    // マウント直後に invalidateSize() を実行し、タイル描画を即座に開始
+    // これによりタッチ操作待たずに地図が表示される
+    map.invalidateSize();
+  }, [map]);
+  return null;
+}
+
 // 検索結果などで特定の場所にフォーカスした時に地図を移動させるための内部コンポーネント
 function FlyToLocation({ target }: { target: { lat: number; lng: number } | null | undefined }) {
   const map = useMap();
@@ -178,6 +190,10 @@ export default function Map({
         className="h-full w-full pointer-events-auto"
         style={{ touchAction: "manipulation", WebkitTouchCallout: "none" }}
       >
+      {/* 地図初期化コンポーネント - invalidateSize() を実行してタイル描画を即座に開始 */}
+      <MapInitializer />
+      {/* FlyTo コンポーネント - 検索結果などで地図を移動 */}
+      <FlyToLocation target={flyTo} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -312,7 +328,6 @@ export default function Map({
         );
       })}
 
-      <FlyToLocation target={flyTo} />
       </MapContainer>
     </>
   );

@@ -51,25 +51,13 @@ export default function Home() {
   // メニュー開閉状態管理
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Track viewport width to conditionally render layouts
-  const [isMobile, setIsMobile] = useState(true);
+  // ハイドレーション完了フラグ（Portal用途のみ）
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     // ハイドレーション完了を示す
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    handleResize(); // Set initial value
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [mounted]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -274,7 +262,7 @@ export default function Home() {
   return (
     <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:h-auto md:overflow-y-auto md:overflow-x-auto">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
-      <div className="!hidden md:!flex md:!flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3" style={{ display: isMobile ? "none" : "flex" }}>
+      <div className="hidden md:flex md:flex-col w-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
         <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
@@ -386,7 +374,7 @@ export default function Home() {
             </aside>
           )}
 
-          <main className="flex-1 rounded-lg sm:rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-[600px] sm:min-h-[650px]">
+          <main className="flex-1 h-full w-full rounded-lg sm:rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-[600px] sm:min-h-[650px]">
             <Map
               pins={filtered}
               flyTo={flyTo}
@@ -430,7 +418,7 @@ export default function Home() {
         )}
 
         {/* Map Container - Takes remaining space */}
-        <main className="flex-1 w-full relative overflow-hidden z-10" style={{ touchAction: "manipulation" }}>
+        <main className="flex-1 h-full w-full relative overflow-hidden z-10" style={{ touchAction: "manipulation" }}>
           {/* Map */}
           <Map
             pins={filtered}
