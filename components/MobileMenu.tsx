@@ -41,8 +41,8 @@ export default function MobileMenu({ profile, onLogout }: Props) {
             aria-hidden="true"
           />
 
-          {/* Menu Panel */}
-          <div className="fixed inset-0 right-auto w-72 top-0 bottom-0 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto" role="navigation" aria-label="メニュー" style={{ maxHeight: "100vh", overflowY: "auto" }}>
+          {/* Menu Panel - 右側配置 */}
+          <div className="fixed inset-y-0 right-0 w-72 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto" role="navigation" aria-label="メニュー" style={{ maxHeight: "100vh", overflowY: "auto" }}>
             {/* Menu Header */}
             <div className="border-b border-slate-700 px-4 py-4">
               <div className="text-right">

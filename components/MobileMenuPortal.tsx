@@ -55,9 +55,9 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
         aria-hidden="true"
       />
 
-      {/* Menu Panel - z-[99999] (最前面) */}
+      {/* Menu Panel - z-[99999] (最前面) - 右側配置 */}
       <div
-        className="fixed inset-0 right-auto w-72 top-0 bottom-0 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto"
+        className="fixed inset-y-0 right-0 w-72 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto"
         role="navigation"
         aria-label="メニュー"
         style={{ maxHeight: "100vh", overflowY: "auto" }}
