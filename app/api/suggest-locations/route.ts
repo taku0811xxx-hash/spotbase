@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebaseAdmin";
+import { Timestamp } from "firebase-admin/firestore";
 
 export type BroadcastLocationSuggestion = {
   recommended: {
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { candidates, incidentType, address } = await req.json();
+  const { candidates, incidentType, address, pinId } = await req.json();
 
   if (!Array.isArray(candidates) || candidates.length === 0) {
     return NextResponse.json(
@@ -104,6 +106,24 @@ ${candidatesText}
 
     const cleaned = text.replace(/```json|```/g, "").trim();
     const suggestion = JSON.parse(cleaned) as BroadcastLocationSuggestion;
+
+    // Firestore にキャッシュを保存
+    if (pinId) {
+      try {
+        const db = getAdminDb();
+        await db.collection("pins").doc(pinId).update({
+          "aiProposal.content.broadcastLocations": suggestion,
+          "aiProposal.generatedAt": Timestamp.now(),
+        });
+      } catch (saveErr) {
+        console.error("AI Generation Error - Failed to save cache:", {
+          error: saveErr instanceof Error ? saveErr.message : String(saveErr),
+          pinId,
+          endpoint: "/api/suggest-locations",
+        });
+        // キャッシュ保存失敗は提案返却の邪魔はしない
+      }
+    }
 
     return NextResponse.json({ suggestion });
   } catch (err) {

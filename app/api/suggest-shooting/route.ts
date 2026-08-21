@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebaseAdmin";
+import { Timestamp } from "firebase-admin/firestore";
 
 export type ShootingSuggestion = {
   position: string; // どこから撮るか
@@ -15,7 +17,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { name, address, osmFeatures, wikiSummary } = await req.json();
+  const { name, address, osmFeatures, wikiSummary, pinId } = await req.json();
 
   const featuresText =
     Array.isArray(osmFeatures) && osmFeatures.length > 0
@@ -85,6 +87,24 @@ ${wikiSummary || "(該当する記事は見つかりませんでした)"}
 
     const cleaned = text.replace(/```json|```/g, "").trim();
     const suggestions = JSON.parse(cleaned) as ShootingSuggestion[];
+
+    // Firestore にキャッシュを保存
+    if (pinId) {
+      try {
+        const db = getAdminDb();
+        await db.collection("pins").doc(pinId).update({
+          "aiProposal.content.shootingPositions": suggestions,
+          "aiProposal.generatedAt": Timestamp.now(),
+        });
+      } catch (saveErr) {
+        console.error("AI Generation Error - Failed to save cache:", {
+          error: saveErr instanceof Error ? saveErr.message : String(saveErr),
+          pinId,
+          endpoint: "/api/suggest-shooting",
+        });
+        // キャッシュ保存失敗は提案返却の邪魔はしない
+      }
+    }
 
     return NextResponse.json({ suggestions });
   } catch (err) {

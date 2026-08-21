@@ -54,6 +54,17 @@ export type Memo = {
   text: string; // メモテキスト
 };
 
+export type AiProposalForDispatch = {
+  content: {
+    shootingPositions?: Array<{
+      position: string;
+      direction: string;
+      reason: string;
+    }>;
+  };
+  generatedAt: Timestamp;
+};
+
 export type DispatchRecord = {
   id: string;
   locationName: string; // 場所名
@@ -90,6 +101,7 @@ export type DispatchRecord = {
   createdAt: Timestamp | null;
   memos?: Memo[]; // リアルタイム現場メモ（FPU回線確保、中継車設営完了など）
   sourceFileHash?: string; // インポート時のソースファイルハッシュ（重複防止用）
+  aiProposal?: AiProposalForDispatch; // AI生成提案のキャッシュ
 };
 
 const COLLECTION = "dispatch_records";

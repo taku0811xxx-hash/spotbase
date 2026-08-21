@@ -15,6 +15,47 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
 import { compressImage } from "./imageCompression";
 
+export type AiProposal = {
+  content: {
+    shootingPositions?: Array<{
+      position: string;
+      direction: string;
+      reason: string;
+    }>;
+    broadcastLocations?: {
+      recommended: {
+        name: string;
+        lat: number;
+        lng: number;
+        reason: string;
+        iconType: "angle" | "parking";
+      };
+      alternative: {
+        name: string;
+        lat: number;
+        lng: number;
+        reason: string;
+        iconType: "angle" | "parking";
+      };
+      parking: {
+        name: string;
+        lat: number;
+        lng: number;
+        reason: string;
+        iconType: "angle" | "parking";
+      };
+    };
+    pinSummary?: {
+      parkingInfo: string;
+      shootingSpots: string;
+      ipTransmissionInfo: string;
+      fpuInfo: string;
+      hazards: string;
+    };
+  };
+  generatedAt: Timestamp;
+};
+
 export type Pin = {
   id: string;
   parentLocation?: string; // 代表地名または建物名（例: "国立競技場", "財務省"）
@@ -36,6 +77,7 @@ export type Pin = {
   recordedBy: string;
   recordedAt: Timestamp | null;
   dispatchCount?: number; // 出動回数（フロントエンドで計算される）
+  aiProposal?: AiProposal; // AI生成提案のキャッシュ
 };
 
 const PINS_COLLECTION = "pins";

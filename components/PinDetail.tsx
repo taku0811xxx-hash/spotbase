@@ -7,6 +7,7 @@ import { deletePin, type Pin } from "@/lib/pins";
 import ConfirmDialog from "./ConfirmDialog";
 import Toast, { type ToastState } from "./Toast";
 import DispatchHistorySummary from "./DispatchHistorySummary";
+import AiProposalSection from "./AiProposalSection";
 
 function PhotoGrid({ urls, alt }: { urls: string[]; alt: string }) {
   if (urls.length === 0) return null;
@@ -129,6 +130,10 @@ export default function PinDetail({ pin }: { pin: Pin }) {
           <PhotoGrid urls={pin.photoUrls} alt={pin.name} />
         </div>
       )}
+
+      <div className="border-t border-gray-200 pt-4">
+        <AiProposalSection pin={pin} />
+      </div>
 
       <DispatchHistorySummary pinId={pin.id} lat={pin.lat} lng={pin.lng} />
     </div>

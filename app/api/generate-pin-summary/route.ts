@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebaseAdmin";
+import { Timestamp } from "firebase-admin/firestore";
 
 // 同じ場所で行われた複数の出動記録をAIに読ませて、現場記録(駐車場所・撮影ポイント・
 // 伝送状況・危険箇所)としてまとめた1つの要約を作る。1件のみの場合もそのまま整形する。
@@ -23,10 +25,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { locationName, address, records } = (await req.json()) as {
+  const { locationName, address, records, pinId } = (await req.json()) as {
     locationName: string;
     address: string;
     records: SourceRecord[];
+    pinId?: string;
   };
 
   if (!Array.isArray(records) || records.length === 0) {
@@ -112,6 +115,24 @@ ${recordsText}
       fpuInfo: string;
       hazards: string;
     };
+
+    // Firestore にキャッシュを保存
+    if (pinId) {
+      try {
+        const db = getAdminDb();
+        await db.collection("pins").doc(pinId).update({
+          "aiProposal.content.pinSummary": summary,
+          "aiProposal.generatedAt": Timestamp.now(),
+        });
+      } catch (saveErr) {
+        console.error("AI Generation Error - Failed to save cache:", {
+          error: saveErr instanceof Error ? saveErr.message : String(saveErr),
+          pinId,
+          endpoint: "/api/generate-pin-summary",
+        });
+        // キャッシュ保存失敗は提案返却の邪魔はしない
+      }
+    }
 
     return NextResponse.json({ summary });
   } catch (err) {
