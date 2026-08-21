@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
 import { getDispatchRecords } from "@/lib/dispatchRecords";
-import { getBreakingAlerts, type BreakingAlert } from "@/lib/breaking/parseLocation";
+import type { BreakingAlert } from "@/lib/breaking/parseLocation";
+import { useBreakingAlerts } from "@/lib/hooks/useBreakingAlerts";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { geocodeQuery } from "@/lib/geocode";
@@ -63,7 +64,8 @@ export default function Home() {
   const [hoveredRoadKey, setHoveredRoadKey] = useState<string | null>(null);
 
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [breakingAlerts, setBreakingAlerts] = useState<BreakingAlert[]>([]);
+  // クライアント側のリアルタイム取得フック（60秒ごとに自動更新）
+  const { alerts: breakingAlerts } = useBreakingAlerts();
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
@@ -101,13 +103,12 @@ export default function Home() {
         category: profile.category,
         isAdmin: profile.accessLevel === "admin",
       }),
-      getBreakingAlerts(),
     ])
       .then((results) => {
         const pinsResult = results[0];
         const incidentsResult = results[1];
         const dispatchResult = results[2];
-        const breakingAlertsResult = results[3];
+        // breakingAlerts はクライアント側の useBreakingAlerts フックで自動管理
 
         let pinsData =
           pinsResult.status === "fulfilled" ? pinsResult.value : [];
@@ -143,21 +144,6 @@ export default function Home() {
           incidentsData = [];
         }
 
-        // Load breaking alerts with detailed error logging
-        let breakingAlertsData: BreakingAlert[] = [];
-        if (breakingAlertsResult.status === "fulfilled") {
-          breakingAlertsData = breakingAlertsResult.value;
-          console.log(`Loaded ${breakingAlertsData.length} breaking alerts`);
-        } else {
-          // エラー時の詳細ログ（permission denied など）
-          console.warn(
-            "Failed to load breaking alerts from Firestore:",
-            breakingAlertsResult.reason
-          );
-          // 空配列で安全に復旧
-          breakingAlertsData = [];
-        }
-
         // Calculate active dispatch count
         const activeCount = dispatchRecords.filter(
           (r) => r.status && r.status !== "完了"
@@ -165,7 +151,7 @@ export default function Home() {
 
         setPins(pinsData);
         setIncidents(incidentsData);
-        setBreakingAlerts(breakingAlertsData);
+        // breakingAlerts はクライアント側の useBreakingAlerts フックで自動管理
         setActiveDispatchCount(activeCount);
       })
       .catch((error) => {

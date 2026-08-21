@@ -1,5 +1,152 @@
 # SpotBase - 変更履歴
 
+## [2026-08-21] - Vercel Cron廃止してクライアント側のリアルタイム取得に移行
+
+### [実施内容]
+
+Vercel Cron（サーバーサイド定期実行）を完全に廃止し、ブラウザ側からのリアルタイムデータ取得に移行。これにより、Vercel Hobby プランの制限を回避しつつ、常に最新の速報情報を表示できるようになりました。
+
+#### 1. Vercel Cron 設定の廃止
+
+**修正内容（vercel.json）:**
+
+修正前:
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/fetch-alerts",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```
+
+修正後:
+```json
+{}
+```
+
+**削除対象:**
+- ❌ Vercel Cron スケジュール設定（`crons` フィールド）
+- ❌ `/api/cron/fetch-alerts` への 1 日 1 回の定期実行
+
+#### 2. クライアント側のリアルタイム取得実装
+
+**新規ファイル: `lib/hooks/useBreakingAlerts.ts`**
+
+```typescript
+// 60秒ごとに自動更新するカスタムフック
+export function useBreakingAlerts() {
+  const [alerts, setAlerts] = useState<BreakingAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // マウント時に初回フェッチ
+    fetchAlerts();
+
+    // 60秒ごとに自動更新
+    const interval = setInterval(fetchAlerts, 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return { alerts, loading, error };
+}
+```
+
+**特徴:**
+- ✅ ページ表示時（マウント時）に初回フェッチ
+- ✅ 60秒ごとに自動更新（リアルタイム性確保）
+- ✅ エラー時も空配列で安全に復旧
+- ✅ キャッシュ対応（30秒のブラウザキャッシュ）
+
+#### 3. クライアント用 API エンドポイント追加
+
+**新規ファイル: `app/api/breaking-alerts/route.ts`**
+
+```typescript
+// GET /api/breaking-alerts
+// クライアント側からのリアルタイムデータ取得用エンドポイント
+```
+
+**動作:**
+- Firestore から未確認速報データを取得
+- 30秒のキャッシュ制御ヘッダーを設定
+- エラーハンドリング（500 レスポンス）
+
+#### 4. app/page.tsx の修正
+
+**変更内容:**
+```typescript
+// 修正前: サーバー側の getBreakingAlerts() で初回ロード時のみ取得
+Promise.allSettled([
+  getAllPins(...),
+  getHighUrgencyIncidents(...),
+  getDispatchRecords(...),
+  getBreakingAlerts(),  // ❌ 削除
+])
+
+// 修正後: クライアント側のフックで自動管理
+const { alerts: breakingAlerts } = useBreakingAlerts();  // ✅ リアルタイム取得
+```
+
+**効果:**
+- ✅ サーバー側の処理が軽減（Cron ジョブ廃止）
+- ✅ クライアント側で継続的に最新データを取得
+- ✅ ユーザーが画面を見ている間は常に最新状態を表示
+
+#### 5. アーキテクチャの変更
+
+**修正前（サーバー側定期実行）:**
+```
+┌─────────────────────────────────┐
+│ Vercel Cron (1回/日)            │
+│ ↓                               │
+│ /api/cron/fetch-alerts          │
+│ ↓                               │
+│ Firestore breaking_alerts更新   │
+│ ↓                               │
+│ クライアント表示（手動リロード） │
+└─────────────────────────────────┘
+```
+
+**修正後（クライアント側リアルタイム取得）:**
+```
+┌─────────────────────────────────┐
+│ ブラウザ表示                     │
+│ ↓                               │
+│ useBreakingAlerts フック        │
+│ (マウント時 + 60秒ごと)        │
+│ ↓                               │
+│ /api/breaking-alerts            │
+│ ↓                               │
+│ Firestore breaking_alerts 読取  │
+│ ↓                               │
+│ 画面に常時最新データ表示        │
+└─────────────────────────────────┘
+```
+
+#### 6. メリット
+
+| 項目 | 修正前 | 修正後 |
+|-----|-------|-------|
+| **実行方式** | サーバーサイド（Cron） | クライアントサイド |
+| **実行頻度** | 1 日 1 回 | 60 秒ごと（ユーザーが表示中） |
+| **Hobby プラン対応** | ❌ 制限超過 | ✅ 対応 |
+| **リアルタイム性** | ❌ 遅延（手動リロード必要） | ✅ 自動更新 |
+| **サーバー負荷** | 高（Cron 実行） | 低（読取のみ） |
+| **ネットワーク効率** | 効率的（1日1回） | 通常（60秒ごと） |
+
+#### 7. 今後の改善案
+
+- SWR ライブラリ導入（キャッシュ・フォーカス自動更新対応）
+- Firestore Realtime Listener の活用（より低遅延）
+- ユーザー設定で更新頻度カスタマイズ（15/30/60 秒から選択）
+
+---
+
 ## [2026-08-21] - モバイル速報バーの2段表示化および選択現場ピンへの戻るボタン追加
 
 ### [実施内容]
