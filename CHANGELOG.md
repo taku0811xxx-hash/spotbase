@@ -1,5 +1,84 @@
 # SpotBase - 変更履歴
 
+## [2026-08-21] - 速報テロップバーのダミーデータ削除および UI 修復
+
+### [実施内容]
+
+速報表示テロップバー（「もしかして今起きてる？」）のダミーデータを完全削除し、Firestore から実データのみを参照するように統一。併せて、テロップバーの不要なスクロールバー表示を解消し、適切な縦幅を設定して UI の崩れを修復。
+
+#### 1. ダミーデータ（generateTestIncidents）の完全削除
+
+**修正前:**
+```typescript
+// app/page.tsx
+if (incidentsResult.status === "fulfilled") {
+  incidentsData = incidentsResult.value;
+} else {
+  incidentsData = generateTestIncidents(profile.organizationId);  // ❌ ダミーデータ
+}
+```
+
+**修正後:**
+```typescript
+// app/page.tsx
+if (incidentsResult.status === "fulfilled") {
+  incidentsData = incidentsResult.value;
+} else {
+  incidentsData = [];  // ✅ 空配列（ダミーデータなし）
+}
+```
+
+**削除した内容:**
+- `import { generateTestIncidents } from "@/lib/incidentsTest";` を削除
+- 「渋谷スクランブル交差点の多車線事故」などの 5 件のモック Incident を使用しない
+- Firestore ルール未設定時も空配列で復旧（UI がクラッシュしない）
+
+#### 2. IncidentAlert テロップバーの UI 修復
+
+**修正前の問題点:**
+```tsx
+<div className="... overflow-x-auto">
+  <div className="... overflow-x-auto pb-1">
+    {/* チップ */}
+  </div>
+</div>
+```
+- 親要素と子要素の両方に `overflow-x-auto` が設定
+- 子要素に `pb-1` パディングがあり、親要素が縮まらない
+- **結果**: 不要な縦スクロールバーが表示される ❌
+
+**修正後:**
+```tsx
+<div className="... overflow-hidden min-h-[44px]">
+  <div className="... overflow-hidden">
+    {/* チップ */}
+  </div>
+</div>
+```
+
+**具体的な修正内容:**
+
+| 項目 | 修正前 | 修正後 | 効果 |
+|-----|-------|-------|------|
+| **親要素オーバーフロー** | `overflow-x-auto` | `overflow-hidden` | 不要なスクロールバーを排除 |
+| **子要素オーバーフロー** | `overflow-x-auto pb-1` | `overflow-hidden` | 縦スクロールバー完全排除 |
+| **最小高さ** | なし | `min-h-[44px]` | モバイルタップ領域確保（44px ≈ iOS 標準タップサイズ） |
+| **高さ制御** | `py-2 sm:py-2.5` 固定 | `py-2 sm:py-2.5` + `min-h-[44px]` | テキスト上下に余裕を持たせる |
+
+#### 3. データ 0 件時の表示制御
+
+**実装:**
+```typescript
+if (incidents.length === 0) {
+  return null;  // テロップバー自体を非表示
+}
+```
+
+- Firestore からデータが 0 件でも画面が崩れない
+- テロップバーが必要になるまで非表示
+
+---
+
 ## [2026-08-21] - 速報ピン機能のダミーデータ削除および空状態ハンドリング完全対応
 
 ### [実施内容]

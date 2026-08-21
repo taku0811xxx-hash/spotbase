@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
-import { generateTestIncidents } from "@/lib/incidentsTest";
 import { getDispatchRecords } from "@/lib/dispatchRecords";
 import { getBreakingAlerts, type BreakingAlert } from "@/lib/breaking/parseLocation";
 import { useAuth } from "@/components/AuthProvider";
@@ -134,14 +133,14 @@ export default function Home() {
         let incidentsData: Incident[] = [];
         if (incidentsResult.status === "fulfilled") {
           incidentsData = incidentsResult.value;
+          console.log(`Loaded ${incidentsData.length} incidents from Firestore`);
         } else {
+          // エラー時は空配列を返す（ダミーデータは使用しない）
           console.warn(
-            "Failed to load incidents from Firestore (likely due to security rules):",
+            "Failed to load incidents from Firestore:",
             incidentsResult.reason
           );
-          console.info("Using test data for demonstration...");
-          // Firestore ルール未設定時はテストデータを使用
-          incidentsData = generateTestIncidents(profile.organizationId);
+          incidentsData = [];
         }
 
         // Load breaking alerts with detailed error logging

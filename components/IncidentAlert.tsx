@@ -35,8 +35,8 @@ const IncidentAlert = memo(function IncidentAlert({ incidents, onMapNavigate }: 
 
   return (
     <>
-      {/* Slim Single-Line Banner */}
-      <div className="bg-gradient-to-r from-red-100 to-orange-100 border border-red-300 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 sm:gap-3 overflow-x-auto">
+      {/* Slim Single-Line Banner - Fixed height to prevent scroll bars */}
+      <div className="bg-gradient-to-r from-red-100 to-orange-100 border border-red-300 px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 overflow-hidden min-h-[44px]">
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-lg sm:text-xl animate-pulse">🚨</span>
           <span className="font-bold text-red-900 text-xs sm:text-sm whitespace-nowrap">
@@ -44,8 +44,8 @@ const IncidentAlert = memo(function IncidentAlert({ incidents, onMapNavigate }: 
           </span>
         </div>
 
-        {/* Event Chips (Scrollable on mobile) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 flex-1">
+        {/* Event Chips (Horizontal scroll with clipping) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-hidden flex-1">
           {displayIncidents.map((incident) => (
             <button
               key={incident.id}
