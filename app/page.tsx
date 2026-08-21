@@ -8,6 +8,7 @@ import { getAllPins, searchPins, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
 import { generateTestIncidents } from "@/lib/incidentsTest";
 import { getDispatchRecords } from "@/lib/dispatchRecords";
+import { getBreakingAlerts, type BreakingAlert } from "@/lib/breaking/parseLocation";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { geocodeQuery } from "@/lib/geocode";
@@ -63,6 +64,7 @@ export default function Home() {
   const [hoveredRoadKey, setHoveredRoadKey] = useState<string | null>(null);
 
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [breakingAlerts, setBreakingAlerts] = useState<BreakingAlert[]>([]);
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
@@ -100,11 +102,13 @@ export default function Home() {
         category: profile.category,
         isAdmin: profile.accessLevel === "admin",
       }),
+      getBreakingAlerts(),
     ])
       .then((results) => {
         const pinsResult = results[0];
         const incidentsResult = results[1];
         const dispatchResult = results[2];
+        const breakingAlertsResult = results[3];
 
         let pinsData =
           pinsResult.status === "fulfilled" ? pinsResult.value : [];
@@ -140,6 +144,10 @@ export default function Home() {
           incidentsData = generateTestIncidents(profile.organizationId);
         }
 
+        // Load breaking alerts
+        const breakingAlertsData: BreakingAlert[] =
+          breakingAlertsResult.status === "fulfilled" ? breakingAlertsResult.value : [];
+
         // Calculate active dispatch count
         const activeCount = dispatchRecords.filter(
           (r) => r.status && r.status !== "完了"
@@ -147,6 +155,7 @@ export default function Home() {
 
         setPins(pinsData);
         setIncidents(incidentsData);
+        setBreakingAlerts(breakingAlertsData);
         setActiveDispatchCount(activeCount);
       })
       .catch((error) => {
@@ -413,6 +422,7 @@ export default function Home() {
               stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
               hoveredRoadKey={hoveredRoadKey}
               incidents={incidents}
+              breakingAlerts={breakingAlerts}
             />
           </main>
         </div>
@@ -488,6 +498,7 @@ export default function Home() {
             stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
             hoveredRoadKey={hoveredRoadKey}
             incidents={incidents}
+            breakingAlerts={breakingAlerts}
           />
         </main>
 

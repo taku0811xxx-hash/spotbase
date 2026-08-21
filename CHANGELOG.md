@@ -1,5 +1,110 @@
 # SpotBase - 変更履歴
 
+## [2026-08-21] - Bluesky API および ニュース RSS からの未確認速報ピン自動抽出・起立機能の実装
+
+### [実施内容]
+
+Bluesky のパブリック API および RSS フィード（Yahoo!ニュース、NHK、日本気象協会など）から防災・交通に関する速報情報を自動取得し、Firestore `breaking_alerts` コレクションに「未確認速報ピン」として自動記録。Vercel Cron で 15 分ごとに実行される定期タスク機能を実装。マップ上には黄色でパルス波紋効果の専用アイコンで表示され、ユーザーが速報情報を基に出動記録を新規作成できます。
+
+#### 1. データ取得ライブラリの実装
+
+**`lib/breaking/blueskyFetcher.ts`**
+- Bluesky のパブリック API （認証不要）から速報キーワード（火事・事故・入場制限・運転見合わせなど）を含む投稿を最新順で取得
+- キーワード抽出機能により、投稿内の複数の関連キーワードを自動識別
+
+**`lib/breaking/rssFetcher.ts`**
+- `rss-parser` を使用して RSS フィード（Yahoo!ニュース速報、NHK、日本気象協会など）を定期的にパース
+- 防災・交通関連の記事をフィルタリング
+
+**`lib/breaking/parseLocation.ts`**
+- 地名辞書（東京・大阪などの区名、有名施設など 70+ エントリ）から投稿・記事の本文からロケーション名を抽出
+- 地名から座標（緯度・経度）に自動変換
+- **重複防止ロジック**: 直近 30 分以内の同一エリア（半径 500m 以内、@turf/turf 使用）に同じキーワードのピンが存在する場合は、既存ピンの報告数（`count`）と信頼度スコア（`confidenceScore`）をインクリメント。新規ピンは作成しない
+
+#### 2. Vercel Cron 実行エンドポイント
+
+**`app/api/cron/fetch-alerts/route.ts`**
+- 15 分ごとに Vercel Cron によって自動実行（`vercel.json` で設定）
+- Bluesky と RSS から並列にデータ取得し、テキスト解析 → 地名抽出 → 座標特定 → Firestore 保存
+- `CRON_SECRET` ヘッダーによる認証で、本番環境での不正実行を防止
+- エラーが発生した場合でも他の処理は継続実行
+
+**`vercel.json`（新規作成）**
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/fetch-alerts",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
+```
+
+#### 3. 位置情報・重複防止ロジック
+
+**Firestore `breaking_alerts` コレクション**
+```typescript
+type BreakingAlert = {
+  id: string;
+  title: string;
+  description: string;
+  keywords: string[];
+  lat: number;
+  lng: number;
+  locationName: string;
+  address: string;
+  source: "bluesky" | "rss";
+  status: "unverified" | "verified" | "dismissed";
+  count: number;              // 同一エリアでの報告数
+  confidenceScore: number;    // 信頼度スコア（0-100）
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  sourceUrls: string[];
+}
+```
+
+**重複排除アルゴリズム**:
+- 既存ピンが半径 500m 以内に存在 → `count` を +1、`confidenceScore` を加算平均 +5
+- 新規ピン → ステータス `unverified` で新規記録
+
+#### 4. マップ UI 統合
+
+**`components/Map.tsx` 更新**
+- **未確認速報アイコン**: 黄色（`#fbbf24`）の専用マーカー、パルス波紋アニメーション付き
+- Props に `breakingAlerts?: BreakingAlert[]` を追加
+- ポップアップに以下情報を表示:
+  - タイトル・説明
+  - 位置情報（ロケーション名）
+  - 情報源（Bluesky / RSS）
+  - キーワードタグ（最大 3 個）
+  - 信頼度スコア・報告数
+  - 「🎥 出動作成」ボタン
+
+**`app/page.tsx` 更新**
+- `getBreakingAlerts()` で未確認速報ピンを定期的にロード
+- Map コンポーネント（Desktop / Mobile）に `breakingAlerts` プロップを渡す
+
+#### 5. Firestore セキュリティルール設定
+
+**`firestore.rules` 更新**
+```firestore
+match /breaking_alerts/{alertId} {
+  // ログイン済みユーザーなら誰でも閲覧可、サーバー側のみ書き込み
+  allow read: if isSignedIn();
+  allow write: if false;
+}
+```
+
+#### 6. 今後の拡張性
+
+- **地名辞書の動的拡張**: Firestore に `locations` コレクションを設定して、ユーザーが新しい地名を登録できるように対応可能
+- **信頼度スコアの機械学習化**: キーワード重要度やソース信頼度に基づいて動的に計算
+- **多言語対応**: RSS フィード（中国語・英語など）の追加
+- **デマ・ノイズ除外**: Claude API の簡易判定で不正な情報を自動除外（現在は Bluesky RSS フィルタで対応）
+
+---
+
 ## [2026-08-21] - マップ上に降機材・待機エリアの凡例（Legend）表示を追加
 
 ### [実施内容]

@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
+import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
 const defaultIcon = L.icon({
@@ -87,6 +88,42 @@ const incidentIcon = L.divIcon({
   popupAnchor: [0, -45],
 });
 
+// 未確認速報ピン用のアイコン（黄色でパルス波紋効果付き）
+const breakingAlertIcon = L.divIcon({
+  className: "breaking-alert-marker",
+  html: `
+    <style>
+      @keyframes ripple {
+        0%, 100% {
+          box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7);
+        }
+        50% {
+          box-shadow: 0 0 0 10px rgba(234, 179, 8, 0);
+        }
+      }
+      .breaking-alert-marker {
+        animation: ripple 1.2s ease-in-out infinite;
+      }
+    </style>
+    <svg width="36" height="46" viewBox="0 0 36 46" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="breakingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#fbbf24"/>
+          <stop offset="100%" stop-color="#f59e0b"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="18" cy="44" rx="8" ry="2" fill="rgba(0,0,0,0.3)"/>
+      <path d="M18 2C8 2 0 10 0 20c0 12 18 24 18 24s18-12 18-24c0-10-8-18-18-18z"
+            fill="url(#breakingGrad)" stroke="#d97706" stroke-width="1.5"/>
+      <circle cx="18" cy="20" r="5" fill="white" opacity="0.9"/>
+      <text x="18" y="25" text-anchor="middle" font-size="12" font-weight="bold" fill="#f59e0b">!!</text>
+    </svg>
+  `,
+  iconSize: [36, 46],
+  iconAnchor: [18, 46],
+  popupAnchor: [0, -42],
+});
+
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
 type Props = {
@@ -99,6 +136,7 @@ type Props = {
   stopSuggestions?: RoadSuggestion[]; // 駐停車の候補道路
   hoveredRoadKey?: string | null; // 一覧でホバー中の道路(park-123 / stop-456 の形式)
   incidents?: Incident[]; // 速報事案
+  breakingAlerts?: BreakingAlert[]; // 未確認速報ピン
 };
 
 // CSS for Leaflet controls positioning
@@ -175,6 +213,7 @@ export default function Map({
   stopSuggestions = [],
   hoveredRoadKey = null,
   incidents = [],
+  breakingAlerts = [],
 }: Props) {
   return (
     <>
@@ -269,6 +308,52 @@ export default function Map({
                 <a
                   href={`/dispatch/new?incidentId=${incident.id}`}
                   className="flex-1 text-center text-sm bg-red-600 text-white hover:bg-red-700 rounded px-2 py-1.5 transition-colors font-medium"
+                >
+                  🎥 出動作成
+                </a>
+              </div>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+
+      {breakingAlerts.map((alert) => (
+        <Marker
+          key={`alert-${alert.id}`}
+          position={[alert.lat, alert.lng]}
+          icon={breakingAlertIcon}
+        >
+          <Popup>
+            <div className="space-y-2 w-64">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg font-bold text-yellow-600">⚡</span>
+                  <h4 className="font-bold text-gray-900">{alert.title}</h4>
+                </div>
+                <p className="text-sm text-gray-700">{alert.description}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  📍 {alert.locationName}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  情報源: {alert.source === "bluesky" ? "Bluesky" : "RSS"}
+                </p>
+                <div className="flex gap-2 mt-1 flex-wrap">
+                  {alert.keywords.slice(0, 3).map((keyword, idx) => (
+                    <span key={idx} className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  信頼度: {alert.confidenceScore}% | 報告数: {alert.count}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={`/dispatch/new?lat=${alert.lat}&lng=${alert.lng}&locationName=${encodeURIComponent(
+                    alert.locationName
+                  )}`}
+                  className="flex-1 text-center text-sm bg-yellow-600 text-white hover:bg-yellow-700 rounded px-2 py-1.5 transition-colors font-medium"
                 >
                   🎥 出動作成
                 </a>

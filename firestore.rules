@@ -51,5 +51,11 @@ service cloud.firestore {
       allow create: if isSignedIn() && isOwnOrgData(request.resource.data);
       allow update, delete: if canView(resource.data);
     }
+
+    match /breaking_alerts/{alertId} {
+      // 未確認速報ピン：ログインしている全員が閲覧可能、書き込みはサーバー側のみ
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }
