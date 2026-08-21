@@ -161,21 +161,21 @@ export default function DispatchDetailPage() {
       />
 
       <div className="max-w-2xl mx-auto p-5 sm:p-10 space-y-5">
-        <div className="bg-white rounded-xl border border-gray-200 p-6 flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">{record.locationName}</h1>
+        <div className="bg-white rounded-xl border border-gray-200 p-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold text-gray-900 break-words whitespace-normal">{record.locationName}</h1>
             {record.address && (
-              <p className="text-xs text-gray-500 mt-0.5">{record.address}</p>
+              <p className="text-xs text-gray-500 mt-0.5 break-words whitespace-normal">{record.address}</p>
             )}
             {record.incidentType && (
-              <p className="text-sm text-gray-600 mt-0.5">{record.incidentType}</p>
+              <p className="text-sm text-gray-600 mt-0.5 break-words whitespace-normal">{record.incidentType}</p>
             )}
             <p className="text-xs text-gray-500 mt-2">
               記録者: {record.recordedBy || "不明"}
               {createdAt && ` / ${createdAt.toLocaleString("ja-JP")}`}
             </p>
           </div>
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex flex-wrap gap-2 flex-shrink-0 w-full sm:w-auto justify-start sm:justify-end">
             <Link
               href={`/dispatch/${record.id}/edit`}
               className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 hover:border-gray-400 transition-all duration-150"
@@ -186,10 +186,10 @@ export default function DispatchDetailPage() {
               <button
                 onClick={handleGeneratePinSummary}
                 disabled={generating}
-                className="flex items-center gap-1.5 text-sm border border-blue-200 text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5 hover:bg-blue-100 hover:border-blue-300 transition-all duration-150 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-sm border border-blue-200 text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5 hover:bg-blue-100 hover:border-blue-300 transition-all duration-150 disabled:opacity-50 whitespace-normal sm:whitespace-nowrap"
               >
                 {generating && (
-                  <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <svg className="animate-spin flex-shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.4 0 0 5.4 0 12h4z" />
                   </svg>
