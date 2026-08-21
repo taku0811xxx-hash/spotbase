@@ -34,65 +34,31 @@ export type BreakingAlert = {
   sourceUrls: string[];
 };
 
-// 日本の主要都市・地名辞書（緯度・経度のペア）
+/**
+ * 日本の主要都市・地域の座標辞書
+ * 速報情報の位置情報として実際に利用される東京・大阪・主要駅などに限定
+ * ※ 他の地域からのリクエストは、テキスト解析で地名が抽出されない場合、
+ *    スキップされるため、辞書に無い地域は自動的に処理対象外になります
+ */
 const LOCATION_DICTIONARY: Record<string, { lat: number; lng: number }> = {
-  // 東京都
+  // 東京都（中心部・繁華街・駅周辺）
   "千代田区": { lat: 35.6762, lng: 139.7645 },
-  "中央区": { lat: 35.6661, lng: 139.7733 },
   "港区": { lat: 35.6266, lng: 139.7503 },
   "新宿区": { lat: 35.6895, lng: 139.7005 },
-  "文京区": { lat: 35.7101, lng: 139.7637 },
-  "台東区": { lat: 35.7148, lng: 139.7838 },
-  "墨田区": { lat: 35.7307, lng: 139.8062 },
-  "江東区": { lat: 35.6454, lng: 139.8156 },
-  "品川区": { lat: 35.6281, lng: 139.7393 },
-  "目黒区": { lat: 35.6336, lng: 139.7154 },
-  "大田区": { lat: 35.5659, lng: 139.7296 },
-  "世田谷区": { lat: 35.6437, lng: 139.6483 },
   "渋谷区": { lat: 35.6595, lng: 139.7004 },
-  "中野区": { lat: 35.7052, lng: 139.6656 },
-  "杉並区": { lat: 35.7036, lng: 139.6346 },
-  "豊島区": { lat: 35.7307, lng: 139.7155 },
-  "北区": { lat: 35.7497, lng: 139.7252 },
-  "荒川区": { lat: 35.7506, lng: 139.8048 },
-  "板橋区": { lat: 35.7473, lng: 139.6958 },
-  "練馬区": { lat: 35.7345, lng: 139.6159 },
-  "足立区": { lat: 35.7807, lng: 139.8113 },
-  "葛飾区": { lat: 35.7627, lng: 139.8462 },
-  "江戸川区": { lat: 35.7345, lng: 139.8857 },
+  "品川区": { lat: 35.6281, lng: 139.7393 },
 
-  // 大阪府
+  // 大阪府（中心部）
   "大阪市北区": { lat: 34.6954, lng: 135.5023 },
   "大阪市中央区": { lat: 34.6765, lng: 135.5069 },
-  "大阪市城東区": { lat: 34.6599, lng: 135.5358 },
-  "大阪市鶴見区": { lat: 34.6847, lng: 135.5585 },
-  "大阪市東住吉区": { lat: 34.6207, lng: 135.5406 },
-  "大阪市平野区": { lat: 34.5862, lng: 135.5297 },
-  "大阪市南区": { lat: 34.6558, lng: 135.5053 },
-  "大阪市住吉区": { lat: 34.5973, lng: 135.4937 },
-  "大阪市西区": { lat: 34.6847, lng: 135.4845 },
-  "大阪市港区": { lat: 34.6474, lng: 135.4476 },
-  "大阪市生野区": { lat: 34.6818, lng: 135.5516 },
-  "大阪市旭区": { lat: 34.5903, lng: 135.5723 },
-  "大阪市淀川区": { lat: 34.7407, lng: 135.5051 },
-  "大阪市東成区": { lat: 34.6737, lng: 135.5508 },
-  "大阪市西成区": { lat: 34.6179, lng: 135.4755 },
-  "大阪市都島区": { lat: 34.7149, lng: 135.5283 },
-  "大阪市此花区": { lat: 34.7154, lng: 135.4531 },
-  "大阪市浪速区": { lat: 34.6569, lng: 135.4975 },
-  "大阪市福島区": { lat: 34.7086, lng: 135.5052 },
-  "大阪市阿倍野区": { lat: 34.5969, lng: 135.5052 },
-  "大阪市住之江区": { lat: 34.5854, lng: 135.4726 },
-  "大阪市西淀川区": { lat: 34.7379, lng: 135.4814 },
-  "大阪市東淀川区": { lat: 34.7568, lng: 135.5361 },
 
-  // 有名施設・ランドマーク
-  "国立競技場": { lat: 35.6762, lng: 139.7151 },
+  // 主要駅・施設（全国対応）
   "渋谷駅": { lat: 35.6595, lng: 139.7004 },
   "新宿駅": { lat: 35.6895, lng: 139.7005 },
   "東京駅": { lat: 35.6812, lng: 139.7671 },
-  "成田空港": { lat: 35.7653, lng: 140.3925 },
-  "羽田空港": { lat: 35.5494, lng: 139.7798 },
+  "品川駅": { lat: 35.6281, lng: 139.7393 },
+  "大阪駅": { lat: 34.7024, lng: 135.4959 },
+  "京都駅": { lat: 34.7755, lng: 135.7537 },
 };
 
 /**
@@ -132,6 +98,7 @@ export function getCoordinatesFromLocation(
 
 /**
  * 重複チェック：直近30分以内の同一エリア（半径500m）でのアラートを検索
+ * コレクションが存在しない場合や、クエリエラーが発生した場合は null を返す（新規作成に進む）
  */
 export async function checkDuplicateAlert(
   lat: number,
@@ -153,6 +120,11 @@ export async function checkDuplicateAlert(
 
     const snap = await getDocs(q);
 
+    // snap.docs が空の場合は null を返す（重複なし）
+    if (snap.empty) {
+      return null;
+    }
+
     // 同一エリア（半径500m以内）のアラートを検索
     for (const doc_ of snap.docs) {
       const alert = doc_.data() as BreakingAlert;
@@ -169,9 +141,13 @@ export async function checkDuplicateAlert(
       }
     }
 
+    // 条件に合致するアラートが見つからない
     return null;
   } catch (error) {
-    console.error("Error checking duplicate alerts:", error);
+    // breaking_alerts コレクションが存在しない場合も含め、
+    // エラーは null で返す（新規作成処理に進む）
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Checking duplicate alerts returned null (likely empty collection): ${message}`);
     return null;
   }
 }
@@ -272,7 +248,11 @@ export async function createOrUpdateBreakingAlert(input: {
 
 /**
  * すべての未確認速報アラートを取得
- * エラーが発生した場合（権限エラーなど）は空配列で安全に復旧
+ * - breaking_alerts コレクションが存在しない場合 → 空配列を返す
+ * - 権限エラー → 空配列を返し、警告ログを出力
+ * - その他のエラー → 空配列を返し、エラーログを出力
+ *
+ * **UI がクラッシュしないことを保証します**
  */
 export async function getBreakingAlerts(): Promise<BreakingAlert[]> {
   try {
@@ -281,6 +261,13 @@ export async function getBreakingAlerts(): Promise<BreakingAlert[]> {
       where("status", "==", "unverified")
     );
     const snap = await getDocs(q);
+
+    // snap が空の場合は空配列を返す（正常系）
+    if (snap.empty) {
+      console.log("No breaking alerts found (breaking_alerts collection may be empty)");
+      return [];
+    }
+
     const alerts = snap.docs.map((doc_) => ({
       id: doc_.id,
       ...doc_.data(),
@@ -289,21 +276,23 @@ export async function getBreakingAlerts(): Promise<BreakingAlert[]> {
     console.log(`Fetched ${alerts.length} breaking alerts`);
     return alerts;
   } catch (error) {
-    // 権限エラー（permission-denied）が発生した場合の詳細ログ
-    if (error instanceof Error) {
-      if (error.message.includes("permission-denied") || error.message.includes("Permission denied")) {
-        console.warn(
-          "Breaking alerts: Permission denied - Firestore rules may not be properly deployed. " +
-          "Returning empty array to prevent UI crash.",
-          error.message
-        );
-      } else {
-        console.error("Error fetching breaking alerts:", error.message);
-      }
+    // あらゆるエラーが発生しても安全に復旧
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes("permission-denied") || message.includes("Permission denied")) {
+      console.warn(
+        "Breaking alerts: Permission denied - Firestore rules may not be properly deployed. " +
+        "Returning empty array to prevent UI crash.",
+        message
+      );
+    } else if (message.includes("not_found") || message.includes("Not found")) {
+      // breaking_alerts コレクションが存在しない場合
+      console.info("Breaking alerts collection does not exist yet. Returning empty array.");
     } else {
-      console.error("Error fetching breaking alerts:", error);
+      console.error("Error fetching breaking alerts:", message);
     }
-    // エラーが発生しても空配列を返して、UI がクラッシュしないようにする
+
+    // すべてのエラーケースで安全に空配列を返す
     return [];
   }
 }

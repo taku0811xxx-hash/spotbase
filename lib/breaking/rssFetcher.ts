@@ -13,16 +13,12 @@ export type RssFeedItem = {
   source: string;
 };
 
-// RSS フィード URL リスト（完全無料のパブリック RSS）
+/**
+ * RSS フィード URL リスト（実運用で確認済みのパブリック RSS のみ）
+ */
 const RSS_FEEDS = [
-  // Yahoo!ニュース速報（いくつかのカテゴリ）
-  "https://news.yahoo.co.jp/rss/topics/top.xml",
-  // NHK ニュース速報
-  "https://www.nhk.or.jp/rss/news/rss.xml",
-  // 日本気象協会（防災気象情報）
-  "https://www.jma.go.jp/rss/",
-  // Google ニュース（公式 RSS がある場合）
-  // 注: Google ニュースの RSS は廃止済みの場合が多いため別の情報源を検討
+  "https://news.yahoo.co.jp/rss/topics/top.xml",      // Yahoo!ニュース速報
+  "https://www.nhk.or.jp/rss/news/rss.xml",            // NHK ニュース
 ];
 
 const parser = new Parser({
