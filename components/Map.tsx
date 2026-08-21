@@ -10,7 +10,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
@@ -132,6 +132,7 @@ type Props = {
   flyTo?: { lat: number; lng: number } | null;
   searchMarker?: SearchMarker | null;
   onSelectPin?: (pin: Pin) => void;
+  selectedPin?: Pin | null; // 現在選択中のピン（戻るボタン用）
   roadSuggestions?: RoadSuggestion[]; // 駐車の候補道路
   stopSuggestions?: RoadSuggestion[]; // 駐停車の候補道路
   hoveredRoadKey?: string | null; // 一覧でホバー中の道路(park-123 / stop-456 の形式)
@@ -203,12 +204,66 @@ function MapStyleInjector() {
   return null;
 }
 
+// 選択中のピンに戻るボタン
+function ReturnToPinButton({ selectedPin }: { selectedPin: Pin | null | undefined }) {
+  const map = useMap();
+  const [showButton, setShowButton] = useState(false);
+
+  useEffect(() => {
+    if (!selectedPin) {
+      setShowButton(false);
+      return;
+    }
+
+    const handleMapMove = () => {
+      const center = map.getCenter();
+      const distance = Math.sqrt(
+        Math.pow(center.lat - selectedPin.lat, 2) +
+        Math.pow(center.lng - selectedPin.lng, 2)
+      );
+      setShowButton(distance > 0.1);
+    };
+
+    map.on("move", handleMapMove);
+    handleMapMove();
+
+    return () => {
+      map.off("move", handleMapMove);
+    };
+  }, [selectedPin, map]);
+
+  if (!showButton || !selectedPin) {
+    return null;
+  }
+
+  const handleReturnToPin = () => {
+    map.flyTo([selectedPin.lat, selectedPin.lng], 16, {
+      duration: 1.5,
+      easeLinearity: 0.25,
+    });
+  };
+
+  return (
+    <div className="absolute bottom-20 right-4 z-[1000] pointer-events-auto">
+      <button
+        onClick={handleReturnToPin}
+        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 transition-colors active:scale-[0.95] font-medium text-sm text-gray-800 whitespace-nowrap"
+      >
+        <span>📍</span>
+        <span className="hidden sm:inline">選択中の現場に戻る</span>
+        <span className="sm:hidden">戻る</span>
+      </button>
+    </div>
+  );
+}
+
 export default function Map({
   pins,
   center = [35.681, 139.767],
   flyTo,
   searchMarker,
   onSelectPin,
+  selectedPin,
   roadSuggestions = [],
   stopSuggestions = [],
   hoveredRoadKey = null,
@@ -416,6 +471,8 @@ export default function Map({
         );
       })}
 
+      {/* 選択中のピンに戻るボタン */}
+      <ReturnToPinButton selectedPin={selectedPin} />
       </MapContainer>
     </>
   );

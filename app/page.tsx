@@ -426,6 +426,7 @@ export default function Home() {
               flyTo={flyTo}
               searchMarker={searchMarker}
               onSelectPin={handleSelectPin}
+              selectedPin={selectedPin}
               roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
               stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
               hoveredRoadKey={hoveredRoadKey}
@@ -500,6 +501,7 @@ export default function Home() {
             flyTo={flyTo}
             searchMarker={searchMarker}
             onSelectPin={handleSelectPin}
+            selectedPin={selectedPin}
             roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
             stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
             hoveredRoadKey={hoveredRoadKey}
