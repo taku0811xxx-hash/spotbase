@@ -20,10 +20,6 @@ const categoryEmojis: Record<string, string> = {
 const IncidentAlert = memo(function IncidentAlert({ incidents, onMapNavigate }: Props) {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
-  if (incidents.length === 0) {
-    return null;
-  }
-
   const handleMapClick = () => {
     if (selectedIncident && selectedIncident.latitude && selectedIncident.longitude) {
       onMapNavigate?.(selectedIncident.latitude, selectedIncident.longitude);
@@ -32,31 +28,41 @@ const IncidentAlert = memo(function IncidentAlert({ incidents, onMapNavigate }: 
 
   // 最初の数件のみ表示（スペース節約）
   const displayIncidents = incidents.slice(0, 3);
+  const hasIncidents = incidents.length > 0;
 
   return (
     <>
       {/* Slim Single-Line Banner - Fixed height to prevent scroll bars */}
+      {/* Always displayed regardless of incident count */}
       <div className="bg-gradient-to-r from-red-100 to-orange-100 border border-red-300 px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 overflow-hidden min-h-[44px]">
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-lg sm:text-xl animate-pulse">🚨</span>
+          <span className={`text-lg sm:text-xl ${hasIncidents ? "animate-pulse" : ""}`}>🚨</span>
           <span className="font-bold text-red-900 text-xs sm:text-sm whitespace-nowrap">
             もしかして今起きてる？
           </span>
         </div>
 
-        {/* Event Chips (Horizontal scroll with clipping) */}
+        {/* Event Chips or Empty State */}
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-hidden flex-1">
-          {displayIncidents.map((incident) => (
-            <button
-              key={incident.id}
-              onClick={() => setSelectedIncident(incident)}
-              className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors active:scale-[0.95] text-[10px] sm:text-xs font-medium whitespace-nowrap flex-shrink-0"
-            >
-              <span>[{incident.category}]</span>
-              <span className="hidden sm:inline truncate max-w-[150px]">{incident.title}</span>
-              <span className="sm:hidden truncate max-w-[80px]">{incident.title.slice(0, 5)}...</span>
-            </button>
-          ))}
+          {hasIncidents ? (
+            // Display incident chips when data exists
+            displayIncidents.map((incident) => (
+              <button
+                key={incident.id}
+                onClick={() => setSelectedIncident(incident)}
+                className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors active:scale-[0.95] text-[10px] sm:text-xs font-medium whitespace-nowrap flex-shrink-0"
+              >
+                <span>[{incident.category}]</span>
+                <span className="hidden sm:inline truncate max-w-[150px]">{incident.title}</span>
+                <span className="sm:hidden truncate max-w-[80px]">{incident.title.slice(0, 5)}...</span>
+              </button>
+            ))
+          ) : (
+            // Display empty state message when no data
+            <span className="text-[10px] sm:text-xs text-red-600 font-medium italic">
+              現在、検出された速報はありません
+            </span>
+          )}
         </div>
 
         {/* Count Badge */}
