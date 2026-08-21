@@ -151,10 +151,10 @@ export default function DispatchListPage() {
 
           {/* 検索・フィルタリング UI */}
           {!loading && records.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="w-full max-w-full box-border bg-white rounded-xl border border-gray-200 p-4 space-y-3 overflow-hidden">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
                 {/* フリーワード検索 */}
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     フリーワード検索
                   </label>
@@ -163,12 +163,12 @@ export default function DispatchListPage() {
                     placeholder="場所・住所・出動者名"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    className="w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full min-w-0 box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 {/* 開始日 */}
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     開始日
                   </label>
@@ -176,12 +176,12 @@ export default function DispatchListPage() {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full min-w-0 appearance-none max-w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 {/* 終了日 */}
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     終了日
                   </label>
@@ -189,19 +189,19 @@ export default function DispatchListPage() {
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full min-w-0 appearance-none max-w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 {/* 並び替え */}
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     並び替え
                   </label>
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as "newest" | "oldest")}
-                    className="w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full min-w-0 appearance-none max-w-full box-border border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="newest">最新順</option>
                     <option value="oldest">古い順</option>
