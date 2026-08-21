@@ -104,30 +104,38 @@ const BottomSheet = memo(function BottomSheet({
       <div
         ref={sheetRef}
         className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto flex flex-col"
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-        onMouseUp={handleMouseUp}
-        onTouchEnd={handleTouchEnd}
         style={{ touchAction: "pan-y", height: state === "full" || !isPeekable ? "85vh" : state === "half" ? "50vh" : `${peekHeight}px` }}
       >
-        {/* Handle */}
+        {/* Handle - ドラッグ可能領域に限定 */}
         <div
           ref={handleRef}
           className="flex justify-center py-2 cursor-grab active:cursor-grabbing bg-gray-50 border-b border-gray-100 pointer-events-auto"
           role="slider"
           aria-label="ボトムシートの高さを調整"
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+          onMouseUp={handleMouseUp}
+          onTouchEnd={handleTouchEnd}
+          style={{ touchAction: "none" }}
         >
           <div className="w-12 h-1 bg-gray-300 rounded-full" />
         </div>
 
-        {/* Title Bar */}
+        {/* Title Bar - ドラッグ可能領域に含める */}
         {title && (
-          <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between z-10">
-            <h2 className="font-semibold text-gray-900 text-sm">{title}</h2>
+          <div
+            className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between z-10 pointer-events-auto cursor-grab active:cursor-grabbing"
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
+            onMouseUp={handleMouseUp}
+            onTouchEnd={handleTouchEnd}
+            style={{ touchAction: "none" }}
+          >
+            <h2 className="font-semibold text-gray-900 text-sm pointer-events-none">{title}</h2>
             {!isPeekable && (
               <button
                 onClick={onClose}
-                className="text-gray-500 hover:text-gray-700 text-xl"
+                className="text-gray-500 hover:text-gray-700 text-xl pointer-events-auto"
               >
                 ✕
               </button>

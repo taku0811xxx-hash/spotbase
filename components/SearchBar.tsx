@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo } from "react";
+import { useState, memo, useEffect } from "react";
 
 type Props = {
   onSearch: (query: string) => void;
@@ -11,6 +11,19 @@ type Props = {
 
 const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear }: Props) {
   const [value, setValue] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // ハイドレーション後に実行
+    setMounted(true);
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
@@ -49,7 +62,7 @@ const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="現場名・住所・地名で検索(Enterで場所を検索)"
+          placeholder={mounted && isMobile ? "現場名・住所・地名で検索" : "現場名・住所・地名で検索 (Enterで場所を検索)"}
           className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 md:text-sm text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
         />
       </div>
