@@ -1,5 +1,53 @@
 # SpotBase - 変更履歴
 
+## [2026-08-21] - 未確認速報ピン機能の Firestore 権限エラー解決およびエラーハンドリング強化
+
+### [実施内容]
+
+Firestore セキュリティルール設定を修正し、`breaking_alerts` コレクションへのアクセス権限を整備。併せて、全体のエラーハンドリング（try-catch）を強化し、permission-denied エラーが発生しても UI が全体クラッシュしない仕様に改善。
+
+#### 1. Firestore セキュリティルール修正
+
+**`firestore.rules` 更新**
+```firestore
+match /breaking_alerts/{alertId} {
+  // 未確認速報ピン：パブリック情報として誰でも閲覧可能、書き込みはサーバー側のみ
+  allow read: if true;      // 読み取り権限をパブリック化（認証不問）
+  allow write: if false;    // 書き込みは禁止（サーバー側 Admin SDK のみ）
+}
+```
+
+**理由:**
+- 未確認速報情報は組織横断的に共有する公開情報であるため、認証チェックなしで読め放題に設定
+- クライアント側の読み取りでの permission-denied エラーを完全に排除
+
+#### 2. クライアント側エラーハンドリング強化
+
+**`lib/breaking/parseLocation.ts`**
+- `getBreakingAlerts()` 関数: try-catch で permission-denied を明示的に検出・ログ、常に空配列で復旧
+- `createOrUpdateBreakingAlert()` 関数: 権限エラーの詳細ログを出力してから throw（サーバー側で処理）
+
+**`app/page.tsx`**
+- `Promise.allSettled` で breaking alerts ロード時の結果を詳細にログ
+- エラーが発生しても空配列で安全に復旧し、UI 全体がクラッシュしない
+
+#### 3. サーバー側（API Route）エラーハンドリング強化
+
+**`app/api/cron/fetch-alerts/route.ts`**
+- Bluesky・RSS 処理で permission-denied を明示的に検出
+- エラー配列に「Permission denied (Firestore rule issue)」とタグ付け
+- Vercel Cron ログに詳細な権限エラー情報を記録
+
+#### 4. エラーレベル別の対応
+
+| エラーシーン | 検出方法 | 対応 |
+|------------|--------|------|
+| **クライアント読み取り** | `getBreakingAlerts()` → catch | 空配列で復旧、コンソール警告 |
+| **ページロード失敗** | `page.tsx` → Promise rejected | エラーログ出力、空配列代入 |
+| **Cron 書き込み失敗** | `fetch-alerts` → catch | エラーリスト集約、HTTP 500 返却 |
+
+---
+
 ## [2026-08-21] - Bluesky API および ニュース RSS からの未確認速報ピン自動抽出・起立機能の実装
 
 ### [実施内容]

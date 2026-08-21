@@ -246,13 +246,33 @@ export async function createOrUpdateBreakingAlert(input: {
     );
     return newAlertRef.id;
   } catch (error) {
-    console.error("Error creating/updating breaking alert:", error);
+    // Firestore 権限エラーの詳細ログ
+    if (error instanceof Error) {
+      if (
+        error.message.includes("permission-denied") ||
+        error.message.includes("Permission denied")
+      ) {
+        console.error(
+          `Permission denied when creating/updating breaking alert for "${input.locationName}". ` +
+          `Ensure Firestore rules are properly deployed and allow writes to 'breaking_alerts' collection.`,
+          error.message
+        );
+      } else {
+        console.error(
+          `Error creating/updating breaking alert for "${input.locationName}":`,
+          error.message
+        );
+      }
+    } else {
+      console.error("Error creating/updating breaking alert:", error);
+    }
     throw error;
   }
 }
 
 /**
  * すべての未確認速報アラートを取得
+ * エラーが発生した場合（権限エラーなど）は空配列で安全に復旧
  */
 export async function getBreakingAlerts(): Promise<BreakingAlert[]> {
   try {
@@ -261,12 +281,29 @@ export async function getBreakingAlerts(): Promise<BreakingAlert[]> {
       where("status", "==", "unverified")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((doc_) => ({
+    const alerts = snap.docs.map((doc_) => ({
       id: doc_.id,
       ...doc_.data(),
     } as BreakingAlert));
+
+    console.log(`Fetched ${alerts.length} breaking alerts`);
+    return alerts;
   } catch (error) {
-    console.error("Error fetching breaking alerts:", error);
+    // 権限エラー（permission-denied）が発生した場合の詳細ログ
+    if (error instanceof Error) {
+      if (error.message.includes("permission-denied") || error.message.includes("Permission denied")) {
+        console.warn(
+          "Breaking alerts: Permission denied - Firestore rules may not be properly deployed. " +
+          "Returning empty array to prevent UI crash.",
+          error.message
+        );
+      } else {
+        console.error("Error fetching breaking alerts:", error.message);
+      }
+    } else {
+      console.error("Error fetching breaking alerts:", error);
+    }
+    // エラーが発生しても空配列を返して、UI がクラッシュしないようにする
     return [];
   }
 }

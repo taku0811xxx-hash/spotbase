@@ -144,9 +144,20 @@ export default function Home() {
           incidentsData = generateTestIncidents(profile.organizationId);
         }
 
-        // Load breaking alerts
-        const breakingAlertsData: BreakingAlert[] =
-          breakingAlertsResult.status === "fulfilled" ? breakingAlertsResult.value : [];
+        // Load breaking alerts with detailed error logging
+        let breakingAlertsData: BreakingAlert[] = [];
+        if (breakingAlertsResult.status === "fulfilled") {
+          breakingAlertsData = breakingAlertsResult.value;
+          console.log(`Loaded ${breakingAlertsData.length} breaking alerts`);
+        } else {
+          // エラー時の詳細ログ（permission denied など）
+          console.warn(
+            "Failed to load breaking alerts from Firestore:",
+            breakingAlertsResult.reason
+          );
+          // 空配列で安全に復旧
+          breakingAlertsData = [];
+        }
 
         // Calculate active dispatch count
         const activeCount = dispatchRecords.filter(

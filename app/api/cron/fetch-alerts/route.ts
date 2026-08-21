@@ -86,8 +86,14 @@ export async function GET(request: NextRequest) {
         processedCount++;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(`Bluesky: ${message}`);
-        console.error("Error processing Bluesky post:", error);
+        // 権限エラーか判定
+        if (message.includes("permission-denied") || message.includes("Permission denied")) {
+          errors.push(`Bluesky: Permission denied (Firestore rule issue) - ${message}`);
+          console.error("Permission denied when writing to breaking_alerts collection", error);
+        } else {
+          errors.push(`Bluesky: ${message}`);
+          console.error("Error processing Bluesky post:", error);
+        }
       }
     }
 
@@ -123,8 +129,14 @@ export async function GET(request: NextRequest) {
         processedCount++;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(`RSS: ${message}`);
-        console.error("Error processing RSS item:", error);
+        // 権限エラーか判定
+        if (message.includes("permission-denied") || message.includes("Permission denied")) {
+          errors.push(`RSS: Permission denied (Firestore rule issue) - ${message}`);
+          console.error("Permission denied when writing to breaking_alerts collection", error);
+        } else {
+          errors.push(`RSS: ${message}`);
+          console.error("Error processing RSS item:", error);
+        }
       }
     }
 
@@ -138,7 +150,16 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("Critical error in breaking alerts job:", error);
+    // 権限エラーの詳細ログ
+    if (message.includes("permission-denied") || message.includes("Permission denied")) {
+      console.error(
+        "Critical: Permission denied in breaking alerts job. " +
+        "Verify Firestore rules are deployed correctly and allow server-side writes to 'breaking_alerts' collection.",
+        error
+      );
+    } else {
+      console.error("Critical error in breaking alerts job:", error);
+    }
 
     return NextResponse.json(
       {

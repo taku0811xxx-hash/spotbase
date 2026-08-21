@@ -53,8 +53,8 @@ service cloud.firestore {
     }
 
     match /breaking_alerts/{alertId} {
-      // 未確認速報ピン：ログインしている全員が閲覧可能、書き込みはサーバー側のみ
-      allow read: if isSignedIn();
+      // 未確認速報ピン：パブリック情報として誰でも閲覧可能、書き込みはサーバー側のみ
+      allow read: if true;
       allow write: if false;
     }
   }
