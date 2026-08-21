@@ -97,9 +97,13 @@ JSON のみを出力してください。必ず有効な JSON 形式で返して
       detectedAt: now.toDate().toISOString(),
     });
   } catch (error) {
-    console.error("Incident analysis error:", error);
+    console.error("AI Generation Error - Exception:", {
+      error: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      endpoint: "/api/incidents/analyze",
+    });
     return Response.json(
-      { error: "速報解析に失敗しました" },
+      { error: "速報解析に失敗しました（タイムアウトまたはAPIエラー）" },
       { status: 500 }
     );
   }

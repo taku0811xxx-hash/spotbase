@@ -83,8 +83,16 @@ ${candidatesText}
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("Claude API error:", text);
-      return NextResponse.json({ error: "スコアリングに失敗しました" }, { status: 500 });
+      console.error("AI Generation Error - API Response Failed:", {
+        status: res.status,
+        statusText: res.statusText,
+        error: text,
+        endpoint: "/api/suggest-locations",
+      });
+      return NextResponse.json(
+        { error: "放送位置のスコアリングに失敗しました。しばらく時間を置いてお試しください。" },
+        { status: 500 }
+      );
     }
 
     const data = await res.json();
@@ -99,7 +107,14 @@ ${candidatesText}
 
     return NextResponse.json({ suggestion });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "スコアリングに失敗しました" }, { status: 500 });
+    console.error("AI Generation Error - Exception:", {
+      error: err instanceof Error ? err.message : String(err),
+      errorStack: err instanceof Error ? err.stack : undefined,
+      endpoint: "/api/suggest-locations",
+    });
+    return NextResponse.json(
+      { error: "放送位置のスコアリングに失敗しました（タイムアウトまたはAPIエラー）" },
+      { status: 500 }
+    );
   }
 }

@@ -56,16 +56,24 @@ ${wikiSummary || "(該当する記事は見つかりませんでした)"}
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1000,
+        model: "claude-3-5-haiku-20241022",
+        max_tokens: 800,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("Claude API error:", text);
-      return NextResponse.json({ error: "AI提案の生成に失敗しました" }, { status: 500 });
+      console.error("AI Generation Error - API Response Failed:", {
+        status: res.status,
+        statusText: res.statusText,
+        error: text,
+        endpoint: "/api/suggest-shooting",
+      });
+      return NextResponse.json(
+        { error: "撮影ポジション提案の生成に失敗しました。しばらく時間を置いてお試しください。" },
+        { status: 500 }
+      );
     }
 
     const data = await res.json();
@@ -80,7 +88,14 @@ ${wikiSummary || "(該当する記事は見つかりませんでした)"}
 
     return NextResponse.json({ suggestions });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "AI提案の生成に失敗しました" }, { status: 500 });
+    console.error("AI Generation Error - Exception:", {
+      error: err instanceof Error ? err.message : String(err),
+      errorStack: err instanceof Error ? err.stack : undefined,
+      endpoint: "/api/suggest-shooting",
+    });
+    return NextResponse.json(
+      { error: "撮影ポジション提案の生成に失敗しました（タイムアウトまたはAPIエラー）" },
+      { status: 500 }
+    );
   }
 }

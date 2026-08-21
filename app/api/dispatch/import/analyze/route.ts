@@ -167,9 +167,13 @@ Return ONLY the JSON object, no explanation or markdown.`,
 
     return NextResponse.json({ extracted: result });
   } catch (error) {
-    console.error("Analysis failed:", error);
+    console.error("AI Generation Error - Exception:", {
+      error: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      endpoint: "/api/dispatch/import/analyze",
+    });
     return NextResponse.json(
-      { error: "ファイル解析に失敗しました" },
+      { error: "ファイル解析に失敗しました（タイムアウトまたはAPIエラー）" },
       { status: 500 }
     );
   }
