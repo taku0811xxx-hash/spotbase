@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { FeatureGroup, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import { extractWaitingZones, type WaitingZoneData } from "@/lib/waitingZone";
+import LegendOverlay from "./LegendOverlay";
 
 interface Props {
   lat?: number;
@@ -33,12 +34,18 @@ export default function WaitingZoneLayer({ lat, lng, show = false }: Props) {
       });
   }, [lat, lng, show]);
 
-  if (!show || !zoneData) {
+  if (!show) {
     return null;
   }
 
   return (
-    <FeatureGroup>
+    <>
+      {/* 凡例オーバーレイ */}
+      <LegendOverlay show={show} />
+
+      {/* ゾーンデータ表示 */}
+      {zoneData && (
+      <FeatureGroup>
       {/* 降機材（車寄せ）スポット - 青色マーカー */}
       {zoneData.dropoffSpots.map((spot, idx) => (
         <Marker
@@ -86,6 +93,8 @@ export default function WaitingZoneLayer({ lat, lng, show = false }: Props) {
           周辺の道路情報を取得中...
         </div>
       )}
-    </FeatureGroup>
+      </FeatureGroup>
+      )}
+    </>
   );
 }
