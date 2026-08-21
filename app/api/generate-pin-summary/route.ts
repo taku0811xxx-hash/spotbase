@@ -18,9 +18,15 @@ type SourceRecord = {
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+  const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+
   if (!apiKey) {
+    console.error("AI Generation Error - Missing API Key:", {
+      endpoint: "/api/generate-pin-summary",
+      missingKey: "ANTHROPIC_API_KEY",
+    });
     return NextResponse.json(
-      { error: "ANTHROPIC_API_KEYが設定されていません" },
+      { error: "ANTHROPIC_API_KEY が .env.local に設定されていません。管理者にご連絡ください。" },
       { status: 500 }
     );
   }
@@ -80,7 +86,7 @@ ${recordsText}
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model,
         max_tokens: 1000,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -88,14 +94,35 @@ ${recordsText}
 
     if (!res.ok) {
       const text = await res.text();
+      let anthropicError = "不明なエラー";
+
+      // Anthropic API のエラーレスポンスをパース試行
+      try {
+        const errorData = JSON.parse(text);
+        if (errorData.error?.message) {
+          anthropicError = errorData.error.message;
+        } else if (errorData.message) {
+          anthropicError = errorData.message;
+        }
+      } catch {
+        anthropicError = text.substring(0, 200); // 最初の200文字までを使用
+      }
+
       console.error("AI Generation Error - API Response Failed:", {
         status: res.status,
         statusText: res.statusText,
-        error: text,
+        anthropicError,
         endpoint: "/api/generate-pin-summary",
       });
+
+      const errorMessage =
+        res.status === 401 ? "APIキーが無効です" :
+        res.status === 429 ? "リクエスト制限に達しました。しばらく待ってからお試しください" :
+        res.status >= 500 ? "Anthropic API サーバーエラーが発生しました。しばらく待ってからお試しください" :
+        "現場記録の生成に失敗しました。しばらく時間を置いてお試しください。";
+
       return NextResponse.json(
-        { error: "現場記録の生成に失敗しました。しばらく時間を置いてお試しください。" },
+        { error: errorMessage, details: anthropicError },
         { status: 500 }
       );
     }
@@ -136,13 +163,23 @@ ${recordsText}
 
     return NextResponse.json({ summary });
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorStack = err instanceof Error ? err.stack : undefined;
+
     console.error("AI Generation Error - Exception:", {
-      error: err instanceof Error ? err.message : String(err),
-      errorStack: err instanceof Error ? err.stack : undefined,
+      error: errorMessage,
+      errorStack,
       endpoint: "/api/generate-pin-summary",
     });
+
+    // タイムアウトとその他のエラーを区別
+    const isTimeout = errorMessage.includes("timeout") || errorMessage.includes("DEADLINE_EXCEEDED");
+    const userMessage = isTimeout
+      ? "リクエストがタイムアウトしました。ネットワーク接続を確認してからお試しください。"
+      : "現場記録の生成に失敗しました。サーバーログを確認してください。";
+
     return NextResponse.json(
-      { error: "現場記録の生成に失敗しました（タイムアウトまたはAPIエラー）" },
+      { error: userMessage, details: errorMessage },
       { status: 500 }
     );
   }

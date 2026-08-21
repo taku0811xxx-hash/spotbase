@@ -18,6 +18,18 @@ interface AnalysisResult {
 }
 
 export async function POST(request: Request) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error("AI Generation Error - Missing API Key:", {
+      endpoint: "/api/incidents/analyze",
+      missingKey: "ANTHROPIC_API_KEY",
+    });
+    return Response.json(
+      { error: "ANTHROPIC_API_KEY が .env.local に設定されていません。管理者にご連絡ください。" },
+      { status: 500 }
+    );
+  }
+
   try {
     const { text, organizationId } = await request.json();
 
@@ -43,8 +55,10 @@ export async function POST(request: Request) {
 JSON のみを出力してください。必ず有効な JSON 形式で返してください。
 `;
 
+    const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+
     const message = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model,
       max_tokens: 500,
       system: systemPrompt,
       messages: [
@@ -97,13 +111,23 @@ JSON のみを出力してください。必ず有効な JSON 形式で返して
       detectedAt: now.toDate().toISOString(),
     });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
     console.error("AI Generation Error - Exception:", {
-      error: error instanceof Error ? error.message : String(error),
-      errorStack: error instanceof Error ? error.stack : undefined,
+      error: errorMessage,
+      errorStack,
       endpoint: "/api/incidents/analyze",
     });
+
+    // タイムアウトとその他のエラーを区別
+    const isTimeout = errorMessage.includes("timeout") || errorMessage.includes("DEADLINE_EXCEEDED");
+    const userMessage = isTimeout
+      ? "リクエストがタイムアウトしました。ネットワーク接続を確認してからお試しください。"
+      : "速報解析に失敗しました。サーバーログを確認してください。";
+
     return Response.json(
-      { error: "速報解析に失敗しました（タイムアウトまたはAPIエラー）" },
+      { error: userMessage, details: errorMessage },
       { status: 500 }
     );
   }

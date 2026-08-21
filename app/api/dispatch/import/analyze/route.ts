@@ -19,6 +19,20 @@ interface ExtractedData {
 }
 
 export async function POST(request: NextRequest) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+
+  if (!apiKey) {
+    console.error("AI Generation Error - Missing API Key:", {
+      endpoint: "/api/dispatch/import/analyze",
+      missingKey: "ANTHROPIC_API_KEY",
+    });
+    return NextResponse.json(
+      { error: "ANTHROPIC_API_KEY が .env.local に設定されていません。管理者にご連絡ください。" },
+      { status: 500 }
+    );
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -40,7 +54,7 @@ export async function POST(request: NextRequest) {
       const base64 = Buffer.from(buffer).toString("base64");
 
       const response = await anthropic.messages.create({
-        model: "claude-3-5-haiku-20241022",
+        model,
         max_tokens: 1024,
         messages: [
           {
@@ -76,7 +90,7 @@ export async function POST(request: NextRequest) {
         | "image/webp";
 
       const response = await anthropic.messages.create({
-        model: "claude-3-5-haiku-20241022",
+        model,
         max_tokens: 1024,
         messages: [
           {
@@ -112,7 +126,7 @@ export async function POST(request: NextRequest) {
 
     // 抽出したテキストを Claude で構造化データに変換
     const structureResponse = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model,
       max_tokens: 1024,
       system: `You are a report parser. Extract the following information from the given text and return ONLY valid JSON, no other text:
 {
@@ -167,13 +181,23 @@ Return ONLY the JSON object, no explanation or markdown.`,
 
     return NextResponse.json({ extracted: result });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
     console.error("AI Generation Error - Exception:", {
-      error: error instanceof Error ? error.message : String(error),
-      errorStack: error instanceof Error ? error.stack : undefined,
+      error: errorMessage,
+      errorStack,
       endpoint: "/api/dispatch/import/analyze",
     });
+
+    // タイムアウトとその他のエラーを区別
+    const isTimeout = errorMessage.includes("timeout") || errorMessage.includes("DEADLINE_EXCEEDED");
+    const userMessage = isTimeout
+      ? "リクエストがタイムアウトしました。ネットワーク接続を確認してからお試しください。"
+      : "ファイル解析に失敗しました。サーバーログを確認してください。";
+
     return NextResponse.json(
-      { error: "ファイル解析に失敗しました（タイムアウトまたはAPIエラー）" },
+      { error: userMessage, details: errorMessage },
       { status: 500 }
     );
   }
