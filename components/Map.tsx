@@ -185,9 +185,32 @@ function FlyToLocation({ target }: { target: { lat: number; lng: number } | null
   const map = useMap();
   useEffect(() => {
     if (target) {
-      map.flyTo([target.lat, target.lng], 16);
+      // レンダリング完了後に確実に中心移動するため、わずかな遅延を設定
+      setTimeout(() => {
+        map.flyTo([target.lat, target.lng], 16, {
+          duration: 1.2,
+          easeLinearity: 0.25,
+        });
+      }, 100);
     }
   }, [target, map]);
+  return null;
+}
+
+// ピン選択時に地図の中心を自動設定するコンポーネント
+function FlyToSelectedPin({ selectedPin }: { selectedPin: any | null | undefined }) {
+  const map = useMap();
+  useEffect(() => {
+    if (selectedPin) {
+      // レンダリング完了後に確実に中心移動するため、わずかな遅延を設定
+      setTimeout(() => {
+        map.flyTo([selectedPin.lat, selectedPin.lng], 16, {
+          duration: 1.2,
+          easeLinearity: 0.25,
+        });
+      }, 100);
+    }
+  }, [selectedPin, map]);
   return null;
 }
 
@@ -221,7 +244,7 @@ function ReturnToPinButton({ selectedPin }: { selectedPin: Pin | null | undefine
         Math.pow(center.lat - selectedPin.lat, 2) +
         Math.pow(center.lng - selectedPin.lng, 2)
       );
-      setShowButton(distance > 0.1);
+      setShowButton(distance > 0.08); // 少し敏感に反応
     };
 
     map.on("move", handleMapMove);
@@ -238,20 +261,19 @@ function ReturnToPinButton({ selectedPin }: { selectedPin: Pin | null | undefine
 
   const handleReturnToPin = () => {
     map.flyTo([selectedPin.lat, selectedPin.lng], 16, {
-      duration: 1.5,
+      duration: 1.2,
       easeLinearity: 0.25,
     });
   };
 
   return (
-    <div className="absolute bottom-20 right-4 z-[1000] pointer-events-auto">
+    <div className="absolute bottom-16 right-4 z-[1000] pointer-events-auto">
       <button
         onClick={handleReturnToPin}
-        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 transition-colors active:scale-[0.95] font-medium text-sm text-gray-800 whitespace-nowrap"
+        title="選択中のピン位置に戻る"
+        className="flex flex-col items-center justify-center w-12 h-12 bg-white rounded-full shadow-lg border border-gray-300 hover:bg-blue-50 hover:border-blue-400 transition-all active:scale-95 text-xl hover:shadow-xl"
       >
-        <span>📍</span>
-        <span className="hidden sm:inline">選択中の現場に戻る</span>
-        <span className="sm:hidden">戻る</span>
+        🎯
       </button>
     </div>
   );
@@ -288,6 +310,8 @@ export default function Map({
       <MapInitializer />
       {/* FlyTo コンポーネント - 検索結果などで地図を移動 */}
       <FlyToLocation target={flyTo} />
+      {/* 選択ピン自動センタリング - ピン選択時に地図の中心を設定 */}
+      <FlyToSelectedPin selectedPin={selectedPin} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
