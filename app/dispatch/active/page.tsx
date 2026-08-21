@@ -22,12 +22,6 @@ const statusColors: Record<string, { bg: string; text: string; label: string }> 
   完了: { bg: "bg-green-100", text: "text-green-700", label: "完了" },
 };
 
-const nextStatus: Record<string, string> = {
-  準備中: "移動中",
-  移動中: "現場対応中",
-  現場対応中: "完了",
-  完了: "完了",
-};
 
 export default function ActiveDispatchPage() {
   const router = useRouter();
@@ -60,25 +54,6 @@ export default function ActiveDispatchPage() {
       .catch((error) => console.error("Error loading dispatch records:", error))
       .finally(() => setLoading(false));
   }, [authLoading, user, profile, router]);
-
-  async function handleStatusChange(recordId: string, currentStatus: string) {
-    const newStatus = nextStatus[currentStatus];
-    if (newStatus === currentStatus) return; // Already at final status
-
-    try {
-      const docRef = doc(db, "dispatch_records", recordId);
-      await updateDoc(docRef, {
-        status: newStatus as DispatchRecord['status']
-      });
-      setRecords((prev) =>
-        prev.map((r) =>
-          r.id === recordId ? { ...r, status: newStatus as DispatchRecord['status'] } : r
-        )
-      );
-    } catch (error) {
-      console.error("Error updating status:", error);
-    }
-  }
 
   async function handleAddMemo(recordId: string) {
     if (!memoText[recordId]?.trim()) return;
@@ -210,16 +185,6 @@ export default function ActiveDispatchPage() {
                           <p className="font-semibold text-gray-900">確認中</p>
                         </div>
                       </div>
-
-                      {/* Status Change Button */}
-                      {currentStatus !== "完了" && (
-                        <button
-                          onClick={() => handleStatusChange(record.id, currentStatus)}
-                          className="w-full mb-3 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          ✓ {nextStatus[currentStatus] || currentStatus}へ進める
-                        </button>
-                      )}
 
                       {/* Memos Timeline */}
                       {record.memos && record.memos.length > 0 && (
