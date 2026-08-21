@@ -357,17 +357,15 @@ export default function Home() {
           }}
         />
 
-        {/* 速報アラートパネル */}
-        {incidents.length > 0 && (
-          <IncidentAlert
-            incidents={incidents}
-            onMapNavigate={(lat, lng) => {
-              setFlyTo({ lat, lng });
-              setSearchMarker(null);
-              setSelectedPin(null);
-            }}
-          />
-        )}
+        {/* 速報アラートパネル - 常時表示（データ有無問わず） */}
+        <IncidentAlert
+          incidents={incidents}
+          onMapNavigate={(lat, lng) => {
+            setFlyTo({ lat, lng });
+            setSearchMarker(null);
+            setSelectedPin(null);
+          }}
+        />
 
         {/* Desktop Layout */}
         <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 h-full min-h-[600px] sm:min-h-[650px]">
@@ -450,21 +448,19 @@ export default function Home() {
           />
         </header>
 
-        {/* Speed Banner - Horizontal scrollable banner below header */}
-        {incidents.length > 0 && (
-          <div className="shrink-0 w-full max-w-full overflow-x-auto bg-red-50 border-b border-red-200 z-30 py-1.5 px-2 box-border">
-            <div className="whitespace-nowrap">
-              <IncidentAlert
-                incidents={incidents}
-                onMapNavigate={(lat, lng) => {
-                  setFlyTo({ lat, lng });
-                  setSearchMarker(null);
-                  setSelectedPin(null);
-                }}
-              />
-            </div>
+        {/* Speed Banner - Horizontal scrollable banner below header - 常時表示（データ有無問わず） */}
+        <div className="shrink-0 w-full max-w-full overflow-x-auto bg-red-50 border-b border-red-200 z-30 py-1.5 px-2 box-border">
+          <div className="whitespace-nowrap">
+            <IncidentAlert
+              incidents={incidents}
+              onMapNavigate={(lat, lng) => {
+                setFlyTo({ lat, lng });
+                setSearchMarker(null);
+                setSelectedPin(null);
+              }}
+            />
           </div>
-        )}
+        </div>
 
         {/* Search Bar - Below speed banner */}
         <div className="shrink-0 w-full bg-white border-b border-gray-100 z-20 box-border">

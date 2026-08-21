@@ -1,5 +1,99 @@
 # SpotBase - 変更履歴
 
+## [2026-08-21] - 速報テロップバーを親要素・コンポーネント両面で常時表示化
+
+### [実施内容]
+
+速報テロップバー（「もしかして今起きてる？」）がデータ 0 件時でも必ず画面上に常時表示されるよう、**親コンポーネント（app/page.tsx）とコンポーネント本体（IncidentAlert.tsx）の両面で修正**。親要素の条件分岐をすべて削除し、コンポーネントを無条件でレンダリング。これにより、ユーザーが常に速報状況を把握できるようになりました。
+
+#### 1. 親コンポーネント（app/page.tsx）の修正
+
+**修正前:**
+```tsx
+{/* Desktop Layout */}
+{incidents.length > 0 && (
+  <IncidentAlert incidents={incidents} ... />
+)}
+
+{/* Mobile Layout */}
+{incidents.length > 0 && (
+  <div className="...">
+    <IncidentAlert incidents={incidents} ... />
+  </div>
+)}
+```
+
+**修正後:**
+```tsx
+{/* Desktop Layout - 常時表示 */}
+<IncidentAlert incidents={incidents} ... />
+
+{/* Mobile Layout - 常時表示 */}
+<div className="...">
+  <IncidentAlert incidents={incidents} ... />
+</div>
+```
+
+**削除内容:**
+- Desktop レイアウト（361 行目周辺）の `{incidents.length > 0 && ...}` 条件分岐を削除
+- Mobile レイアウト（452 行目周辺）の `{incidents.length > 0 && ...}` 条件分岐を削除
+- コンポーネントを無条件でレンダリング（JSX 内に常に配置）
+
+#### 2. コンポーネント本体（IncidentAlert.tsx）の確認
+
+**既に実装済みの内容:**
+```tsx
+const hasIncidents = incidents.length > 0;
+
+return (
+  <div className="... min-h-[44px]">
+    {/* ヘッダー */}
+    <div>
+      <span>🚨</span>
+      <span>もしかして今起きてる？</span>
+    </div>
+
+    {/* 条件分岐でコンテンツを切り替え */}
+    <div>
+      {hasIncidents ? (
+        // データあり：速報チップ表示
+        displayIncidents.map(...)
+      ) : (
+        // データなし：メッセージ表示
+        <span>現在、検出された速報はありません</span>
+      )}
+    </div>
+
+    {/* カウントバッジ（常に表示） */}
+    <span>({incidents.length}件)</span>
+  </div>
+);
+```
+
+**特徴:**
+- ✅ コンポーネント冒頭に `if (incidents.length === 0) return null;` なし
+- ✅ 常にテロップ枠を返す（JSX を返す）
+- ✅ データ有無に応じて、コンテンツエリア内容を切り替え
+
+#### 3. 表示仕様（実装確定）
+
+| 状態 | Desktop | Mobile |
+|-----|---------|--------|
+| **速報あり（1件以上）** | テロップバー常時表示 | テロップバー常時表示 |
+| **速報なし（0件）** | テロップバー常時表示 | テロップバー常時表示 |
+| **読み込み中** | テロップバー常時表示（メッセージ） | テロップバー常時表示（メッセージ） |
+
+#### 4. 修正によるメリット
+
+| 項目 | 効果 |
+|-----|------|
+| **レイアウト安定性** | ✅ 常に同じ高さ（`min-h-[44px]`）を占有 |
+| **UX** | ✅ ユーザーが速報の有無を常に認識可能 |
+| **表示/非表示の切り替え** | ✅ なくなり、画面がぐらつかない |
+| **JSX 複雑性** | ✅ 親要素の条件分岐がなくなり、シンプル化 |
+
+---
+
 ## [2026-08-21] - 速報テロップバーの常時表示および空状態表示の実装
 
 ### [実施内容]
