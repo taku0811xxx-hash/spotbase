@@ -50,7 +50,7 @@ const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder="現場名・住所・地名で検索(Enterで場所を検索)"
-          className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+          className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 md:text-sm text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
         />
       </div>
       {loading && (

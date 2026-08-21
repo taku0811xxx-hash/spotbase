@@ -1,5 +1,56 @@
 # SpotBase - 変更履歴
 
+## [2026-08-21] - モバイル検索フォーカス時の画面自動ズーム防止および現場一覧のスクロール有効化
+
+### [実施内容]
+
+モバイル表示において発生していた2つの不具合を修正しました：
+
+#### 1. 検索入力フォーカス時の画面自動ズーム防止
+
+**修正ファイル**: 
+- app/layout.tsx（viewport メタタグの追加）
+- components/SearchBar.tsx（input要素のフォントサイズ修正）
+
+**変更内容**:
+- **app/layout.tsx**: Next.js 15推奨形式で viewport export を追加
+  - `width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=true, viewport-fit=cover`を設定
+  - これによりiOS Safari等のモバイルブラウザでのビューポート設定を最適化
+  
+- **components/SearchBar.tsx**: 検索入力フィールドのフォントサイズを16px以上に設定
+  - Tailwindクラスを `md:text-sm text-base` に変更（モバイルで text-base = 16px）
+  - iOS Safariは16px未満のinput要素をフォーカス時に自動ズームするため、これを回避
+
+**効果**:
+- iOS Safari等でinput要素をタップしてもズーム（自動拡大）が発生しなくなった
+- ユーザーの操作性が向上し、意図しないズームによるUIの崩れがなくなった
+
+#### 2. 現場一覧（ボトムシート内リスト）のスクロール対応
+
+**修正ファイル**: components/BottomSheet.tsx
+
+**変更内容**:
+- BottomSheet内部のdivに `flex flex-col` クラスを追加し、flexコンテナ化
+- Content div（現場リスト）に以下を適用：
+  - peek状態以外で `flex-1` クラスを追加（利用可能な空間を全て使用）
+  - `overflow-y-auto` クラスを常時指定（スクロール可能に）
+  - CSSで `WebkitOverflowScrolling: "touch"` を指定（iOS Safari の慣性スクロール対応）
+  - `touchAction: "pan-y"` を継続指定（Y軸スクロール許可）
+
+**効果**:
+- 現場件数が多い場合、ボトムシートを上にスワイプして展開すると、リスト領域内でスムーズにスクロール可能に
+- -webkit-overflow-scrolling: touch により、iOS特有の慣性スクロール（momentum scroll）が機能
+- スクロール中の親要素（ボトムシート）への干渉なし
+
+### [動作確認]
+
+- ✅ モバイル表示（375x812）で検索入力欄をタップしても画面がズーム拡大されない
+- ✅ 検索inputのfontSize が 16px に設定されている
+- ✅ ボトムシート内の現場リストが縦スクロール可能
+- ✅ npm run build がエラーなく成功
+
+---
+
 ## [2026-08-20] - グループヘッダーの背景色・コントラスト強調および現場カードの階層デザイン調整
 
 ### [実施内容]

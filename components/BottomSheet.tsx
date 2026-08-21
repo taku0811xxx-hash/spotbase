@@ -103,7 +103,7 @@ const BottomSheet = memo(function BottomSheet({
       {/* Bottom Sheet */}
       <div
         ref={sheetRef}
-        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto"
+        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto flex flex-col"
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onMouseUp={handleMouseUp}
@@ -137,8 +137,8 @@ const BottomSheet = memo(function BottomSheet({
 
         {/* Content */}
         <div
-          className={`${state === "peek" ? "px-4 py-2 h-full" : "px-4 pb-6"} ${state !== "peek" ? "overflow-y-auto" : "overflow-hidden"}`}
-          style={{ touchAction: "pan-y" }}
+          className={`${state === "peek" ? "px-4 py-2" : "px-4 pb-6 flex-1"} ${state !== "peek" ? "overflow-y-auto" : "overflow-hidden"}`}
+          style={{ touchAction: "pan-y", WebkitOverflowScrolling: "touch" }}
         >
           {children}
         </div>
