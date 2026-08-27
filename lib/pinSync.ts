@@ -32,25 +32,40 @@ export async function syncPinFromDispatch(
   const nearbyDispatches = await getDispatchRecordsNear(params.lat, params.lng, scope);
   if (nearbyDispatches.length === 0) return;
 
-  const res = await fetch("/api/generate-pin-summary", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      locationName: params.locationName,
-      address: params.address,
-      records: nearbyDispatches.map((r) => ({
-        date: r.createdAt?.toDate?.()?.toLocaleDateString("ja-JP") ?? "",
-        incidentType: r.incidentType,
-        parkingInfo: r.parkingInfo,
-        shootingSpots: r.shootingSpots,
-        ipTransmissionInfo: r.ipTransmissionInfo,
-        fpuInfo: r.fpuInfo,
-        hazards: r.hazards,
-        notes: r.notes,
-      })),
-    }),
-  });
-  if (!res.ok) return;
+  let res: Response;
+  try {
+    res = await fetch("/api/generate-pin-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        locationName: params.locationName,
+        address: params.address,
+        records: nearbyDispatches.map((r) => ({
+          date: r.createdAt?.toDate?.()?.toLocaleDateString("ja-JP") ?? "",
+          incidentType: r.incidentType,
+          parkingInfo: r.parkingInfo,
+          shootingSpots: r.shootingSpots,
+          ipTransmissionInfo: r.ipTransmissionInfo,
+          fpuInfo: r.fpuInfo,
+          hazards: r.hazards,
+          notes: r.notes,
+        })),
+      }),
+    });
+  } catch (fetchError) {
+    // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+    // 現場記録(ピン)自動統合の失敗は、出動記録自体の保存には影響させない
+    const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+    console.error("現場記録自動統合 - ネットワークエラー（fetch失敗）:", {
+      error: errorMessage,
+      errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+    });
+    return;
+  }
+  if (!res.ok) {
+    console.error("現場記録自動統合 - HTTPエラー:", { status: res.status, statusText: res.statusText });
+    return;
+  }
   const { summary } = await res.json();
 
   // 同じ場所(半径300m以内)に既存の現場記録があれば、それを更新対象にする

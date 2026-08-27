@@ -66,18 +66,35 @@ export default function BroadcastLocationSuggester({
       setCandidates(collectedCandidates);
 
       // ステップ2: AIでスコアリング
-      const res = await fetch("/api/suggest-locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          candidates: collectedCandidates,
-          incidentType,
-          address,
-        }),
-      });
+      let res: Response;
+      try {
+        res = await fetch("/api/suggest-locations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidates: collectedCandidates,
+            incidentType,
+            address,
+          }),
+        });
+      } catch (fetchError) {
+        // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+        console.error("[BroadcastLocationSuggester] ネットワークエラー（fetch失敗）:", {
+          error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+          errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+        });
+        setError("通信エラーが発生しました。接続を確認して再度お試しください");
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
-        const data = await res.json();
+        let data: { error?: string } = {};
+        try {
+          data = await res.json();
+        } catch {
+          // JSON パース失敗時はデフォルトメッセージを使う
+        }
         setError(data.error || "提案の生成に失敗しました");
         setLoading(false);
         return;
@@ -86,7 +103,21 @@ export default function BroadcastLocationSuggester({
       const data = await res.json();
       setSuggestion(data.suggestion);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "不明なエラーが発生しました");
+      console.error("[BroadcastLocationSuggester] 予期しないエラー:", err);
+      // TypeError（Safari の Load failed 含む）はユーザーフレンドリーなメッセージに変換
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error &&
+          (err.message.includes("Load failed") ||
+            err.message.includes("Failed to fetch") ||
+            err.message.includes("NetworkError")));
+      setError(
+        isNetworkError
+          ? "通信エラーが発生しました。接続を確認して再度お試しください"
+          : err instanceof Error
+            ? err.message
+            : "不明なエラーが発生しました"
+      );
     } finally {
       setLoading(false);
     }

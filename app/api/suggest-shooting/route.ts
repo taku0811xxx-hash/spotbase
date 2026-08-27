@@ -8,9 +8,114 @@ export type ShootingSuggestion = {
   reason: string; // 理由
 };
 
+// Anthropic API 呼び出しヘルパー関数（フォールバック処理付き）
+async function callAnthropicAPI(
+  apiKey: string,
+  model: string,
+  prompt: string
+): Promise<{ success: boolean; data?: string; error?: string }> {
+  const models = [model, "claude-3-haiku-20240307"]; // フォールバックモデル
+
+  for (const currentModel of models) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: currentModel,
+          max_tokens: 800,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        let errorInfo = { type: "", message: "" };
+
+        try {
+          const errorData = JSON.parse(text);
+          errorInfo.type = errorData.error?.type || "unknown";
+          errorInfo.message = errorData.error?.message || errorData.message || text;
+        } catch {
+          errorInfo.message = text.substring(0, 200);
+        }
+
+        // 404/400 エラーで現在のモデルがテスト用の場合、フォールバック
+        if (
+          (res.status === 404 || res.status === 400) &&
+          currentModel === model &&
+          models.length > 1
+        ) {
+          console.warn(
+            `[suggest-shooting] モデル「${currentModel}」が利用不可。フォールバックモデルで再試行します。`,
+            { status: res.status, error: errorInfo }
+          );
+          continue; // 次のモデルで再試行
+        }
+
+        // それ以外のエラーはここで終了
+        console.error("AI Generation Error - API Response Failed:", {
+          status: res.status,
+          statusText: res.statusText,
+          errorType: errorInfo.type,
+          errorMessage: errorInfo.message,
+          model: currentModel,
+          endpoint: "/api/suggest-shooting",
+        });
+
+        const userMessage =
+          res.status === 401
+            ? "APIキーが無効です"
+            : res.status === 429
+              ? "リクエスト制限に達しました。しばらく待ってからお試しください"
+              : res.status >= 500
+                ? "Anthropic API サーバーエラーが発生しました。しばらく待ってからお試しください"
+                : "撮影ポジション提案の生成に失敗しました。しばらく時間を置いてお試しください。";
+
+        return { success: false, error: userMessage };
+      }
+
+      const data = await res.json();
+      const text = data.content
+        ?.map((block: { type: string; text?: string }) =>
+          block.type === "text" ? block.text : ""
+        )
+        .join("") ?? "";
+
+      return { success: true, data: text };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("AI Generation Error - Exception:", {
+        model: currentModel,
+        error: errorMessage,
+        endpoint: "/api/suggest-shooting",
+      });
+
+      // フォールバックがある場合は次を試す
+      if (currentModel !== models[models.length - 1]) {
+        continue;
+      }
+
+      return {
+        success: false,
+        error: "撮影ポジション提案の生成に失敗しました。サーバーログを確認してください。",
+      };
+    }
+  }
+
+  return {
+    success: false,
+    error: "すべてのモデルで提案生成に失敗しました。",
+  };
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+  const model = process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest";
 
   if (!apiKey) {
     console.error("AI Generation Error - Missing API Key:", {
@@ -56,64 +161,68 @@ ${wikiSummary || "(該当する記事は見つかりませんでした)"}
 ]`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 800,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    // ヘルパー関数でAPI呼び出し（フォールバック処理付き）
+    const result = await callAnthropicAPI(apiKey, model, prompt);
 
-    if (!res.ok) {
-      const text = await res.text();
-      let anthropicError = "不明なエラー";
-
-      // Anthropic API のエラーレスポンスをパース試行
-      try {
-        const errorData = JSON.parse(text);
-        if (errorData.error?.message) {
-          anthropicError = errorData.error.message;
-        } else if (errorData.message) {
-          anthropicError = errorData.message;
-        }
-      } catch {
-        anthropicError = text.substring(0, 200); // 最初の200文字までを使用
-      }
-
-      console.error("AI Generation Error - API Response Failed:", {
-        status: res.status,
-        statusText: res.statusText,
-        anthropicError,
+    if (!result.success) {
+      console.error("API Suggestion Failed:", {
+        error: result.error,
         endpoint: "/api/suggest-shooting",
       });
-
-      const errorMessage =
-        res.status === 401 ? "APIキーが無効です" :
-        res.status === 429 ? "リクエスト制限に達しました。しばらく待ってからお試しください" :
-        res.status >= 500 ? "Anthropic API サーバーエラーが発生しました。しばらく待ってからお試しください" :
-        "撮影ポジション提案の生成に失敗しました。しばらく時間を置いてお試しください。";
-
       return NextResponse.json(
-        { error: errorMessage, details: anthropicError },
+        { error: result.error, errorType: "api_failure" },
         { status: 500 }
       );
     }
 
-    const data = await res.json();
-    const text = data.content
-      ?.map((block: { type: string; text?: string }) =>
-        block.type === "text" ? block.text : ""
-      )
-      .join("") ?? "";
+    const text = result.data || "";
+
+    // JSON パース前に応答をログ出力
+    console.log("API Response (raw):", {
+      length: text.length,
+      preview: text.substring(0, 100),
+      endpoint: "/api/suggest-shooting",
+    });
 
     const cleaned = text.replace(/```json|```/g, "").trim();
-    const suggestions = JSON.parse(cleaned) as ShootingSuggestion[];
+
+    // JSON パース失敗のハンドリング
+    let suggestions: ShootingSuggestion[];
+    try {
+      suggestions = JSON.parse(cleaned) as ShootingSuggestion[];
+    } catch (parseErr) {
+      const errorMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      console.error("JSON Parse Error:", {
+        error: errorMessage,
+        rawText: text.substring(0, 500),
+        cleaned: cleaned.substring(0, 500),
+        endpoint: "/api/suggest-shooting",
+      });
+      return NextResponse.json(
+        {
+          error: "撮影ポジション提案の形式が不正です。AIからの返却データが正しくありません。",
+          errorType: "json_parse_error",
+          details: errorMessage,
+        },
+        { status: 500 }
+      );
+    }
+
+    // 配列であることと最低要件を確認
+    if (!Array.isArray(suggestions)) {
+      console.error("Invalid Response Format:", {
+        expectedArray: true,
+        received: typeof suggestions,
+        endpoint: "/api/suggest-shooting",
+      });
+      return NextResponse.json(
+        {
+          error: "撮影ポジション提案が配列形式ではありません。",
+          errorType: "format_error",
+        },
+        { status: 500 }
+      );
+    }
 
     // Firestore にキャッシュを保存
     if (pinId) {
@@ -133,6 +242,11 @@ ${wikiSummary || "(該当する記事は見つかりませんでした)"}
       }
     }
 
+    console.log("Successfully generated suggestions:", {
+      count: suggestions.length,
+      endpoint: "/api/suggest-shooting",
+    });
+
     return NextResponse.json({ suggestions });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -151,7 +265,7 @@ ${wikiSummary || "(該当する記事は見つかりませんでした)"}
       : "撮影ポジション提案の生成に失敗しました。サーバーログを確認してください。";
 
     return NextResponse.json(
-      { error: userMessage, details: errorMessage },
+      { error: userMessage, details: errorMessage, errorType: "exception" },
       { status: 500 }
     );
   }

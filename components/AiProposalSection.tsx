@@ -88,14 +88,30 @@ export default function AiProposalSection({ pin }: { pin: Pin }) {
         };
       }
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
+      let res: Response;
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+      } catch (fetchError) {
+        // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+        console.error("[AiProposalSection] ネットワークエラー（fetch失敗）:", {
+          error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+          errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+          endpoint,
+        });
+        throw new Error("通信エラーが発生しました。接続を確認して再度お試しください");
+      }
 
       if (!res.ok) {
-        const errorData = await res.json();
+        let errorData: { error?: string } = {};
+        try {
+          errorData = await res.json();
+        } catch {
+          // JSON パース失敗時はデフォルトメッセージを使う
+        }
         throw new Error(errorData.error || "生成に失敗しました");
       }
 
@@ -107,9 +123,19 @@ export default function AiProposalSection({ pin }: { pin: Pin }) {
       // UI更新のため、ページリロードまたは状態更新が必要
       setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "提案の生成に失敗しました";
       console.error("提案生成エラー:", err);
+      // TypeError（Safari の Load failed 含む）はユーザーフレンドリーなメッセージに変換
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error &&
+          (err.message.includes("Load failed") ||
+            err.message.includes("Failed to fetch") ||
+            err.message.includes("NetworkError")));
+      const errorMessage = isNetworkError
+        ? "通信エラーが発生しました。接続を確認して再度お試しください"
+        : err instanceof Error
+          ? err.message
+          : "提案の生成に失敗しました";
       setToast({ type: "error", message: errorMessage });
     } finally {
       setGeneratingType(null);

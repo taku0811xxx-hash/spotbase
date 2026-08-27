@@ -30,32 +30,53 @@ export async function fetchNearbyPhotos(
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*"); // ブラウザからのCORSアクセスに必要
 
-  const res = await fetch(url.toString());
-  if (!res.ok) return [];
+  try {
+    let res: Response;
+    try {
+      res = await fetch(url.toString());
+    } catch (fetchError) {
+      // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+      const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      console.error("周辺写真取得 - ネットワークエラー（fetch失敗）:", {
+        error: errorMessage,
+        errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+      });
+      return [];
+    }
 
-  const data = (await res.json()) as {
-    query?: {
-      pages?: Record<
-        string,
-        {
-          title: string;
-          fullurl?: string;
-          thumbnail?: { source: string };
-        }
-      >;
+    if (!res.ok) {
+      console.error("周辺写真取得 - HTTPエラー:", { status: res.status, statusText: res.statusText });
+      return [];
+    }
+
+    const data = (await res.json()) as {
+      query?: {
+        pages?: Record<
+          string,
+          {
+            title: string;
+            fullurl?: string;
+            thumbnail?: { source: string };
+          }
+        >;
+      };
     };
-  };
 
-  const pages = data.query?.pages;
-  if (!pages) return [];
+    const pages = data.query?.pages;
+    if (!pages) return [];
 
-  return Object.values(pages)
-    .filter((p) => p.thumbnail?.source)
-    .map((p) => ({
-      title: p.title,
-      thumbUrl: p.thumbnail!.source,
-      pageUrl: p.fullurl ?? `https://ja.wikipedia.org/wiki/${encodeURIComponent(p.title)}`,
-    }));
+    return Object.values(pages)
+      .filter((p) => p.thumbnail?.source)
+      .map((p) => ({
+        title: p.title,
+        thumbUrl: p.thumbnail!.source,
+        pageUrl: p.fullurl ?? `https://ja.wikipedia.org/wiki/${encodeURIComponent(p.title)}`,
+      }));
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("周辺写真取得に失敗:", { error: errorMessage, stack: err instanceof Error ? err.stack : undefined });
+    return [];
+  }
 }
 
 // Wikipedia記事の要約文を取得する(AIへの文脈情報として使用)
@@ -77,14 +98,35 @@ export async function fetchWikipediaSummary(
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*");
 
-  const res = await fetch(url.toString());
-  if (!res.ok) return null;
+  try {
+    let res: Response;
+    try {
+      res = await fetch(url.toString());
+    } catch (fetchError) {
+      // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+      const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      console.error("Wikipedia要約取得 - ネットワークエラー（fetch失敗）:", {
+        error: errorMessage,
+        errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+      });
+      return null;
+    }
 
-  const data = (await res.json()) as {
-    query?: { pages?: Record<string, { extract?: string }> };
-  };
-  const pages = data.query?.pages;
-  if (!pages) return null;
-  const first = Object.values(pages)[0];
-  return first?.extract ?? null;
+    if (!res.ok) {
+      console.error("Wikipedia要約取得 - HTTPエラー:", { status: res.status, statusText: res.statusText });
+      return null;
+    }
+
+    const data = (await res.json()) as {
+      query?: { pages?: Record<string, { extract?: string }> };
+    };
+    const pages = data.query?.pages;
+    if (!pages) return null;
+    const first = Object.values(pages)[0];
+    return first?.extract ?? null;
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("Wikipedia要約取得に失敗:", { error: errorMessage, stack: err instanceof Error ? err.stack : undefined });
+    return null;
+  }
 }

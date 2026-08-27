@@ -106,10 +106,12 @@ const BottomSheet = memo(function BottomSheet({
         className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-300 pointer-events-auto flex flex-col"
         style={{ touchAction: "pan-y", height: state === "full" || !isPeekable ? "85vh" : state === "half" ? "50vh" : `${peekHeight}px` }}
       >
-        {/* Handle - ドラッグ可能領域に限定 */}
+        {/* Handle - ドラッグ可能領域に限定
+            見た目のつまみ線は細いままだが、指でつかみやすいようタッチ判定領域は
+            上下に大きめのパディング(py-4)を取って拡張している */}
         <div
           ref={handleRef}
-          className="flex justify-center py-2 cursor-grab active:cursor-grabbing bg-gray-50 border-b border-gray-100 pointer-events-auto"
+          className="flex justify-center items-center py-4 cursor-grab active:cursor-grabbing bg-gray-50 border-b border-gray-100 pointer-events-auto"
           role="slider"
           aria-label="ボトムシートの高さを調整"
           onMouseDown={handleMouseDown}

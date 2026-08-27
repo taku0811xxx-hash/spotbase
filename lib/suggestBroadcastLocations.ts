@@ -81,13 +81,31 @@ async function fetchParkingLocations(
   `;
 
   try {
-    const res = await fetch(OVERPASS_URL, {
-      method: "POST",
-      body: query,
-      headers: { "Content-Type": "text/plain" },
-    });
+    let res: Response;
+    try {
+      res = await fetch(OVERPASS_URL, {
+        method: "POST",
+        body: query,
+        headers: { "Content-Type": "text/plain" },
+      });
+    } catch (fetchError) {
+      // Safari の「TypeError: Load failed」などをキャッチ
+      const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      console.error("駐車場検索 - ネットワークエラー（fetch失敗）:", {
+        error: errorMessage,
+        errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+        url: OVERPASS_URL,
+      });
+      return [];
+    }
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error("駐車場検索 - HTTPエラー:", {
+        status: res.status,
+        statusText: res.statusText,
+      });
+      return [];
+    }
 
     const data = (await res.json()) as {
       elements: Array<{
@@ -120,7 +138,11 @@ async function fetchParkingLocations(
     // 距離でソート、上位3件を返す
     return candidates.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0)).slice(0, 3);
   } catch (err) {
-    console.error("駐車場検索に失敗:", err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("駐車場検索に失敗:", {
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return [];
   }
 }
@@ -148,13 +170,31 @@ async function fetchSymbolicLocations(
   `;
 
   try {
-    const res = await fetch(OVERPASS_URL, {
-      method: "POST",
-      body: query,
-      headers: { "Content-Type": "text/plain" },
-    });
+    let res: Response;
+    try {
+      res = await fetch(OVERPASS_URL, {
+        method: "POST",
+        body: query,
+        headers: { "Content-Type": "text/plain" },
+      });
+    } catch (fetchError) {
+      // Safari の「TypeError: Load failed」などをキャッチ
+      const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      console.error("象徴的なアングル検索 - ネットワークエラー（fetch失敗）:", {
+        error: errorMessage,
+        errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+        url: OVERPASS_URL,
+      });
+      return [];
+    }
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error("象徴的なアングル検索 - HTTPエラー:", {
+        status: res.status,
+        statusText: res.statusText,
+      });
+      return [];
+    }
 
     const data = (await res.json()) as {
       elements: Array<{
@@ -198,7 +238,11 @@ async function fetchSymbolicLocations(
     // 距離でソート、上位4件を返す
     return candidates.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0)).slice(0, 4);
   } catch (err) {
-    console.error("象徴的なアングル検索に失敗:", err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("象徴的なアングル検索に失敗:", {
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return [];
   }
 }

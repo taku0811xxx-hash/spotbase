@@ -124,7 +124,93 @@ const breakingAlertIcon = L.divIcon({
   popupAnchor: [0, -42],
 });
 
+// 現在地(GPS)用のアイコン。青い光暈付きのドットで、他のピンと混同しないようにする。
+const userLocationIcon = L.divIcon({
+  className: "",
+  html: `
+    <div style="position:relative;width:22px;height:22px;">
+      <div style="position:absolute;inset:-8px;border-radius:9999px;background:rgba(37,99,235,0.25);"></div>
+      <div style="position:absolute;inset:0;border-radius:9999px;background:#2563eb;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>
+    </div>
+  `,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+  popupAnchor: [0, -11],
+});
+
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
+
+/**
+ * 座標の有効性をチェックするヘルパー関数
+ * @param lat - 緯度
+ * @param lng - 経度
+ * @returns 座標が有効な場合 true、無効な場合 false
+ */
+function isValidCoordinate(lat: any, lng: any): boolean {
+  const numLat = Number(lat);
+  const numLng = Number(lng);
+
+  return (
+    Number.isFinite(numLat) &&
+    Number.isFinite(numLng) &&
+    !isNaN(numLat) &&
+    !isNaN(numLng) &&
+    numLat >= -90 &&
+    numLat <= 90 &&
+    numLng >= -180 &&
+    numLng <= 180
+  );
+}
+
+/**
+ * 座標を堅牢に抽出するヘルパー関数
+ * 複数のプロパティ名形式、ネスト構造、GeoJSON、配列形式に対応
+ * @param obj - 座標を含むオブジェクト
+ * @returns { lat: number, lng: number } | null
+ */
+function extractLatLng(obj: any): { lat: number; lng: number } | null {
+  if (!obj || typeof obj !== "object") {
+    return null;
+  }
+
+  // 直接のプロパティまたはネストされた座標オブジェクトに対応
+  const target = obj.location || obj.coords || obj.geometry || obj;
+
+  let lat = target.lat ?? target.latitude;
+  let lng = target.lng ?? target.longitude ?? target.lon;
+
+  // GeoJSON 形式: coordinates: [lng, lat]
+  if (Array.isArray(target.coordinates) && target.coordinates.length >= 2) {
+    lng = target.coordinates[0];
+    lat = target.coordinates[1];
+  }
+
+  // 配列形式: [lat, lng]
+  if (Array.isArray(target) && target.length >= 2) {
+    lat = target[0];
+    lng = target[1];
+  }
+
+  // 数値に変換
+  const numLat = Number(lat);
+  const numLng = Number(lng);
+
+  // 厳格なバリデーション
+  if (
+    Number.isFinite(numLat) &&
+    Number.isFinite(numLng) &&
+    !isNaN(numLat) &&
+    !isNaN(numLng) &&
+    numLat >= -90 &&
+    numLat <= 90 &&
+    numLng >= -180 &&
+    numLng <= 180
+  ) {
+    return { lat: numLat, lng: numLng };
+  }
+
+  return null;
+}
 
 type Props = {
   pins: Pin[];
@@ -133,11 +219,13 @@ type Props = {
   searchMarker?: SearchMarker | null;
   onSelectPin?: (pin: Pin) => void;
   selectedPin?: Pin | null; // 現在選択中のピン（戻るボタン用）
+  showDetailPanel?: boolean; // 詳細パネル開閉状態
   roadSuggestions?: RoadSuggestion[]; // 駐車の候補道路
   stopSuggestions?: RoadSuggestion[]; // 駐停車の候補道路
   hoveredRoadKey?: string | null; // 一覧でホバー中の道路(park-123 / stop-456 の形式)
   incidents?: Incident[]; // 速報事案
   breakingAlerts?: BreakingAlert[]; // 未確認速報ピン
+  userLocation?: { lat: number; lng: number } | null; // ログイン時に取得した現在地(GPS)
 };
 
 // CSS for Leaflet controls positioning
@@ -180,19 +268,75 @@ function MapInitializer() {
   return null;
 }
 
-// 検索結果などで特定の場所にフォーカスした時に地図を移動させるための内部コンポーネント
-function FlyToLocation({ target }: { target: { lat: number; lng: number } | null | undefined }) {
+// 詳細パネル開閉時に地図をリサイズして再センタリング
+function PanelResizeHandler({ showDetailPanel, selectedPin }: { showDetailPanel: boolean; selectedPin: any | null }) {
   const map = useMap();
   useEffect(() => {
-    if (target) {
-      // レンダリング完了後に確実に中心移動するため、わずかな遅延を設定
-      setTimeout(() => {
-        map.flyTo([target.lat, target.lng], 16, {
-          duration: 1.2,
-          easeLinearity: 0.25,
-        });
-      }, 100);
+    // 詳細パネル開閉時に map.invalidateSize() を実行
+    map.invalidateSize();
+
+    // アニメーション完了を待ってから再度 invalidateSize() と再センタリング
+    const timeoutId = setTimeout(() => {
+      map.invalidateSize();
+
+      // 選択中のピンが存在する場合は再センタリング
+      if (selectedPin && selectedPin.lat && selectedPin.lng) {
+        if (!isValidCoordinate(selectedPin.lat, selectedPin.lng)) return;
+
+        const latlng = L.latLng(selectedPin.lat, selectedPin.lng);
+        try {
+          map.setView(latlng, map.getZoom(), { animate: true });
+        } catch (error) {
+          console.error("PanelResizeHandler: setView エラー", error);
+        }
+      }
+    }, 200);
+
+    return () => clearTimeout(timeoutId);
+  }, [showDetailPanel, selectedPin, map]);
+  return null;
+}
+
+// 検索結果などで特定の場所にフォーカスした時に地図を移動させるための内部コンポーネント
+function FlyToLocation({ target }: { target: any | null | undefined }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!target) return;
+
+    // 座標を堅牢に抽出
+    const coords = extractLatLng(target);
+
+    // 有効な座標が取得できない場合は、絶対に flyTo を呼び出さずに return
+    if (!coords) {
+      return;
     }
+
+    // 最終確認: 座標が本当に有効であることをもう一度チェック
+    if (!isValidCoordinate(coords.lat, coords.lng)) {
+      return;
+    }
+
+    // レンダリング完了後に確実に中心移動するため、わずかな遅延を設定
+    // クロージャで coords を保存して、変更の影響を受けないようにする
+    const savedLat = coords.lat;
+    const savedLng = coords.lng;
+
+    setTimeout(() => {
+      // 最後のセーフティチェック: 座標が本当に有効であることを確認
+      if (!isValidCoordinate(savedLat, savedLng)) {
+        return;
+      }
+
+      // Leaflet に L.latLng オブジェクトとして明示的に渡す
+      const latlng = L.latLng(savedLat, savedLng);
+
+      // setView を使用して地図を移動（flyTo のバージョン依存問題を回避）
+      try {
+        map.setView(latlng, 16, { animate: true, duration: 1.2 });
+      } catch (error) {
+        console.error("FlyToLocation: 地図移動エラー", { error, savedLat, savedLng });
+      }
+    }, 100);
   }, [target, map]);
   return null;
 }
@@ -201,15 +345,42 @@ function FlyToLocation({ target }: { target: { lat: number; lng: number } | null
 function FlyToSelectedPin({ selectedPin }: { selectedPin: any | null | undefined }) {
   const map = useMap();
   useEffect(() => {
-    if (selectedPin) {
-      // レンダリング完了後に確実に中心移動するため、わずかな遅延を設定
-      setTimeout(() => {
-        map.flyTo([selectedPin.lat, selectedPin.lng], 16, {
-          duration: 1.2,
-          easeLinearity: 0.25,
-        });
-      }, 100);
+    if (!selectedPin) return;
+
+    // 座標を堅牢に抽出
+    const coords = extractLatLng(selectedPin);
+
+    // 有効な座標が取得できない場合は、絶対に flyTo を呼び出さずに return
+    if (!coords) {
+      return;
     }
+
+    // 最終確認: 座標が本当に有効であることをもう一度チェック
+    if (!isValidCoordinate(coords.lat, coords.lng)) {
+      return;
+    }
+
+    // レンダリング完了後に確実に中心移動するため、わずかな遅延を設定
+    // クロージャで coords を保存して、変更の影響を受けないようにする
+    const savedLat = coords.lat;
+    const savedLng = coords.lng;
+
+    setTimeout(() => {
+      // 最後のセーフティチェック: 座標が本当に有効であることを確認
+      if (!isValidCoordinate(savedLat, savedLng)) {
+        return;
+      }
+
+      // Leaflet に L.latLng オブジェクトとして明示的に渡す
+      const latlng = L.latLng(savedLat, savedLng);
+
+      // setView を使用して地図を移動（flyTo のバージョン依存問題を回避）
+      try {
+        map.setView(latlng, 16, { animate: true, duration: 1.2 });
+      } catch (error) {
+        console.error("FlyToSelectedPin: 地図移動エラー", { error, savedLat, savedLng });
+      }
+    }, 100);
   }, [selectedPin, map]);
   return null;
 }
@@ -227,58 +398,6 @@ function MapStyleInjector() {
   return null;
 }
 
-// 選択中のピンに戻るボタン
-function ReturnToPinButton({ selectedPin }: { selectedPin: Pin | null | undefined }) {
-  const map = useMap();
-  const [showButton, setShowButton] = useState(false);
-
-  useEffect(() => {
-    if (!selectedPin) {
-      setShowButton(false);
-      return;
-    }
-
-    const handleMapMove = () => {
-      const center = map.getCenter();
-      const distance = Math.sqrt(
-        Math.pow(center.lat - selectedPin.lat, 2) +
-        Math.pow(center.lng - selectedPin.lng, 2)
-      );
-      setShowButton(distance > 0.08); // 少し敏感に反応
-    };
-
-    map.on("move", handleMapMove);
-    handleMapMove();
-
-    return () => {
-      map.off("move", handleMapMove);
-    };
-  }, [selectedPin, map]);
-
-  if (!showButton || !selectedPin) {
-    return null;
-  }
-
-  const handleReturnToPin = () => {
-    map.flyTo([selectedPin.lat, selectedPin.lng], 16, {
-      duration: 1.2,
-      easeLinearity: 0.25,
-    });
-  };
-
-  return (
-    <div className="absolute bottom-16 right-4 z-[1000] pointer-events-auto">
-      <button
-        onClick={handleReturnToPin}
-        title="選択中のピン位置に戻る"
-        className="flex flex-col items-center justify-center w-12 h-12 bg-white rounded-full shadow-lg border border-gray-300 hover:bg-blue-50 hover:border-blue-400 transition-all active:scale-95 text-xl hover:shadow-xl"
-      >
-        🎯
-      </button>
-    </div>
-  );
-}
-
 export default function Map({
   pins,
   center = [35.681, 139.767],
@@ -286,15 +405,40 @@ export default function Map({
   searchMarker,
   onSelectPin,
   selectedPin,
+  showDetailPanel = false,
   roadSuggestions = [],
   stopSuggestions = [],
   hoveredRoadKey = null,
   incidents = [],
   breakingAlerts = [],
+  userLocation = null,
 }: Props) {
   return (
     <>
       <MapStyleInjector />
+
+      {/* 凡例ボックス - 地図右上に配置
+          注意: Leaflet内部のレイヤー(タイルペイン z-200、オーバーレイ z-400、
+          ポップアップペイン z-700、ズームコントロール等 z-1000)は、この
+          凡例divの兄弟要素(.leaflet-containerの子)として同じスタッキング
+          コンテキストで競合するため、それらすべてを上回るz-indexが必須。
+          (.leaflet-containerはposition:relativeのみでz-indexを持たず、
+          新しいスタッキングコンテキストを作らないため) */}
+      <div className="absolute top-4 right-4 z-[2000] bg-white rounded-lg shadow-lg border border-gray-200 p-2.5 sm:p-3 max-w-[170px] sm:max-w-xs pointer-events-auto">
+        <h3 className="text-xs font-bold text-gray-900 mb-2">駐車・駐停車</h3>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-3 rounded flex-shrink-0" style={{ backgroundColor: '#2563eb' }}></div>
+            <span className="text-xs text-gray-700">駐車候補（広い道路）</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-3 rounded flex-shrink-0" style={{ backgroundColor: '#f59e0b' }}></div>
+            <span className="text-xs text-gray-700">駐停車候補（短時間）</span>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">現地で必ず確認してください</p>
+      </div>
+
       <MapContainer
         center={center}
         zoom={12}
@@ -312,6 +456,8 @@ export default function Map({
       <FlyToLocation target={flyTo} />
       {/* 選択ピン自動センタリング - ピン選択時に地図の中心を設定 */}
       <FlyToSelectedPin selectedPin={selectedPin} />
+      {/* 詳細パネル開閉時のリサイズ処理 */}
+      <PanelResizeHandler showDetailPanel={showDetailPanel} selectedPin={selectedPin} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -319,25 +465,36 @@ export default function Map({
         updateWhenIdle={true}
         updateInterval={200}
       />
-      {pins.map((pin) => (
-        <Marker
-          key={pin.id}
-          position={[pin.lat, pin.lng]}
-          icon={defaultIcon}
-          eventHandlers={{
-            click: () => onSelectPin?.(pin),
-          }}
-        >
-          <Popup>
-            <div className="space-y-1">
-              <p className="font-bold">{pin.name}</p>
-              <p className="text-sm text-gray-600">{pin.address}</p>
-            </div>
-          </Popup>
-        </Marker>
-      ))}
+      {pins
+        .filter((pin) => isValidCoordinate(pin.lat, pin.lng))
+        .map((pin) => (
+          <Marker
+            key={pin.id}
+            position={[pin.lat, pin.lng]}
+            icon={defaultIcon}
+            eventHandlers={{
+              click: () => onSelectPin?.(pin),
+            }}
+          >
+            <Popup>
+              <div className="space-y-1">
+                <p className="font-bold">{pin.name}</p>
+                <p className="text-sm text-gray-600">{pin.address}</p>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
 
-      {searchMarker && (
+      {userLocation && isValidCoordinate(userLocation.lat, userLocation.lng) && (
+        <Marker
+          position={[userLocation.lat, userLocation.lng]}
+          icon={userLocationIcon}
+        >
+          <Popup>現在地</Popup>
+        </Marker>
+      )}
+
+      {searchMarker && isValidCoordinate(searchMarker.lat, searchMarker.lng) && (
         <Marker
           position={[searchMarker.lat, searchMarker.lng]}
           icon={searchIcon}
@@ -359,12 +516,14 @@ export default function Map({
         </Marker>
       )}
 
-      {incidents.map((incident) => (
-        <Marker
-          key={`incident-${incident.id}`}
-          position={[incident.latitude, incident.longitude]}
-          icon={incidentIcon}
-        >
+      {incidents
+        .filter((incident) => isValidCoordinate(incident.latitude, incident.longitude))
+        .map((incident) => (
+          <Marker
+            key={`incident-${incident.id}`}
+            position={[incident.latitude, incident.longitude]}
+            icon={incidentIcon}
+          >
           <Popup>
             <div className="space-y-2 w-56">
               <div>
@@ -396,12 +555,14 @@ export default function Map({
         </Marker>
       ))}
 
-      {breakingAlerts.map((alert) => (
-        <Marker
-          key={`alert-${alert.id}`}
-          position={[alert.lat, alert.lng]}
-          icon={breakingAlertIcon}
-        >
+      {breakingAlerts
+        .filter((alert) => isValidCoordinate(alert.lat, alert.lng))
+        .map((alert) => (
+          <Marker
+            key={`alert-${alert.id}`}
+            position={[alert.lat, alert.lng]}
+            icon={breakingAlertIcon}
+          >
           <Popup>
             <div className="space-y-2 w-64">
               <div>
@@ -494,9 +655,6 @@ export default function Map({
           </Polyline>
         );
       })}
-
-      {/* 選択中のピンに戻るボタン */}
-      <ReturnToPinButton selectedPin={selectedPin} />
       </MapContainer>
     </>
   );

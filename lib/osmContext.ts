@@ -57,50 +57,78 @@ export async function fetchNearbyOsmFeatures(
     out center;
   `;
 
-  const res = await fetch(OVERPASS_URL, {
-    method: "POST",
-    body: query,
-    headers: { "Content-Type": "text/plain" },
-  });
-  if (!res.ok) return [];
+  try {
+    let res: Response;
+    try {
+      res = await fetch(OVERPASS_URL, {
+        method: "POST",
+        body: query,
+        headers: { "Content-Type": "text/plain" },
+      });
+    } catch (fetchError) {
+      // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+      const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      console.error("周辺OSMデータ取得 - ネットワークエラー（fetch失敗）:", {
+        error: errorMessage,
+        errorName: fetchError instanceof Error ? fetchError.name : "Unknown",
+        url: OVERPASS_URL,
+      });
+      return [];
+    }
 
-  const data = (await res.json()) as {
-    elements: Array<{
-      lat?: number;
-      lon?: number;
-      center?: { lat: number; lon: number };
-      tags?: Record<string, string>;
-    }>;
-  };
+    if (!res.ok) {
+      console.error("周辺OSMデータ取得 - HTTPエラー:", {
+        status: res.status,
+        statusText: res.statusText,
+      });
+      return [];
+    }
 
-  const typeLabel = (tags: Record<string, string>): string | null => {
-    if (tags.railway === "subway_entrance") return "駅出入口";
-    if (tags.entrance) return "出入口";
-    if (tags.building) return "建物";
-    if (tags.leisure === "plaza") return "広場";
-    if (tags.highway === "pedestrian") return "歩行者エリア";
-    if (tags.tourism === "viewpoint") return "展望スポット";
-    return null;
-  };
+    const data = (await res.json()) as {
+      elements: Array<{
+        lat?: number;
+        lon?: number;
+        center?: { lat: number; lon: number };
+        tags?: Record<string, string>;
+      }>;
+    };
 
-  const features: OsmFeature[] = [];
-  for (const el of data.elements) {
-    const tags = el.tags ?? {};
-    const type = typeLabel(tags);
-    if (!type) continue;
-    const elLat = el.lat ?? el.center?.lat;
-    const elLng = el.lon ?? el.center?.lon;
-    if (elLat === undefined || elLng === undefined) continue;
+    const typeLabel = (tags: Record<string, string>): string | null => {
+      if (tags.railway === "subway_entrance") return "駅出入口";
+      if (tags.entrance) return "出入口";
+      if (tags.building) return "建物";
+      if (tags.leisure === "plaza") return "広場";
+      if (tags.highway === "pedestrian") return "歩行者エリア";
+      if (tags.tourism === "viewpoint") return "展望スポット";
+      return null;
+    };
 
-    features.push({
-      name: tags.name ?? tags["name:ja"] ?? type,
-      type,
-      distanceMeters: distanceMeters(lat, lng, elLat, elLng),
-      bearingLabel: bearingLabel(lat, lng, elLat, elLng),
+    const features: OsmFeature[] = [];
+    for (const el of data.elements) {
+      const tags = el.tags ?? {};
+      const type = typeLabel(tags);
+      if (!type) continue;
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      if (elLat === undefined || elLng === undefined) continue;
+
+      features.push({
+        name: tags.name ?? tags["name:ja"] ?? type,
+        type,
+        distanceMeters: distanceMeters(lat, lng, elLat, elLng),
+        bearingLabel: bearingLabel(lat, lng, elLat, elLng),
+      });
+    }
+
+    // 近い順に並べて、多すぎる場合は上位だけ返す(AIに渡す情報量を抑えるため)
+    features.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    return features.slice(0, 15);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("周辺OSMデータ取得に失敗:", {
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
     });
+    return [];
   }
-
-  // 近い順に並べて、多すぎる場合は上位だけ返す(AIに渡す情報量を抑えるため)
-  features.sort((a, b) => a.distanceMeters - b.distanceMeters);
-  return features.slice(0, 15);
 }

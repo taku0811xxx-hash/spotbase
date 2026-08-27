@@ -57,6 +57,7 @@ export default function Home() {
   const [geocodeError, setGeocodeError] = useState("");
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
+  const [showDetailPanel, setShowDetailPanel] = useState(false); // 詳細パネル開閉状態
   const [roadSuggestions, setRoadSuggestions] = useState<RoadSuggestion[]>([]);
   const [loadingRoads, setLoadingRoads] = useState(false);
   const [stopSuggestions, setStopSuggestions] = useState<RoadSuggestion[]>([]);
@@ -78,10 +79,45 @@ export default function Home() {
   // ハイドレーション完了フラグ（Portal用途のみ）
   const [mounted, setMounted] = useState(false);
 
+  // ログイン時に自動取得する現在地(GPS)。地図中心とユーザーピンに反映する。
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  // 現在地取得は初回のみ実行するためのフラグ(再ログイン・profile再取得時の重複取得を防ぐ)
+  const geolocationRequested = useRef(false);
+
+  // 東京駅周辺（位置情報が拒否/取得失敗した場合のフォールバック座標）
+  const DEFAULT_LOCATION = { lat: 35.681236, lng: 139.767125 };
+
   useEffect(() => {
     // ハイドレーション完了を示す
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    // ログイン(認証完了)後、一度だけ現在地取得を試みる
+    if (authLoading || !user || !profile) return;
+    if (geolocationRequested.current) return;
+    geolocationRequested.current = true;
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setUserLocation(DEFAULT_LOCATION);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setUserLocation(loc);
+        setFlyTo(loc);
+      },
+      (error) => {
+        // 拒否・取得失敗時は安全にデフォルト座標へフォールバック
+        console.warn("現在地の取得に失敗しました。デフォルト座標を使用します:", error);
+        setUserLocation(DEFAULT_LOCATION);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user, profile]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -197,25 +233,38 @@ export default function Home() {
     }
   }, [query, pins]);
 
-  // 指定した地点の「駐車候補」「駐停車候補」をまとめて検索する
+  // 指定した地点の「駐車候補」「駐停車候補」をまとめて検索する。
+  // 各検索は道路種別ごとの複数ブロックに分割して並行実行され、
+  // 1ブロックの結果が届くたびに onBatch 経由で state を随時更新する
+  // (見つかった場所から順に地図へ反映されるプログレッシブ表示)。
   async function loadLocationInsights(lat: number, lng: number) {
     setRoadSuggestions([]);
     setStopSuggestions([]);
     setLoadingRoads(true);
     setLoadingStops(true);
-    findWideRoadsNear(lat, lng)
+    findWideRoadsNear(lat, lng, 600, 5, (batch) => setRoadSuggestions(batch))
       .then(setRoadSuggestions)
       .catch((err) => console.error(err))
       .finally(() => setLoadingRoads(false));
-    findStoppableRoadsNear(lat, lng)
+    findStoppableRoadsNear(lat, lng, 150, 5, (batch) => setStopSuggestions(batch))
       .then(setStopSuggestions)
       .catch((err) => console.error(err))
       .finally(() => setLoadingStops(false));
   }
 
-  // 現場ピンを選択したら、詳細パネルを開き、周辺情報を検索する
+  // 現場ピンを選択する処理（2段階クリック対応）
+  // 1回目クリック: ピン選択 + 地図中央移動（詳細パネルは開かない）
+  // 2回目クリック: 詳細パネル開閉
   function handleSelectPin(pin: Pin) {
+    // すでに選択されているピンを再度クリックした場合は詳細パネルを開く
+    if (selectedPin && selectedPin.id === pin.id) {
+      setShowDetailPanel(!showDetailPanel);
+      return;
+    }
+
+    // 新しいピンが選択された場合
     setSelectedPin(pin);
+    setShowDetailPanel(false); // 詳細パネルを閉じる
     setSearchMarker(null);
 
     // 座標が有効か確認（null/undefined/不正な値を除外）
@@ -229,17 +278,40 @@ export default function Home() {
     }
   }
 
+  // 現場一覧の「開く」ボタン用ハンドラ。
+  // 選択中の現場アイテムにのみ表示される明示的なボタンから呼ばれ、
+  // 押し間違い防止のため常に「開く」方向にのみ動作する（トグルしない）。
+  // 未選択・別のピンが選択中の場合は、先に選択+地図移動を行ってから開く。
+  function handleOpenPinDetail(pin: Pin) {
+    if (!selectedPin || selectedPin.id !== pin.id) {
+      handleSelectPin(pin);
+    }
+    setShowDetailPanel(true);
+  }
+
   function handleCloseSidePanel() {
     setSelectedPin(null);
+    setShowDetailPanel(false);
     setSearchMarker(null);
     setRoadSuggestions([]);
     setStopSuggestions([]);
   }
 
+  function handleReturnToPin() {
+    // 選択中のピンが存在する場合、その座標へ地図を移動
+    if (selectedPin && selectedPin.lat && selectedPin.lng) {
+      setFlyTo({ lat: selectedPin.lat, lng: selectedPin.lng });
+    }
+  }
+
   function handlePinDeleted() {
     if (!selectedPin) return;
     setPins((prev) => prev.filter((p) => p.id !== selectedPin.id));
-    handleCloseSidePanel();
+    setSelectedPin(null);
+    setShowDetailPanel(false);
+    setSearchMarker(null);
+    setRoadSuggestions([]);
+    setStopSuggestions([]);
   }
 
   // Enterキーで検索を確定した時の処理。
@@ -355,13 +427,14 @@ export default function Home() {
 
         {/* Desktop Layout */}
         <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 h-full min-h-[600px] sm:min-h-[650px]">
-          {selectedPin && (
+          {showDetailPanel && selectedPin && (
             <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
               <div className="w-full">
                 <PinSidePanel
                   pin={selectedPin}
                   onClose={handleCloseSidePanel}
                   onDeleted={handlePinDeleted}
+                  onReturnToPin={handleReturnToPin}
                   roadSuggestions={roadSuggestions}
                   loadingRoads={loadingRoads}
                   stopSuggestions={stopSuggestions}
@@ -391,7 +464,7 @@ export default function Home() {
             </div>
           )}
 
-          {!selectedPin && !searchMarker && (
+          {!showDetailPanel && !searchMarker && (
             <aside className="w-1/4 md:w-72 h-full overflow-y-auto bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm min-h-[600px] sm:min-h-[650px] flex-shrink-0">
               <div className="sticky top-0 bg-white border-b border-gray-100 px-2 md:px-3 py-2 md:py-2.5 z-10">
                 <h2 className="text-[10px] md:text-xs font-semibold text-gray-900 flex items-center gap-1 truncate">
@@ -401,23 +474,27 @@ export default function Home() {
               <GroupedPinList
                 pins={filteredByLocation}
                 onSelectPin={handleSelectPin}
+                onOpenDetail={handleOpenPinDetail}
+                selectedPinId={selectedPin?.id ?? null}
                 loading={loading}
               />
             </aside>
           )}
 
-          <main className="flex-1 h-full w-full rounded-lg sm:rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-[600px] sm:min-h-[650px]">
+          <main className="flex-1 h-full w-full relative rounded-lg sm:rounded-xl overflow-hidden border border-gray-200 shadow-sm min-h-[600px] sm:min-h-[650px]">
             <Map
               pins={filteredByLocation}
               flyTo={flyTo}
               searchMarker={searchMarker}
               onSelectPin={handleSelectPin}
               selectedPin={selectedPin}
+              showDetailPanel={showDetailPanel}
               roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
               stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
               hoveredRoadKey={hoveredRoadKey}
               incidents={incidents}
               breakingAlerts={breakingAlerts}
+              userLocation={userLocation}
             />
           </main>
         </div>
@@ -496,8 +573,12 @@ export default function Home() {
           />
         </main>
 
-        {/* Mobile Bottom Sheet - Site List (peek/half/full states) */}
-        {!selectedPin && !searchMarker && (
+        {/* Mobile Bottom Sheet - Site List (peek/half/full states)
+            詳細パネルが開くまでは表示し続ける(!showDetailPanel)。
+            こうすることで、現場アイテムを選択した直後(詳細はまだ開かない)も
+            一覧が表示されたままとなり、選択中アイテム横の「開く」ボタンを
+            ユーザーが視認・タップできる。 */}
+        {!showDetailPanel && !searchMarker && (
           <BottomSheet
             isOpen={true}
             onClose={() => {}}
@@ -511,15 +592,17 @@ export default function Home() {
             <GroupedPinList
               pins={filteredByLocation}
               onSelectPin={handleSelectPin}
+              onOpenDetail={handleOpenPinDetail}
+              selectedPinId={selectedPin?.id ?? null}
               loading={loading}
             />
           </BottomSheet>
         )}
 
         {/* Mobile Bottom Sheet - Pin Details */}
-        {selectedPin && (
+        {showDetailPanel && selectedPin && (
           <BottomSheet
-            isOpen={selectedPin !== null}
+            isOpen={showDetailPanel && selectedPin !== null}
             onClose={handleCloseSidePanel}
             title={selectedPin.name}
             isPeekable={false}
@@ -528,6 +611,7 @@ export default function Home() {
               pin={selectedPin}
               onClose={handleCloseSidePanel}
               onDeleted={handlePinDeleted}
+              onReturnToPin={handleReturnToPin}
               roadSuggestions={roadSuggestions}
               loadingRoads={loadingRoads}
               stopSuggestions={stopSuggestions}

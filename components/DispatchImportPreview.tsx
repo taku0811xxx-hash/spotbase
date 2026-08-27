@@ -106,9 +106,20 @@ export default function DispatchImportPreview({
       }, 1000);
     } catch (error) {
       console.error("Save failed:", error);
+      // TypeError（Safari の Load failed 含む）はユーザーフレンドリーなメッセージに変換
+      const isNetworkError =
+        error instanceof TypeError ||
+        (error instanceof Error &&
+          (error.message.includes("Load failed") ||
+            error.message.includes("Failed to fetch") ||
+            error.message.includes("NetworkError")));
       setToast({
         type: "error",
-        message: error instanceof Error ? error.message : "保存に失敗しました",
+        message: isNetworkError
+          ? "通信エラーが発生しました。接続を確認して再度お試しください"
+          : error instanceof Error
+            ? error.message
+            : "保存に失敗しました",
       });
     } finally {
       setSaving(false);

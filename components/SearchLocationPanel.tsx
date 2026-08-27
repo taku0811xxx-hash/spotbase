@@ -29,11 +29,20 @@ function RoadSuggestionsSection({
         <span className={`inline-block w-2.5 h-2.5 rounded-full ${colorDotClass}`} />
         {title}
       </p>
-      {loading && <p className="text-xs text-gray-400">検索中...</p>}
+      {/* 検索中でも、その時点までに見つかった件数を表示する
+          （「見つかりません」との誤解を防ぐため、結果0件と検索中を区別） */}
+      {loading && (
+        <p className="text-xs text-gray-400 flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+          検索中...{roadSuggestions.length > 0 && `（見つかったスポット: ${roadSuggestions.length}件）`}
+        </p>
+      )}
       {!loading && roadSuggestions.length === 0 && (
         <p className="text-xs text-gray-400">{emptyMessage}</p>
       )}
-      {!loading && roadSuggestions.length > 0 && (
+      {/* 検索中かどうかに関わらず、見つかっている分の結果は即座に表示する
+          （見つかった場所から順次表示するプログレッシブ表示） */}
+      {roadSuggestions.length > 0 && (
         <ul className="space-y-1">
           {roadSuggestions.map((road) => (
             <li

@@ -44,11 +44,11 @@ const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear
 
   return (
     <div className="flex items-center gap-2 px-4 py-3">
-      <div className="relative flex-1">
+      <div className="relative w-2/3 max-w-[66%] md:w-full md:max-w-none flex-none md:flex-1">
         <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          width="16"
-          height="16"
+          className="absolute left-2.5 md:left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          width="14"
+          height="14"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -63,11 +63,11 @@ const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={mounted && isMobile ? "現場名・住所・地名で検索" : "現場名・住所・地名で検索 (Enterで場所を検索)"}
-          className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 md:text-sm text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+          className="w-full border border-gray-300 rounded-lg pl-7 pr-2 py-1.5 text-xs md:pl-9 md:pr-3 md:py-2 md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
         />
       </div>
       {loading && (
-        <span className="text-xs text-gray-400 flex-shrink-0">検索中...</span>
+        <span className="text-[10px] md:text-xs text-gray-400 flex-shrink-0">検索中...</span>
       )}
     </div>
   );

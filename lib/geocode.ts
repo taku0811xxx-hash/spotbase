@@ -86,17 +86,27 @@ export async function reverseGeocode(
   url.searchParams.set("accept-language", "ja");
   url.searchParams.set("addressdetails", "1");
 
-  const res = await fetch(url.toString(), {
-    headers: { "Accept-Language": "ja" },
-  });
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { "Accept-Language": "ja" },
+    });
 
-  if (!res.ok) return null;
+    if (!res.ok) return null;
 
-  const data = (await res.json()) as {
-    display_name?: string;
-    address?: NominatimAddress;
-  };
-  if (!data.display_name) return null;
+    const data = (await res.json()) as {
+      display_name?: string;
+      address?: NominatimAddress;
+    };
+    if (!data.display_name) return null;
 
-  return formatJapaneseAddress(data.address, data.display_name);
+    return formatJapaneseAddress(data.address, data.display_name);
+  } catch (err) {
+    // Safari の「TypeError: Load failed」などの通信エラーをキャッチ
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("逆ジオコーディング処理エラー:", {
+      error: errorMessage,
+      errorName: err instanceof Error ? err.name : "Unknown",
+    });
+    return null;
+  }
 }

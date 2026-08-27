@@ -22,8 +22,13 @@ export default function ShootingSuggestionPanel({ name, address, lat, lng }: Pro
       const result = await suggestShootingPositions(name, address, lat, lng);
       setSuggestions(result);
     } catch (err) {
-      console.error(err);
-      setError("AI提案の生成に失敗しました。時間をおいて再度お試しください");
+      console.error("[ShootingSuggestionPanel] AI提案生成エラー:", err);
+      // lib 側で生成されたユーザーフレンドリーなメッセージ（通信エラー等）を優先的に表示
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "AI提案の生成に失敗しました。時間をおいて再度お試しください";
+      setError(message);
     } finally {
       setLoading(false);
     }

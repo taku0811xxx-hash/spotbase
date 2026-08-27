@@ -72,11 +72,20 @@ function RoadSuggestionsSection({
         <span className={`inline-block w-2.5 h-2.5 rounded-full ${colorDotClass}`} />
         {title}
       </p>
-      {loading && <p className="text-xs text-gray-400">検索中...</p>}
+      {/* 検索中でも、その時点までに見つかった件数を表示する
+          （「見つかりません」との誤解を防ぐため、結果0件と検索中を区別） */}
+      {loading && (
+        <p className="text-xs text-gray-400 flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+          検索中...{roadSuggestions.length > 0 && `（見つかったスポット: ${roadSuggestions.length}件）`}
+        </p>
+      )}
       {!loading && roadSuggestions.length === 0 && (
         <p className="text-xs text-gray-400">{emptyMessage}</p>
       )}
-      {!loading && roadSuggestions.length > 0 && (
+      {/* 検索中かどうかに関わらず、見つかっている分の結果は即座に表示する
+          （見つかった場所から順次表示するプログレッシブ表示） */}
+      {roadSuggestions.length > 0 && (
         <ul className="space-y-1">
           {roadSuggestions.map((road) => (
             <li
@@ -100,6 +109,7 @@ type Props = {
   pin: Pin;
   onClose: () => void;
   onDeleted?: () => void;
+  onReturnToPin?: () => void; // ピン位置に戻るボタンのコールバック
   roadSuggestions: RoadSuggestion[];
   loadingRoads: boolean;
   stopSuggestions: RoadSuggestion[];
@@ -111,6 +121,7 @@ export default function PinSidePanel({
   pin,
   onClose,
   onDeleted,
+  onReturnToPin,
   roadSuggestions,
   loadingRoads,
   stopSuggestions,
@@ -149,13 +160,24 @@ export default function PinSidePanel({
         onConfirm={handleDelete}
       />
 
-      <div className="p-3 border-b border-gray-100 flex items-center justify-between">
-        <button
-          onClick={onClose}
-          className="text-sm text-blue-600 hover:underline"
-        >
-          ← 一覧に戻る
-        </button>
+      <div className="p-3 border-b border-gray-100 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={onClose}
+            className="text-sm text-blue-600 hover:underline"
+          >
+            ← 一覧に戻る
+          </button>
+          {onReturnToPin && (
+            <button
+              onClick={onReturnToPin}
+              className="text-xs flex items-center gap-1 border border-blue-200 text-blue-600 rounded-lg px-2.5 py-1 hover:bg-blue-50 hover:border-blue-300 hover:shadow-sm active:scale-[0.98] transition-all duration-150"
+              title="現在選択中の現場ピン位置へ地図を戻す"
+            >
+              📍 現場ピンに戻る
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <Link
             href={`/pin/${pin.id}/edit`}
