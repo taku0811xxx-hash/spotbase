@@ -27,10 +27,23 @@ interface Props {
  */
 export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }: Props) {
   const [mounted, setMounted] = useState(false);
+  // isOpen が false になった直後もスライドアウトのアニメーションを最後まで
+  // 見せるため、実際にDOMから外すのはトランジション完了後まで遅延させる
+  const [shouldRender, setShouldRender] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      return;
+    }
+    // duration-300 (300ms) のスライドアウトが終わってからアンマウント
+    const timer = setTimeout(() => setShouldRender(false), 300);
+    return () => clearTimeout(timer);
+  }, [isOpen]);
 
   // ハイドレーション完了まで何も表示しない
   if (!mounted) {
@@ -42,7 +55,7 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
     return null;
   }
 
-  if (!isOpen) {
+  if (!shouldRender) {
     return null;
   }
 
@@ -50,14 +63,18 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
     <>
       {/* Backdrop - z-[99998] */}
       <div
-        className="fixed inset-0 bg-black/80 z-[99998] md:hidden pointer-events-auto"
+        className={`fixed inset-0 bg-black/80 z-[99998] md:hidden pointer-events-auto transition-opacity duration-300 ease-in-out ${
+          isOpen ? "opacity-100" : "opacity-0"
+        }`}
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Menu Panel - z-[99999] (最前面) - 右側配置 */}
+      {/* Menu Panel - z-[99999] (最前面) - 右側配置 - 画面外からスライドイン/アウト */}
       <div
-        className="fixed inset-y-0 right-0 w-72 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto"
+        className={`fixed inset-y-0 right-0 w-72 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto transition-transform duration-300 ease-in-out ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
         role="navigation"
         aria-label="メニュー"
         style={{ maxHeight: "100vh", overflowY: "auto" }}

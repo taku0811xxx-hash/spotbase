@@ -63,7 +63,9 @@ const SearchBar = memo(function SearchBar({ onSearch, onSubmit, loading, onClear
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={mounted && isMobile ? "現場名・住所・地名で検索" : "現場名・住所・地名で検索 (Enterで場所を検索)"}
-          className="w-full border border-gray-300 rounded-lg pl-7 pr-2 py-1.5 text-xs md:pl-9 md:pr-3 md:py-2 md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+          // iOS Safariはinputのfont-sizeが16px未満だとフォーカス時に自動ズームしてしまうため、
+          // 見た目の高さはpaddingで小さく保ちつつ、文字サイズは16px(text-base)以上を確保する
+          className="w-full border border-gray-300 rounded-lg pl-7 pr-2 py-1 text-base md:pl-9 md:pr-3 md:py-2 md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
         />
       </div>
       {loading && (
