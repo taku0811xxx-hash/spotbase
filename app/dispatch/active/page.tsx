@@ -236,8 +236,14 @@ export default function ActiveDispatchPage() {
                         </button>
                       </div>
 
-                      {/* View Details Link */}
-                      <div className="mt-3 text-right">
+                      {/* View Details / Live Links */}
+                      <div className="mt-3 flex items-center justify-end gap-4">
+                        <Link
+                          href={`/dispatch/${record.id}/live`}
+                          className="text-red-600 hover:underline text-xs sm:text-sm font-medium"
+                        >
+                          ライブ画面(GPS+チャット) →
+                        </Link>
                         <Link
                           href={`/dispatch/${record.id}`}
                           className="text-blue-600 hover:underline text-xs sm:text-sm font-medium"

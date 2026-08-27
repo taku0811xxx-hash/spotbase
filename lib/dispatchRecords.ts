@@ -54,6 +54,16 @@ export type Memo = {
   text: string; // メモテキスト
 };
 
+// 出動中のチャット形式メッセージ。将来的なAI要約・要点抽出を見据え、
+// 送信者・本文・時刻・種別を構造化データとして保持する。
+export type ChatMessage = {
+  id: string; // クライアント側で採番する一意ID
+  sender: string; // 送信者名(recordedBy等)
+  text: string; // 本文
+  timestamp: string; // ISO 8601文字列
+  type?: "text" | "image" | "voice"; // 将来の画像・音声添付を見据えた種別(現状はtextのみ送信可)
+};
+
 export type AiProposalForDispatch = {
   content: {
     shootingPositions?: Array<{
@@ -100,6 +110,7 @@ export type DispatchRecord = {
   history: EditLogEntry[]; // 編集履歴(誰が・いつ・何を変えたか)
   createdAt: Timestamp | null;
   memos?: Memo[]; // リアルタイム現場メモ（FPU回線確保、中継車設営完了など）
+  chatMessages?: ChatMessage[]; // 出動中チャット(構造化メッセージ履歴。将来のAI要約用)
   sourceFileHash?: string; // インポート時のソースファイルハッシュ（重複防止用）
   aiProposal?: AiProposalForDispatch; // AI生成提案のキャッシュ
 };
@@ -241,6 +252,75 @@ export async function createDispatchRecord(
     createdAt: serverTimestamp(),
   });
   return docRef.id;
+}
+
+export type QuickDispatchInput = {
+  locationName: string;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  incidentType?: string;
+  organizationId: string;
+  category: string;
+  recordedBy: string;
+};
+
+// 「新規出動」ボタンからの簡易フロー用。登録済みの現場(ピン)を選ぶだけで、
+// 詳細フォームの入力を待たずに即座に「出動中」状態の記録を作成する。
+// 詳細情報(駐車場所・撮影ポイント等)は空欄で作成し、後から/dispatch/[id]/editで
+// 補足入力できる。
+export async function createQuickDispatchRecord(
+  input: QuickDispatchInput
+): Promise<string> {
+  const docRef = doc(collection(db, COLLECTION));
+  await setDoc(docRef, {
+    locationName: input.locationName,
+    address: input.address,
+    lat: input.lat,
+    lng: input.lng,
+    incidentType: input.incidentType || "現場対応",
+    siteInfo: "",
+    parkingInfo: "",
+    shootingSpots: "",
+    ipTransmissionInfo: "",
+    fpuInfo: "",
+    hazards: "",
+    checkpoints: [],
+    track: [],
+    equipmentHeaders: [],
+    equipmentRows: [],
+    notes: [],
+    photos: [],
+    organizationId: input.organizationId,
+    category: input.category,
+    recordedBy: input.recordedBy,
+    createdBy: input.recordedBy,
+    status: "移動中",
+    history: [],
+    createdAt: serverTimestamp(),
+    chatMessages: [],
+  });
+  return docRef.id;
+}
+
+// 出動中チャットへメッセージを1件追加する。将来のAI要約に備え、配列全体を
+// 構造化データとして書き戻す(呼び出し側が現在のメッセージ一覧を渡す)。
+export async function addChatMessage(
+  recordId: string,
+  existingMessages: ChatMessage[],
+  message: { sender: string; text: string; type?: ChatMessage["type"] }
+): Promise<ChatMessage> {
+  const chatMessage: ChatMessage = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    sender: message.sender,
+    text: message.text,
+    timestamp: new Date().toISOString(),
+    type: message.type || "text",
+  };
+  await updateDoc(doc(db, COLLECTION, recordId), {
+    chatMessages: [...existingMessages, chatMessage],
+  });
+  return chatMessage;
 }
 
 // 編集可能な項目とその表示名(履歴に「何が変わったか」を記録するために使う)

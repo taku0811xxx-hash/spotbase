@@ -12,6 +12,7 @@ interface Props {
   onToggleMenu?: () => void;
   gpsTracking?: boolean; // 出動中(true)/待機中(false)のGPS追跡状態
   onToggleGpsTracking?: () => void;
+  onNewDispatch?: () => void; // 「新規出動」クイックフロー(現場選択モーダル)を開く
 }
 
 // GPS追跡のON/OFFを切り替えるステータスボタン。
@@ -50,6 +51,7 @@ const HeaderNav = memo(function HeaderNav({
   onToggleMenu,
   gpsTracking = false,
   onToggleGpsTracking,
+  onNewDispatch,
 }: Props) {
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,14 @@ const HeaderNav = memo(function HeaderNav({
           </span>
         )}
         <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} compact />
+        {onNewDispatch && (
+          <button
+            onClick={onNewDispatch}
+            className="text-[9px] px-1.5 py-0.5 bg-blue-600 text-white rounded-lg font-semibold whitespace-nowrap flex-shrink-0 hover:bg-blue-700 transition-colors"
+          >
+            新規出動
+          </button>
+        )}
         {/* Hamburger Button - Menu Portal でレンダリングされるメニューを開く */}
         <button
           onClick={onToggleMenu}
@@ -84,6 +94,15 @@ const HeaderNav = memo(function HeaderNav({
       {/* Desktop Header: Full Menu */}
       <div className="hidden md:flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0 relative">
         <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} />
+
+        {onNewDispatch && (
+          <button
+            onClick={onNewDispatch}
+            className="text-white text-[9px] sm:text-xs font-semibold rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1.5 bg-blue-600 shadow-sm hover:bg-blue-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0"
+          >
+            新規出動
+          </button>
+        )}
 
         {profile && (
           <div className="text-right text-xs text-gray-300 leading-tight mr-0.5">
@@ -162,9 +181,10 @@ const HeaderNav = memo(function HeaderNav({
 
         <Link
           href="/dispatch/new"
+          title="現場情報を詳しく入力してから出動記録を作成する"
           className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
         >
-          + <span>出動</span>
+          + <span>出動(詳細)</span>
         </Link>
 
         {/* ログアウト */}

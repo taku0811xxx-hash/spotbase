@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
-import { getDispatchRecords } from "@/lib/dispatchRecords";
+import { getDispatchRecords, createQuickDispatchRecord } from "@/lib/dispatchRecords";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import { useBreakingAlerts } from "@/lib/hooks/useBreakingAlerts";
 import { useAuth } from "@/components/AuthProvider";
@@ -23,6 +23,7 @@ import BottomSheet from "@/components/BottomSheet";
 import MobileMenuPortal from "@/components/MobileMenuPortal";
 import QuickLocationFilter from "@/components/QuickLocationFilter";
 import GroupedPinList from "@/components/GroupedPinList";
+import NewDispatchModal from "@/components/NewDispatchModal";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -72,6 +73,10 @@ export default function Home() {
 
   // メニュー開閉状態管理
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // 「新規出動」クイックフロー用の状態
+  const [showNewDispatchModal, setShowNewDispatchModal] = useState(false);
+  const [creatingDispatch, setCreatingDispatch] = useState(false);
 
   // グループ化フィルター選択状態
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
@@ -248,6 +253,31 @@ export default function Home() {
   async function handleLogout() {
     await logout();
     router.push("/login");
+  }
+
+  // 「新規出動」モーダルで現場を選択した時の処理。
+  // 詳細フォームの入力を待たず、即座に「出動中」状態の記録を作成して
+  // GPS+チャットのライブ画面へ遷移する。
+  async function handleQuickDispatch(pin: Pin) {
+    if (!profile || creatingDispatch) return;
+    setCreatingDispatch(true);
+    try {
+      const recordId = await createQuickDispatchRecord({
+        locationName: pin.name,
+        address: pin.address,
+        lat: pin.lat,
+        lng: pin.lng,
+        organizationId: profile.organizationId,
+        category: profile.category,
+        recordedBy: profile.name,
+      });
+      setShowNewDispatchModal(false);
+      router.push(`/dispatch/${recordId}/live`);
+    } catch (error) {
+      console.error("新規出動の作成に失敗しました:", error);
+    } finally {
+      setCreatingDispatch(false);
+    }
   }
 
   // 検索結果のメモ化 - 検索クエリまたはピン配列が変更された場合のみ再計算
@@ -434,6 +464,7 @@ export default function Home() {
             activeDispatchCount={activeDispatchCount}
             gpsTracking={gpsTracking}
             onToggleGpsTracking={handleToggleGpsTracking}
+            onNewDispatch={() => setShowNewDispatchModal(true)}
           />
           <div className="border-t border-gray-100 relative z-40">
             <SearchBar
@@ -561,6 +592,7 @@ export default function Home() {
             onToggleMenu={() => setMenuOpen(!menuOpen)}
             gpsTracking={gpsTracking}
             onToggleGpsTracking={handleToggleGpsTracking}
+            onNewDispatch={() => setShowNewDispatchModal(true)}
           />
         </header>
 
@@ -706,6 +738,15 @@ export default function Home() {
           onLogout={handleLogout}
         />
       )}
+
+      {/* 新規出動 - 現場選択モーダル(PC・モバイル共通) */}
+      <NewDispatchModal
+        isOpen={showNewDispatchModal}
+        onClose={() => setShowNewDispatchModal(false)}
+        pins={pins}
+        onSelect={handleQuickDispatch}
+        submitting={creatingDispatch}
+      />
     </div>
   );
 }
