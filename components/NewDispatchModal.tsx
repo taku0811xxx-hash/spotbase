@@ -8,16 +8,29 @@ interface Props {
   onClose: () => void;
   pins: Pin[];
   onSelect: (pin: Pin) => void;
+  onCreateNewSite: (input: { name: string; addressQuery: string }) => void;
   submitting?: boolean;
+  errorMessage?: string;
 }
 
 /**
- * 新規出動フロー用の現場選択モーダル。
- * 登録済みの現場(ピン)から出動先を選ぶだけで、詳細フォームの入力を待たずに
- * 即座に「出動中」状態へ移行できる簡易フローを提供する。
+ * 新規出動フロー用の現場選択・現場登録モーダル。
+ * - 登録済みの現場(ピン)から選ぶだけで即座に「出動中」状態へ移行できる
+ * - 該当する現場が見つからない場合は、名前と住所/建物名を入力して
+ *   その場で新しい現場を登録し、そのまま出動を開始できる
  */
-export default function NewDispatchModal({ isOpen, onClose, pins, onSelect, submitting = false }: Props) {
+export default function NewDispatchModal({
+  isOpen,
+  onClose,
+  pins,
+  onSelect,
+  onCreateNewSite,
+  submitting = false,
+  errorMessage,
+}: Props) {
   const [query, setQuery] = useState("");
+  const [newSiteName, setNewSiteName] = useState("");
+  const [newSiteAddress, setNewSiteAddress] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -32,6 +45,11 @@ export default function NewDispatchModal({ isOpen, onClose, pins, onSelect, subm
 
   if (!isOpen) return null;
 
+  function handleCreateNewSite() {
+    if (!newSiteName.trim() || !newSiteAddress.trim() || submitting) return;
+    onCreateNewSite({ name: newSiteName.trim(), addressQuery: newSiteAddress.trim() });
+  }
+
   return (
     <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center">
       {/* Backdrop */}
@@ -42,7 +60,7 @@ export default function NewDispatchModal({ isOpen, onClose, pins, onSelect, subm
       />
 
       {/* Modal Body */}
-      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <h2 className="font-bold text-gray-900 text-sm sm:text-base">新規出動 - 出動先を選択</h2>
           <button
@@ -61,7 +79,7 @@ export default function NewDispatchModal({ isOpen, onClose, pins, onSelect, subm
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="現場名・住所・地名で絞り込み"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoFocus
           />
           <p className="text-[11px] text-gray-500 mt-1.5">
@@ -69,9 +87,9 @@ export default function NewDispatchModal({ isOpen, onClose, pins, onSelect, subm
           </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 py-2">
+        <div className="flex-1 overflow-y-auto px-2 py-2 min-h-[80px]">
           {filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">
+            <p className="text-sm text-gray-500 text-center py-6">
               一致する現場が見つかりません
             </p>
           ) : (
@@ -95,11 +113,41 @@ export default function NewDispatchModal({ isOpen, onClose, pins, onSelect, subm
           )}
         </div>
 
-        {submitting && (
-          <div className="px-4 py-2 border-t border-gray-100 text-xs text-blue-600 flex-shrink-0">
-            出動記録を作成中...
-          </div>
-        )}
+        {/* 見つからない場合: その場で新しい現場を登録 */}
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0 space-y-2">
+          <p className="text-xs font-semibold text-gray-700">
+            見つからない場合は新しい現場を登録して出動できます
+          </p>
+          <input
+            type="text"
+            value={newSiteName}
+            onChange={(e) => setNewSiteName(e.target.value)}
+            placeholder="現場名(例: ○○ビル前)"
+            disabled={submitting}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          />
+          <input
+            type="text"
+            value={newSiteAddress}
+            onChange={(e) => setNewSiteAddress(e.target.value)}
+            placeholder="住所または建物名(位置情報の検索に使用)"
+            disabled={submitting}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreateNewSite();
+            }}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          />
+          {errorMessage && (
+            <p className="text-xs text-red-600">{errorMessage}</p>
+          )}
+          <button
+            onClick={handleCreateNewSite}
+            disabled={!newSiteName.trim() || !newSiteAddress.trim() || submitting}
+            className="w-full py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? "登録中..." : "この内容で新しい現場を登録して出動"}
+          </button>
+        </div>
       </div>
     </div>
   );

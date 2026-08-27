@@ -162,6 +162,42 @@ export async function createPin(input: NewPinInput): Promise<string> {
   return pinRef.id;
 }
 
+export type QuickPinInput = {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  organizationId: string;
+  category: string;
+  recordedBy: string;
+};
+
+// 「新規出動」フローで、既存の現場一覧に該当がない場合にその場で現場を
+// 登録するための簡易版。詳細情報(駐車場所・撮影ポイント等)は空欄で作成し、
+// 後から現場詳細ページで補足入力できる。
+export async function createQuickPin(input: QuickPinInput): Promise<string> {
+  const pinRef = doc(collection(db, PINS_COLLECTION));
+  await setDoc(pinRef, {
+    name: input.name,
+    address: input.address,
+    lat: input.lat,
+    lng: input.lng,
+    parkingInfo: "",
+    shootingSpots: "",
+    ipTransmissionInfo: "",
+    fpuInfo: "",
+    hazards: "",
+    photoUrls: [],
+    shootingPhotoUrls: [],
+    hazardPhotoUrls: [],
+    organizationId: input.organizationId,
+    category: input.category,
+    recordedBy: input.recordedBy,
+    recordedAt: serverTimestamp(),
+  });
+  return pinRef.id;
+}
+
 export type UpdatePinInput = Omit<
   NewPinInput,
   "photos" | "shootingPhotos" | "hazardPhotos"

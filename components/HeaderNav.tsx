@@ -166,13 +166,6 @@ const HeaderNav = memo(function HeaderNav({
         </Link>
 
         <Link
-          href="/dispatch"
-          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
-        >
-          📋 <span>記録一覧</span>
-        </Link>
-
-        <Link
           href="/dispatch/import"
           className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
         >
@@ -180,11 +173,11 @@ const HeaderNav = memo(function HeaderNav({
         </Link>
 
         <Link
-          href="/dispatch/new"
-          title="現場情報を詳しく入力してから出動記録を作成する"
-          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 bg-red-600 shadow-sm hover:bg-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
+          href="/dispatch"
+          title="蓄積された出動記録の一覧を確認する"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
         >
-          + <span>出動(詳細)</span>
+          📋 <span>出動記録</span>
         </Link>
 
         {/* ログアウト */}

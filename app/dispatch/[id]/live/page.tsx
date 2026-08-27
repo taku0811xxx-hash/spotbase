@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import {
-  getDispatchRecord,
   addChatMessage,
+  updateDispatchTitleSummary,
+  completeDispatchRecord,
   type DispatchRecord,
   type ChatMessage,
 } from "@/lib/dispatchRecords";
@@ -34,7 +37,19 @@ export default function LiveDispatchPage() {
   const watchIdRef = useRef<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // 出動記録の読み込み
+  // タイトル・概要(出動中画面での編集用)
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+
+  // 出動記録の読み込み + リアルタイム購読。
+  // チャットは現場スタッフと局内スタッフの双方が別端末から書き込むため、
+  // onSnapshotで他者の更新も即座に画面へ反映する。
+  // タイトル・概要は自分が入力中に他者更新で上書きされないよう、初回読み込み時のみ反映する。
+  const detailsInitializedRef = useRef(false);
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -43,13 +58,31 @@ export default function LiveDispatchPage() {
     }
     if (!recordId) return;
 
-    getDispatchRecord(recordId)
-      .then((data) => {
+    const unsubscribe = onSnapshot(
+      doc(db, "dispatch_records", recordId),
+      (snap) => {
+        if (!snap.exists()) {
+          setRecord(null);
+          setLoading(false);
+          return;
+        }
+        const data = { id: snap.id, ...(snap.data() as Omit<DispatchRecord, "id">) };
         setRecord(data);
-        setChatMessages(data?.chatMessages || []);
-      })
-      .catch((error) => console.error("出動記録の読み込みに失敗しました:", error))
-      .finally(() => setLoading(false));
+        setChatMessages(data.chatMessages || []);
+        if (!detailsInitializedRef.current) {
+          setTitle(data.title || data.locationName || "");
+          setSummary(data.summary || "");
+          detailsInitializedRef.current = true;
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error("出動記録のリアルタイム購読に失敗しました:", error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, [authLoading, user, recordId, router]);
 
   // 出動中は常時GPSを追跡し、現在地ピンをリアルタイム更新する。
@@ -119,6 +152,36 @@ export default function LiveDispatchPage() {
     }
   }
 
+  // タイトル・概要はonBlurで都度保存する(入力の妨げにならないようデバウンスは行わず、
+  // フォーカスが外れたタイミングでのみ書き込む)
+  async function handleSaveDetails() {
+    if (!recordId || savingDetails) return;
+    setSavingDetails(true);
+    try {
+      await updateDispatchTitleSummary(recordId, { title, summary });
+    } catch (error) {
+      console.error("タイトル・概要の保存に失敗しました:", error);
+    } finally {
+      setSavingDetails(false);
+    }
+  }
+
+  // 「対応完了(出動終了)」: タイトル・概要・チャット履歴・現場情報・日時をまとめて
+  // 構造化データとして保存し、出動状態をクローズする。以後は「出動記録」一覧から確認できる。
+  async function handleComplete() {
+    if (!recordId || completing) return;
+    setCompleting(true);
+    try {
+      await completeDispatchRecord(recordId, { title, summary });
+      router.push(`/dispatch/${recordId}`);
+    } catch (error) {
+      console.error("対応完了の保存に失敗しました:", error);
+    } finally {
+      setCompleting(false);
+      setShowCompleteConfirm(false);
+    }
+  }
+
   if (authLoading || loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-100 text-sm text-gray-500">
@@ -144,7 +207,36 @@ export default function LiveDispatchPage() {
         title={`出動中: ${record.locationName}`}
         backHref={`/dispatch/${record.id}`}
         backLabel="記録詳細に戻る"
+        action={
+          <button
+            onClick={() => setShowCompleteConfirm(true)}
+            disabled={completing}
+            className="bg-green-600 text-white text-xs sm:text-sm font-semibold rounded-lg px-3 py-1.5 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+          >
+            対応完了
+          </button>
+        }
       />
+
+      {/* タイトル・概要の入力・保持エリア */}
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0 space-y-1.5">
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={handleSaveDetails}
+          placeholder="事件・事故のタイトル"
+          className="w-full font-bold text-gray-900 text-sm sm:text-base border-0 border-b border-transparent focus:border-blue-400 focus:outline-none px-0 py-1 bg-transparent"
+        />
+        <textarea
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          onBlur={handleSaveDetails}
+          placeholder="概要(状況の要点をメモしておくと後で報告書作成が楽になります)"
+          rows={2}
+          className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      </div>
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0">
         {/* 地図エリア: 現在地(青) + 対象現場(赤) を自動fitBoundsで表示 */}
@@ -264,6 +356,35 @@ export default function LiveDispatchPage() {
           </div>
         </div>
       </div>
+
+      {/* 対応完了の確認ダイアログ */}
+      {showCompleteConfirm && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 px-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-5 space-y-3">
+            <h3 className="font-bold text-gray-900">対応完了として保存しますか?</h3>
+            <p className="text-xs text-gray-600">
+              タイトル・概要・チャット履歴・現場情報・日時をまとめて出動記録として保存し、
+              出動状態を終了します。「出動記録」一覧から確認できるようになります。
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setShowCompleteConfirm(false)}
+                disabled={completing}
+                className="flex-1 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleComplete}
+                disabled={completing}
+                className="flex-1 py-2 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400"
+              >
+                {completing ? "保存中..." : "対応完了にする"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

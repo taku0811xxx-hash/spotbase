@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAllPins, searchPins, type Pin } from "@/lib/pins";
+import { getAllPins, searchPins, createQuickPin, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
 import { getDispatchRecords, createQuickDispatchRecord } from "@/lib/dispatchRecords";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
@@ -77,6 +77,7 @@ export default function Home() {
   // 「新規出動」クイックフロー用の状態
   const [showNewDispatchModal, setShowNewDispatchModal] = useState(false);
   const [creatingDispatch, setCreatingDispatch] = useState(false);
+  const [newSiteError, setNewSiteError] = useState("");
 
   // グループ化フィルター選択状態
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
@@ -261,6 +262,7 @@ export default function Home() {
   async function handleQuickDispatch(pin: Pin) {
     if (!profile || creatingDispatch) return;
     setCreatingDispatch(true);
+    setNewSiteError("");
     try {
       const recordId = await createQuickDispatchRecord({
         locationName: pin.name,
@@ -275,6 +277,81 @@ export default function Home() {
       router.push(`/dispatch/${recordId}/live`);
     } catch (error) {
       console.error("新規出動の作成に失敗しました:", error);
+    } finally {
+      setCreatingDispatch(false);
+    }
+  }
+
+  // 「新規出動」モーダルで、既存の現場に該当がない場合の新規現場登録+出動開始処理。
+  // 入力された住所/建物名を地名検索(geocode)して座標を取得し、
+  // 現場(ピン)と出動記録の両方をその場で作成する。
+  async function handleQuickDispatchNewSite({
+    name,
+    addressQuery,
+  }: {
+    name: string;
+    addressQuery: string;
+  }) {
+    if (!profile || creatingDispatch) return;
+    setCreatingDispatch(true);
+    setNewSiteError("");
+    try {
+      const results = await geocodeQuery(addressQuery);
+      if (results.length === 0) {
+        setNewSiteError("入力した住所/建物名から位置情報を取得できませんでした。表記を変えて再度お試しください。");
+        return;
+      }
+      const top = results[0];
+
+      const pinId = await createQuickPin({
+        name,
+        address: top.displayName,
+        lat: top.lat,
+        lng: top.lng,
+        organizationId: profile.organizationId,
+        category: profile.category,
+        recordedBy: profile.name,
+      });
+
+      const recordId = await createQuickDispatchRecord({
+        locationName: name,
+        address: top.displayName,
+        lat: top.lat,
+        lng: top.lng,
+        organizationId: profile.organizationId,
+        category: profile.category,
+        recordedBy: profile.name,
+      });
+
+      // 新しく登録した現場を一覧にも即座に反映
+      setPins((prev) => [
+        {
+          id: pinId,
+          name,
+          address: top.displayName,
+          lat: top.lat,
+          lng: top.lng,
+          parkingInfo: "",
+          shootingSpots: "",
+          ipTransmissionInfo: "",
+          fpuInfo: "",
+          hazards: "",
+          photoUrls: [],
+          shootingPhotoUrls: [],
+          hazardPhotoUrls: [],
+          organizationId: profile.organizationId,
+          category: profile.category,
+          recordedBy: profile.name,
+          recordedAt: null,
+        },
+        ...prev,
+      ]);
+
+      setShowNewDispatchModal(false);
+      router.push(`/dispatch/${recordId}/live`);
+    } catch (error) {
+      console.error("新規現場の登録に失敗しました:", error);
+      setNewSiteError("新規現場の登録に失敗しました。時間をおいて再度お試しください。");
     } finally {
       setCreatingDispatch(false);
     }
@@ -739,13 +816,18 @@ export default function Home() {
         />
       )}
 
-      {/* 新規出動 - 現場選択モーダル(PC・モバイル共通) */}
+      {/* 新規出動 - 現場選択・新規現場登録モーダル(PC・モバイル共通) */}
       <NewDispatchModal
         isOpen={showNewDispatchModal}
-        onClose={() => setShowNewDispatchModal(false)}
+        onClose={() => {
+          setShowNewDispatchModal(false);
+          setNewSiteError("");
+        }}
         pins={pins}
         onSelect={handleQuickDispatch}
+        onCreateNewSite={handleQuickDispatchNewSite}
         submitting={creatingDispatch}
+        errorMessage={newSiteError}
       />
     </div>
   );

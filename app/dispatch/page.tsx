@@ -38,7 +38,12 @@ export default function DispatchListPage() {
     ])
       .then(([draftList, recordList]) => {
         setDrafts(draftList);
-        const publishedRecords = recordList.filter((r) => r.status === "published");
+        // 従来の下書き→提出フロー(status: "published")に加え、
+        // 「新規出動」クイックフローで対応完了(status: "完了")になった記録も
+        // 「出動記録」一覧として確認できるようにする
+        const publishedRecords = recordList.filter(
+          (r) => r.status === "published" || r.status === "完了"
+        );
         setRecords(publishedRecords);
         setFilteredRecords(publishedRecords);
       })

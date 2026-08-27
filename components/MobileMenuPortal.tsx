@@ -130,15 +130,7 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
             className="block px-4 py-3 text-sm text-gray-300 hover:bg-slate-700 hover:text-white rounded-lg transition-colors"
             onClick={onClose}
           >
-            📋 記録一覧
-          </Link>
-
-          <Link
-            href="/dispatch/new"
-            className="block px-4 py-3 text-sm text-gray-300 hover:bg-slate-700 hover:text-white rounded-lg transition-colors"
-            onClick={onClose}
-          >
-            + 新規出動
+            📋 出動記録
           </Link>
 
           <Link

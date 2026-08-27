@@ -94,6 +94,8 @@ export type DispatchRecord = {
   hazardPhotos?: SectionPhotos; // 危険箇所の写真
   siteInfo?: string; // 現場情報(新規項目)
   sitePhotos?: SectionPhotos; // 現場情報の写真
+  title?: string; // 事件・事故のタイトル(出動中画面で入力・保持)
+  summary?: string; // 事件・事故の概要(出動中画面で入力・保持)
   checkpoints: Checkpoint[];
   track: TrackPoint[]; // リアルタイム記録の軌跡
   equipmentHeaders: string[]; // 持ち出した機材表の見出し
@@ -111,6 +113,7 @@ export type DispatchRecord = {
   createdAt: Timestamp | null;
   memos?: Memo[]; // リアルタイム現場メモ（FPU回線確保、中継車設営完了など）
   chatMessages?: ChatMessage[]; // 出動中チャット(構造化メッセージ履歴。将来のAI要約用)
+  completedAt?: Timestamp | null; // 対応完了(出動終了)日時
   sourceFileHash?: string; // インポート時のソースファイルハッシュ（重複防止用）
   aiProposal?: AiProposalForDispatch; // AI生成提案のキャッシュ
 };
@@ -268,7 +271,7 @@ export type QuickDispatchInput = {
 // 「新規出動」ボタンからの簡易フロー用。登録済みの現場(ピン)を選ぶだけで、
 // 詳細フォームの入力を待たずに即座に「出動中」状態の記録を作成する。
 // 詳細情報(駐車場所・撮影ポイント等)は空欄で作成し、後から/dispatch/[id]/editで
-// 補足入力できる。
+// 補足入力できる。タイトル・概要は出動中画面(/dispatch/[id]/live)で入力する。
 export async function createQuickDispatchRecord(
   input: QuickDispatchInput
 ): Promise<string> {
@@ -279,6 +282,8 @@ export async function createQuickDispatchRecord(
     lat: input.lat,
     lng: input.lng,
     incidentType: input.incidentType || "現場対応",
+    title: input.locationName,
+    summary: "",
     siteInfo: "",
     parkingInfo: "",
     shootingSpots: "",
@@ -301,6 +306,31 @@ export async function createQuickDispatchRecord(
     chatMessages: [],
   });
   return docRef.id;
+}
+
+// 出動中画面(タイトル・概要入力エリア)からの更新。デバウンス済みの
+// onBlur等から呼ばれる想定。
+export async function updateDispatchTitleSummary(
+  recordId: string,
+  fields: { title?: string; summary?: string }
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, recordId), fields);
+}
+
+// 「対応完了(出動終了)」ボタン押下時。タイトル・概要・チャット履歴・現場情報・
+// 日時などが既に同一ドキュメントに構造化データとしてまとまっているため、
+// ステータスを完了に変えて出動状態をクローズするだけでよい。
+// status: "完了" にすることで、/dispatch/active の一覧からは自動的に外れ、
+// /dispatch の「出動記録」一覧からは確認できるようになる。
+export async function completeDispatchRecord(
+  recordId: string,
+  fields: { title?: string; summary?: string }
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, recordId), {
+    ...fields,
+    status: "完了",
+    completedAt: serverTimestamp(),
+  });
 }
 
 // 出動中チャットへメッセージを1件追加する。将来のAI要約に備え、配列全体を
