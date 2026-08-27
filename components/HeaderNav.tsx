@@ -10,9 +10,47 @@ interface Props {
   onLogout: () => void;
   activeDispatchCount?: number;
   onToggleMenu?: () => void;
+  gpsTracking?: boolean; // 出動中(true)/待機中(false)のGPS追跡状態
+  onToggleGpsTracking?: () => void;
 }
 
-const HeaderNav = memo(function HeaderNav({ profile, onLogout, activeDispatchCount = 0, onToggleMenu }: Props) {
+// GPS追跡のON/OFFを切り替えるステータスボタン。
+// 絵文字は使わず、テキストとカラーリングのみで状態を表現する。
+function GpsStatusToggle({
+  gpsTracking,
+  onToggleGpsTracking,
+  compact = false,
+}: {
+  gpsTracking: boolean;
+  onToggleGpsTracking?: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      onClick={onToggleGpsTracking}
+      title="位置情報の自動取得(GPS追跡)を切り替え"
+      aria-pressed={gpsTracking}
+      className={`font-semibold rounded-lg border whitespace-nowrap flex-shrink-0 transition-all duration-150 ${
+        compact ? "text-[9px] px-1.5 py-0.5" : "text-[9px] sm:text-xs px-1.5 sm:px-2.5 py-0.5 sm:py-1.5"
+      } ${
+        gpsTracking
+          ? "bg-green-600 border-green-700 text-white hover:bg-green-700"
+          : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600"
+      }`}
+    >
+      {gpsTracking ? "出動中 [GPS ON]" : "待機中 [GPS OFF]"}
+    </button>
+  );
+}
+
+const HeaderNav = memo(function HeaderNav({
+  profile,
+  onLogout,
+  activeDispatchCount = 0,
+  onToggleMenu,
+  gpsTracking = false,
+  onToggleGpsTracking,
+}: Props) {
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
@@ -22,13 +60,14 @@ const HeaderNav = memo(function HeaderNav({ profile, onLogout, activeDispatchCou
         <Logo className="text-white text-xs" />
       </Link>
 
-      {/* Mobile Header: Status Badge + Hamburger */}
+      {/* Mobile Header: Status Badge + GPS Toggle + Hamburger */}
       <div className="md:hidden flex items-center gap-1 flex-shrink-0 min-w-0">
         {activeDispatchCount > 0 && (
           <span className="px-1.5 py-0.5 text-[10px] bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0">
             🚨 {activeDispatchCount}件
           </span>
         )}
+        <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} compact />
         {/* Hamburger Button - Menu Portal でレンダリングされるメニューを開く */}
         <button
           onClick={onToggleMenu}
@@ -44,6 +83,8 @@ const HeaderNav = memo(function HeaderNav({ profile, onLogout, activeDispatchCou
 
       {/* Desktop Header: Full Menu */}
       <div className="hidden md:flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0 relative">
+        <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} />
+
         {profile && (
           <div className="text-right text-xs text-gray-300 leading-tight mr-0.5">
             <p className="text-[10px] sm:text-xs">{profile.organizationName} / {profile.category}</p>

@@ -79,45 +79,93 @@ export default function Home() {
   // ハイドレーション完了フラグ（Portal用途のみ）
   const [mounted, setMounted] = useState(false);
 
-  // ログイン時に自動取得する現在地(GPS)。地図中心とユーザーピンに反映する。
+  // 現在地(GPS)。地図中心とユーザーピンに反映する。
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  // 現在地取得は初回のみ実行するためのフラグ(再ログイン・profile再取得時の重複取得を防ぐ)
-  const geolocationRequested = useRef(false);
+  // 出動中(ON)/待機中(OFF)のGPS追跡状態。localStorageで再読み込み後も保持する。
+  // 初期値はfalse固定(SSR/クライアントのハイドレーション不一致を避けるため)にし、
+  // マウント後のuseEffectでlocalStorageの値を反映する。
+  const [gpsTracking, setGpsTracking] = useState(false);
+  const watchIdRef = useRef<number | null>(null);
+  // GPS追跡をONにした直後の1回目の位置取得でのみ地図を現在地へ移動させるためのフラグ
+  // (以降の継続更新のたびに地図が動いてしまうと操作の邪魔になるため)
+  const hasCenteredOnGpsRef = useRef(false);
 
+  const GPS_TRACKING_STORAGE_KEY = "spotbase.gpsTrackingEnabled";
   // 東京駅周辺（位置情報が拒否/取得失敗した場合のフォールバック座標）
   const DEFAULT_LOCATION = { lat: 35.681236, lng: 139.767125 };
 
   useEffect(() => {
     // ハイドレーション完了を示す
     setMounted(true);
+    // 前回のGPS追跡ON/OFF状態をlocalStorageから復元
+    try {
+      const stored = window.localStorage.getItem(GPS_TRACKING_STORAGE_KEY);
+      if (stored === "true") {
+        setGpsTracking(true);
+      }
+    } catch (error) {
+      console.warn("GPS追跡状態の読み込みに失敗しました:", error);
+    }
   }, []);
 
+  // ステータスボタンから呼ばれるON/OFF切り替えハンドラ。状態をlocalStorageへ即時保存する。
+  function handleToggleGpsTracking() {
+    setGpsTracking((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(GPS_TRACKING_STORAGE_KEY, String(next));
+      } catch (error) {
+        console.warn("GPS追跡状態の保存に失敗しました:", error);
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
-    // ログイン(認証完了)後、一度だけ現在地取得を試みる
+    // ログイン(認証完了)前は何もしない
     if (authLoading || !user || !profile) return;
-    if (geolocationRequested.current) return;
-    geolocationRequested.current = true;
+
+    // 待機中(OFF): 実行中の追跡があれば停止してバッテリー消費を抑える
+    if (!gpsTracking) {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      return;
+    }
+
+    // 出動中(ON): 現在地の継続追跡を開始
+    hasCenteredOnGpsRef.current = false;
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setUserLocation(DEFAULT_LOCATION);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
+    const id = navigator.geolocation.watchPosition(
       (position) => {
         const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
         setUserLocation(loc);
-        setFlyTo(loc);
+        // 地図が動いて操作の邪魔にならないよう、ONにした直後の初回のみ中心移動する
+        if (!hasCenteredOnGpsRef.current) {
+          setFlyTo(loc);
+          hasCenteredOnGpsRef.current = true;
+        }
       },
       (error) => {
         // 拒否・取得失敗時は安全にデフォルト座標へフォールバック
         console.warn("現在地の取得に失敗しました。デフォルト座標を使用します:", error);
         setUserLocation(DEFAULT_LOCATION);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, profile]);
+    watchIdRef.current = id;
+
+    return () => {
+      navigator.geolocation.clearWatch(id);
+      watchIdRef.current = null;
+    };
+  }, [authLoading, user, profile, gpsTracking]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -384,6 +432,8 @@ export default function Home() {
             profile={profile}
             onLogout={handleLogout}
             activeDispatchCount={activeDispatchCount}
+            gpsTracking={gpsTracking}
+            onToggleGpsTracking={handleToggleGpsTracking}
           />
           <div className="border-t border-gray-100 relative z-40">
             <SearchBar
@@ -509,6 +559,8 @@ export default function Home() {
             onLogout={handleLogout}
             activeDispatchCount={activeDispatchCount}
             onToggleMenu={() => setMenuOpen(!menuOpen)}
+            gpsTracking={gpsTracking}
+            onToggleGpsTracking={handleToggleGpsTracking}
           />
         </header>
 

@@ -424,19 +424,19 @@ export default function Map({
           コンテキストで競合するため、それらすべてを上回るz-indexが必須。
           (.leaflet-containerはposition:relativeのみでz-indexを持たず、
           新しいスタッキングコンテキストを作らないため) */}
-      <div className="absolute top-1.5 right-1.5 sm:top-4 sm:right-4 z-[2000] bg-white rounded sm:rounded-lg shadow-lg border border-gray-200 p-1 sm:p-3 max-w-[88px] sm:max-w-xs pointer-events-auto">
-        <h3 className="text-[8px] sm:text-xs font-bold text-gray-900 mb-0.5 sm:mb-2 leading-tight">駐車・駐停車</h3>
+      <div className="absolute top-1.5 right-1.5 sm:top-4 sm:right-4 z-[2000] bg-white rounded sm:rounded-lg shadow-lg border border-gray-200 p-1 sm:p-3 w-auto max-w-none sm:max-w-xs pointer-events-auto">
+        <h3 className="text-[8px] sm:text-xs font-bold text-gray-900 mb-0.5 sm:mb-2 leading-tight whitespace-nowrap">駐車・駐停車</h3>
         <div className="space-y-0.5 sm:space-y-1.5">
           <div className="flex items-center gap-0.5 sm:gap-2">
             <div className="w-2 h-1.5 sm:w-4 sm:h-3 rounded-sm sm:rounded flex-shrink-0" style={{ backgroundColor: '#2563eb' }}></div>
-            <span className="text-[7px] sm:text-xs text-gray-700 leading-tight">駐車候補（広い道路）</span>
+            <span className="text-[7px] sm:text-xs text-gray-700 leading-tight whitespace-nowrap">駐車候補（広い道路）</span>
           </div>
           <div className="flex items-center gap-0.5 sm:gap-2">
             <div className="w-2 h-1.5 sm:w-4 sm:h-3 rounded-sm sm:rounded flex-shrink-0" style={{ backgroundColor: '#f59e0b' }}></div>
-            <span className="text-[7px] sm:text-xs text-gray-700 leading-tight">駐停車候補（短時間）</span>
+            <span className="text-[7px] sm:text-xs text-gray-700 leading-tight whitespace-nowrap">駐停車候補（短時間）</span>
           </div>
         </div>
-        <p className="text-[7px] sm:text-xs text-gray-500 mt-0.5 sm:mt-2 leading-tight">現地で必ず確認してください</p>
+        <p className="text-[7px] sm:text-xs text-gray-500 mt-0.5 sm:mt-2 leading-tight whitespace-nowrap">現地で必ず確認してください</p>
       </div>
 
       <MapContainer

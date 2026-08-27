@@ -30,6 +30,13 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
   // isOpen が false になった直後もスライドアウトのアニメーションを最後まで
   // 見せるため、実際にDOMから外すのはトランジション完了後まで遅延させる
   const [shouldRender, setShouldRender] = useState(false);
+  // 実際に translate-x-0 / translate-x-full を切り替えるための表示フラグ。
+  // shouldRender と同時に true にしてしまうと、マウント直後の初期スタイルが
+  // 既に「開いた状態」になり、ブラウザがアニメーションさせるべき差分を
+  // 検知できず開くときだけスライドインが飛んでしまう(見た目上瞬間表示)。
+  // そのため一度「閉じた状態(translate-x-full)」でマウントしてから、
+  // 次のフレームで「開いた状態」に切り替えることで必ず遷移を発生させる。
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -38,9 +45,18 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
-      return;
+      // マウント直後の1フレーム目はまだ translate-x-full のまま描画させ、
+      // 次のタスクで visible を true にして transition を発火させる。
+      // requestAnimationFrame の代わりに setTimeout を使うのは、バック
+      // グラウンドタブ等で rAF がスロットリングされ得る環境でも確実に
+      // 「一度 translate-x-full で描画してから切り替える」ことを保証するため。
+      const timer = setTimeout(() => setVisible(true), 10);
+      return () => clearTimeout(timer);
     }
-    // duration-300 (300ms) のスライドアウトが終わってからアンマウント
+
+    // 閉じる操作: まず即座に visible を false にしてスライドアウトを開始し、
+    // duration-300 (300ms) のアニメーションが終わってからアンマウントする
+    setVisible(false);
     const timer = setTimeout(() => setShouldRender(false), 300);
     return () => clearTimeout(timer);
   }, [isOpen]);
@@ -64,7 +80,7 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
       {/* Backdrop - z-[99998] */}
       <div
         className={`fixed inset-0 bg-black/80 z-[99998] md:hidden pointer-events-auto transition-opacity duration-300 ease-in-out ${
-          isOpen ? "opacity-100" : "opacity-0"
+          visible ? "opacity-100" : "opacity-0"
         }`}
         onClick={onClose}
         aria-hidden="true"
@@ -73,7 +89,7 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
       {/* Menu Panel - z-[99999] (最前面) - 右側配置 - 画面外からスライドイン/アウト */}
       <div
         className={`fixed inset-y-0 right-0 w-72 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto transition-transform duration-300 ease-in-out ${
-          isOpen ? "translate-x-0" : "translate-x-full"
+          visible ? "translate-x-0" : "translate-x-full"
         }`}
         role="navigation"
         aria-label="メニュー"
