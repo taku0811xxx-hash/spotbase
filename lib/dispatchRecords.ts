@@ -54,6 +54,13 @@ export type Memo = {
   text: string; // メモテキスト
 };
 
+// メッセージへのクイックリアクション。絵文字ごとに反応したユーザー名の一覧を持つ
+// (同じ人が同じ絵文字を連打しても1件にまとまる、ワンタップでトグル可能な構造)。
+export type ChatReaction = {
+  emoji: string; // 例: "👍" "了解"
+  users: string[]; // リアクションした人の名前一覧
+};
+
 // 出動中のチャット形式メッセージ。将来的なAI要約・要点抽出を見据え、
 // 送信者・本文・時刻・種別を構造化データとして保持する。
 export type ChatMessage = {
@@ -62,6 +69,7 @@ export type ChatMessage = {
   text: string; // 本文
   timestamp: string; // ISO 8601文字列
   type?: "text" | "image" | "voice"; // 将来の画像・音声添付を見据えた種別(現状はtextのみ送信可)
+  reactions?: ChatReaction[]; // クイックリアクション(了解 等)
 };
 
 export type AiProposalForDispatch = {
@@ -96,6 +104,10 @@ export type DispatchRecord = {
   sitePhotos?: SectionPhotos; // 現場情報の写真
   title?: string; // 事件・事故のタイトル(出動中画面で入力・保持)
   summary?: string; // 事件・事故の概要(出動中画面で入力・保持)
+  dispatcherName?: string; // 出動者(出動中画面で入力・保持)
+  siteManagerName?: string; // 現場管理者(出動中画面で入力・保持)
+  newsUrl?: string; // 関連ニュース記事のURL
+  newsSummary?: string; // 関連ニュース記事のAI自動抽出概要
   checkpoints: Checkpoint[];
   track: TrackPoint[]; // リアルタイム記録の軌跡
   equipmentHeaders: string[]; // 持ち出した機材表の見出し
@@ -312,7 +324,16 @@ export async function createQuickDispatchRecord(
 // onBlur等から呼ばれる想定。
 export async function updateDispatchTitleSummary(
   recordId: string,
-  fields: { title?: string; summary?: string; address?: string; incidentType?: string }
+  fields: {
+    title?: string;
+    summary?: string;
+    address?: string;
+    incidentType?: string;
+    dispatcherName?: string;
+    siteManagerName?: string;
+    newsUrl?: string;
+    newsSummary?: string;
+  }
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, recordId), fields);
 }
@@ -324,7 +345,16 @@ export async function updateDispatchTitleSummary(
 // /dispatch の「出動記録」一覧からは確認できるようになる。
 export async function completeDispatchRecord(
   recordId: string,
-  fields: { title?: string; summary?: string; address?: string; incidentType?: string }
+  fields: {
+    title?: string;
+    summary?: string;
+    address?: string;
+    incidentType?: string;
+    dispatcherName?: string;
+    siteManagerName?: string;
+    newsUrl?: string;
+    newsSummary?: string;
+  }
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, recordId), {
     ...fields,
@@ -351,6 +381,41 @@ export async function addChatMessage(
     chatMessages: [...existingMessages, chatMessage],
   });
   return chatMessage;
+}
+
+// チャットメッセージへのクイックリアクション(了解 等)をワンタップでトグルする。
+// 同じ人が同じ絵文字を再度押すと取り消し、まだ押していなければ追加する。
+// 配列全体を構造化データとして書き戻す(addChatMessageと同様の方式)。
+export async function toggleChatReaction(
+  recordId: string,
+  existingMessages: ChatMessage[],
+  input: { messageId: string; emoji: string; user: string }
+): Promise<ChatMessage[]> {
+  const updated = existingMessages.map((msg) => {
+    if (msg.id !== input.messageId) return msg;
+
+    const reactions = msg.reactions ? [...msg.reactions] : [];
+    const idx = reactions.findIndex((r) => r.emoji === input.emoji);
+
+    if (idx === -1) {
+      reactions.push({ emoji: input.emoji, users: [input.user] });
+    } else {
+      const users = reactions[idx].users.includes(input.user)
+        ? reactions[idx].users.filter((u) => u !== input.user)
+        : [...reactions[idx].users, input.user];
+
+      if (users.length === 0) {
+        reactions.splice(idx, 1);
+      } else {
+        reactions[idx] = { ...reactions[idx], users };
+      }
+    }
+
+    return { ...msg, reactions };
+  });
+
+  await updateDoc(doc(db, COLLECTION, recordId), { chatMessages: updated });
+  return updated;
 }
 
 // 編集可能な項目とその表示名(履歴に「何が変わったか」を記録するために使う)

@@ -301,9 +301,11 @@ export default function Home() {
   }
 
   // 「新規出動」モーダルで、既存の現場に該当がない場合(または初めての現場)の
-  // 新規現場登録+出動開始処理。住所/建物名が入力されていればそれを地名検索(geocode)し、
-  // 空欄の場合は現在地(GPS)を使って座標を取得する。現場(ピン)と出動記録の両方を
-  // その場で作成し、詳細フォームの入力を待たず即座にライブ画面へ遷移する。
+  // 新規現場登録+出動開始処理。住所/建物名が入力されていればそれを地名検索(geocode)する。
+  // 空欄の場合は「現場名」自体をジオコーディングして最も可能性の高い住所候補を自動設定し、
+  // 現在地(GPS)は検索に一致しなかった場合の最終フォールバックとしてのみ使う。
+  // 現場(ピン)と出動記録の両方をその場で作成し、詳細フォームの入力を待たず即座に
+  // ライブ画面へ遷移する。
   async function handleCreateNewSite({
     name,
     addressQuery,
@@ -319,17 +321,21 @@ export default function Home() {
       let lng: number;
       let address: string;
 
-      if (addressQuery) {
-        const results = await geocodeQuery(addressQuery);
-        if (results.length === 0) {
-          setNewSiteError("入力した住所/建物名から位置情報を取得できませんでした。表記を変えて再度お試しください。");
-          return;
-        }
+      // 住所/建物名が未入力の場合は、現場名自体を検索クエリとしてジオコーディングを試みる
+      const query = addressQuery || name;
+      const results = await geocodeQuery(query);
+
+      if (results.length > 0) {
         const top = results[0];
         lat = top.lat;
         lng = top.lng;
         address = top.displayName;
+      } else if (addressQuery) {
+        // 住所/建物名を明示的に入力したのに見つからない場合はエラーとして知らせる
+        setNewSiteError("入力した住所/建物名から位置情報を取得できませんでした。表記を変えて再度お試しください。");
+        return;
       } else {
+        // 現場名からも見つからない場合のみ、現在地(GPS)を最終フォールバックとして使う
         const loc = await getLocationForQuickDispatch();
         lat = loc.lat;
         lng = loc.lng;

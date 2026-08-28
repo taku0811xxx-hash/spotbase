@@ -9,11 +9,13 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import {
   addChatMessage,
+  toggleChatReaction,
   updateDispatchTitleSummary,
   completeDispatchRecord,
   type DispatchRecord,
   type ChatMessage,
 } from "@/lib/dispatchRecords";
+import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
@@ -21,6 +23,23 @@ const LiveDispatchMap = dynamic(() => import("@/components/LiveDispatchMap"), { 
 
 // 東京駅周辺（位置情報が拒否/取得失敗した場合のフォールバック座標）
 const DEFAULT_LOCATION = { lat: 35.681236, lng: 139.767125 };
+
+// ワンタップで送れるクイックリアクション
+const QUICK_REACTIONS = ["了解", "👍", "🙏"];
+
+// 発言者名から一貫した色を割り当てる(Teams風のアバター用)。
+// 同じ人は常に同じ色になるよう、名前の文字コード合計でパレットを選ぶ。
+const AVATAR_COLORS = [
+  "bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500",
+  "bg-violet-500", "bg-cyan-600", "bg-orange-500", "bg-teal-500",
+];
+function avatarColorFor(name: string): string {
+  const sum = Array.from(name).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+}
+function avatarInitial(name: string): string {
+  return (name.trim()[0] || "?").toUpperCase();
+}
 
 export default function LiveDispatchPage() {
   const params = useParams();
@@ -37,14 +56,27 @@ export default function LiveDispatchPage() {
   const watchIdRef = useRef<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // タイトル・概要・住所・出動内容(出動中画面での編集用)
+  // タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュース(出動中画面での編集用)
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [address, setAddress] = useState("");
   const [incidentType, setIncidentType] = useState("");
+  const [dispatcherName, setDispatcherName] = useState("");
+  const [siteManagerName, setSiteManagerName] = useState("");
+  const [newsUrl, setNewsUrl] = useState("");
+  const [newsSummary, setNewsSummary] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+
+  // 住所の自動補完: 現場名を基にジオコーディングした候補一覧
+  const [addressCandidates, setAddressCandidates] = useState<GeocodeResult[]>([]);
+  const [addressSearching, setAddressSearching] = useState(false);
+  const [addressSearchError, setAddressSearchError] = useState("");
+
+  // 関連ニュースURLからの概要自動抽出
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState("");
 
   // 出動記録の読み込み + リアルタイム購読。
   // チャットは現場スタッフと局内スタッフの双方が別端末から書き込むため、
@@ -76,6 +108,10 @@ export default function LiveDispatchPage() {
           setSummary(data.summary || "");
           setAddress(data.address || "");
           setIncidentType(data.incidentType || "");
+          setDispatcherName(data.dispatcherName || data.recordedBy || "");
+          setSiteManagerName(data.siteManagerName || "");
+          setNewsUrl(data.newsUrl || "");
+          setNewsSummary(data.newsSummary || "");
           detailsInitializedRef.current = true;
         }
         setLoading(false);
@@ -156,28 +192,140 @@ export default function LiveDispatchPage() {
     }
   }
 
-  // タイトル・概要・住所・出動内容はonBlurで都度保存する(入力の妨げにならないよう
-  // デバウンスは行わず、フォーカスが外れたタイミングでのみ書き込む)
+  // クイックリアクション(了解 等)をワンタップでトグルする
+  async function handleToggleReaction(messageId: string, emoji: string) {
+    if (!recordId) return;
+    const user = profile?.name || "不明";
+
+    // 楽観的更新
+    setChatMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg;
+        const reactions = msg.reactions ? [...msg.reactions] : [];
+        const idx = reactions.findIndex((r) => r.emoji === emoji);
+        if (idx === -1) {
+          reactions.push({ emoji, users: [user] });
+        } else {
+          const users = reactions[idx].users.includes(user)
+            ? reactions[idx].users.filter((u) => u !== user)
+            : [...reactions[idx].users, user];
+          if (users.length === 0) {
+            reactions.splice(idx, 1);
+          } else {
+            reactions[idx] = { ...reactions[idx], users };
+          }
+        }
+        return { ...msg, reactions };
+      })
+    );
+
+    try {
+      await toggleChatReaction(recordId, chatMessages, { messageId, emoji, user });
+    } catch (error) {
+      console.error("リアクションの送信に失敗しました:", error);
+    }
+  }
+
+  // タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュースはonBlurで都度保存する
+  // (入力の妨げにならないようデバウンスは行わず、フォーカスが外れたタイミングでのみ書き込む)
   async function handleSaveDetails() {
     if (!recordId || savingDetails) return;
     setSavingDetails(true);
     try {
-      await updateDispatchTitleSummary(recordId, { title, summary, address, incidentType });
+      await updateDispatchTitleSummary(recordId, {
+        title,
+        summary,
+        address,
+        incidentType,
+        dispatcherName,
+        siteManagerName,
+        newsUrl,
+        newsSummary,
+      });
     } catch (error) {
-      console.error("タイトル・概要・住所・出動内容の保存に失敗しました:", error);
+      console.error("出動記録の保存に失敗しました:", error);
     } finally {
       setSavingDetails(false);
     }
   }
 
-  // 「対応完了(出動終了)」: タイトル・概要・住所・出動内容・チャット履歴・現場情報・
-  // 日時をまとめて構造化データとして保存し、出動状態をクローズする。
-  // 以後は「出動記録」一覧から確認できる。
+  // 住所の自動補完: 現在の住所欄ではなく「現場名(タイトル)」を検索クエリとして
+  // ジオコーディングし、最も可能性の高い住所候補を提示する。現在地は使用しない。
+  async function handleSearchAddressCandidates() {
+    const query = (title || record?.locationName || "").trim();
+    if (!query || addressSearching) return;
+    setAddressSearching(true);
+    setAddressSearchError("");
+    setAddressCandidates([]);
+    try {
+      const results = await geocodeQuery(query);
+      if (results.length === 0) {
+        setAddressSearchError("該当する住所候補が見つかりませんでした。現場名の表記を変えてお試しください。");
+        return;
+      }
+      setAddressCandidates(results);
+    } catch (error) {
+      console.error("住所候補の検索に失敗しました:", error);
+      setAddressSearchError("住所候補の検索に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setAddressSearching(false);
+    }
+  }
+
+  function handleApplyAddressCandidate(candidate: GeocodeResult) {
+    setAddress(candidate.displayName);
+    setAddressCandidates([]);
+    // 選択直後にすぐ保存する(onBlurを待たない)
+    void updateDispatchTitleSummary(recordId, { address: candidate.displayName }).catch((error) => {
+      console.error("住所の保存に失敗しました:", error);
+    });
+  }
+
+  // 関連ニュースURLから記事本文を取得し、AIで概要を自動抽出・整理する
+  async function handleFetchNewsSummary() {
+    const url = newsUrl.trim();
+    if (!url || newsLoading) return;
+    setNewsLoading(true);
+    setNewsError("");
+    try {
+      const res = await fetch("/api/dispatch/news-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNewsError(data.error || "概要の取得に失敗しました");
+        return;
+      }
+      const summaryText = data.title ? `${data.title}\n${data.summary}` : data.summary;
+      setNewsSummary(summaryText);
+      await updateDispatchTitleSummary(recordId, { newsUrl: url, newsSummary: summaryText });
+    } catch (error) {
+      console.error("関連ニュース概要の取得に失敗しました:", error);
+      setNewsError("概要の取得に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setNewsLoading(false);
+    }
+  }
+
+  // 「対応完了(出動終了)」: タイトル・概要・住所・出動内容・出動者・現場管理者・
+  // 関連ニュース・チャット履歴・現場情報・日時をまとめて構造化データとして保存し、
+  // 出動状態をクローズする。以後は「出動記録」一覧から確認できる。
   async function handleComplete() {
     if (!recordId || completing) return;
     setCompleting(true);
     try {
-      await completeDispatchRecord(recordId, { title, summary, address, incidentType });
+      await completeDispatchRecord(recordId, {
+        title,
+        summary,
+        address,
+        incidentType,
+        dispatcherName,
+        siteManagerName,
+        newsUrl,
+        newsSummary,
+      });
       router.push(`/dispatch/${recordId}`);
     } catch (error) {
       console.error("対応完了の保存に失敗しました:", error);
@@ -206,6 +354,10 @@ export default function LiveDispatchPage() {
   const targetLocation =
     record.lat !== null && record.lng !== null ? { lat: record.lat, lng: record.lng } : null;
 
+  const inputClass =
+    "w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const labelClass = "block text-[11px] font-semibold text-gray-500 mb-0.5";
+
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       <PageHeader
@@ -223,11 +375,11 @@ export default function LiveDispatchPage() {
         }
       />
 
-      {/* タイトル・概要・住所・出動内容の入力・保持エリア。
+      {/* タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュースの入力・保持エリア。
           各項目はプレースホルダーではなく入力欄の外側に独立したラベルを配置する。 */}
-      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0 space-y-2">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0 space-y-2 overflow-y-auto max-h-[45vh] md:max-h-[38vh]">
         <div>
-          <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">タイトル</label>
+          <label className={labelClass}>タイトル</label>
           <input
             type="text"
             value={title}
@@ -236,30 +388,86 @@ export default function LiveDispatchPage() {
             className="w-full font-bold text-gray-900 text-sm sm:text-base border-0 border-b border-transparent focus:border-blue-400 focus:outline-none px-0 py-1 bg-transparent"
           />
         </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
-            <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">住所</label>
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <label className={labelClass}>住所</label>
+              <button
+                type="button"
+                onClick={handleSearchAddressCandidates}
+                disabled={addressSearching}
+                className="text-[10px] text-blue-600 hover:underline disabled:opacity-50 disabled:cursor-wait mb-0.5"
+              >
+                {addressSearching ? "検索中..." : "現場名から住所候補を検索"}
+              </button>
+            </div>
             <input
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               onBlur={handleSaveDetails}
-              className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className={inputClass}
             />
+            {addressSearchError && (
+              <p className="text-[10px] text-red-600 mt-1">{addressSearchError}</p>
+            )}
+            {addressCandidates.length > 0 && (
+              <ul className="absolute z-[1500] mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {addressCandidates.map((c, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyAddressCandidate(c)}
+                      className="w-full text-left px-2.5 py-1.5 text-xs text-gray-700 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                    >
+                      {c.displayName}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">出動内容</label>
+            <label className={labelClass}>出動内容(災害名・事件名)</label>
             <input
               type="text"
               value={incidentType}
               onChange={(e) => setIncidentType(e.target.value)}
               onBlur={handleSaveDetails}
-              className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              placeholder="例: ○○火災、○○事故"
+              className={inputClass}
             />
           </div>
         </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className={labelClass}>出動者</label>
+            <input
+              type="text"
+              value={dispatcherName}
+              onChange={(e) => setDispatcherName(e.target.value)}
+              onBlur={handleSaveDetails}
+              placeholder="例: 林拓海"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>現場管理者</label>
+            <input
+              type="text"
+              value={siteManagerName}
+              onChange={(e) => setSiteManagerName(e.target.value)}
+              onBlur={handleSaveDetails}
+              placeholder="例: 佐藤デスク"
+              className={inputClass}
+            />
+          </div>
+        </div>
+
         <div>
-          <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">概要</label>
+          <label className={labelClass}>概要</label>
           <textarea
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
@@ -268,11 +476,38 @@ export default function LiveDispatchPage() {
             className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
         </div>
+
+        <div>
+          <label className={labelClass}>関連ニュースURL・概要整理</label>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={newsUrl}
+              onChange={(e) => setNewsUrl(e.target.value)}
+              placeholder="https://..."
+              className={inputClass}
+            />
+            <button
+              type="button"
+              onClick={handleFetchNewsSummary}
+              disabled={!newsUrl.trim() || newsLoading}
+              className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {newsLoading ? "取得中..." : "概要を取得"}
+            </button>
+          </div>
+          {newsError && <p className="text-[10px] text-red-600 mt-1">{newsError}</p>}
+          {newsSummary && (
+            <div className="mt-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2">
+              <p className="text-xs text-gray-700 whitespace-pre-wrap">{newsSummary}</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 gap-3 p-3 overflow-hidden">
         {/* 地図エリア: 現在地(青) + 対象現場(赤) を自動fitBoundsで表示 */}
-        <div className="h-[45vh] md:h-auto md:flex-1 relative border-b md:border-b-0 md:border-r border-gray-200">
+        <div className="h-[40vh] md:h-auto md:flex-1 relative rounded-lg overflow-hidden shadow border border-gray-200">
           <LiveDispatchMap
             currentLocation={currentLocation}
             targetLocation={targetLocation}
@@ -291,8 +526,8 @@ export default function LiveDispatchPage() {
           </div>
         </div>
 
-        {/* チャットエリア: 構造化メッセージ履歴(将来のAI要約用) */}
-        <div className="flex flex-col w-full md:w-96 flex-shrink-0 min-h-0 bg-white">
+        {/* チャットエリア: Teams風レイアウト(発言者名・アバター・リアクション付き) */}
+        <div className="flex flex-col w-full md:w-96 flex-shrink-0 min-h-0 bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0">
             <h2 className="text-sm font-bold text-gray-900">現場チャット</h2>
             <p className="text-[11px] text-gray-500">
@@ -300,36 +535,70 @@ export default function LiveDispatchPage() {
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-[120px]">
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 min-h-[120px]">
             {chatMessages.length === 0 ? (
               <p className="text-xs text-gray-400 text-center py-6">
                 まだメッセージはありません。最初の状況共有を送ってみましょう。
               </p>
             ) : (
               chatMessages.map((msg) => {
-                const isSelf = msg.sender === profile?.name;
                 const time = new Date(msg.timestamp).toLocaleTimeString("ja-JP", {
                   hour: "2-digit",
                   minute: "2-digit",
                 });
+                const myName = profile?.name || "不明";
                 return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}
-                  >
+                  <div key={msg.id} className="flex items-start gap-2">
+                    {/* アバター - 誰の発言か一目でわかるように常時表示 */}
                     <div
-                      className={`max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${
-                        isSelf
-                          ? "bg-blue-600 text-white rounded-br-sm"
-                          : "bg-gray-100 text-gray-900 rounded-bl-sm"
-                      }`}
+                      className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 mt-0.5 ${avatarColorFor(msg.sender)}`}
                     >
-                      {!isSelf && (
-                        <p className="text-[10px] font-semibold opacity-70 mb-0.5">{msg.sender}</p>
-                      )}
-                      <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                      {avatarInitial(msg.sender)}
                     </div>
-                    <span className="text-[10px] text-gray-400 mt-0.5 px-0.5">{time}</span>
+                    <div className="min-w-0 flex-1">
+                      {/* 発言者名 - メッセージ本文の上に常時表示 */}
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xs font-semibold text-gray-900 truncate">{msg.sender}</span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">{time}</span>
+                      </div>
+                      <div className="mt-0.5 bg-gray-100 rounded-lg rounded-tl-sm px-3 py-1.5 text-sm text-gray-900 inline-block max-w-full">
+                        <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                      </div>
+
+                      {/* 既についているリアクションの表示 */}
+                      {msg.reactions && msg.reactions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {msg.reactions.map((r) => (
+                            <button
+                              key={r.emoji}
+                              onClick={() => handleToggleReaction(msg.id, r.emoji)}
+                              title={r.users.join(", ")}
+                              className={`text-[11px] px-1.5 py-0.5 rounded-full border flex items-center gap-1 transition-colors ${
+                                r.users.includes(myName)
+                                  ? "bg-blue-50 border-blue-300 text-blue-700"
+                                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                              }`}
+                            >
+                              <span>{r.emoji}</span>
+                              <span>{r.users.length}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* クイックリアクションボタン - ワンタップで反応できる */}
+                      <div className="flex gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
+                        {QUICK_REACTIONS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => handleToggleReaction(msg.id, emoji)}
+                            className="text-[11px] px-1.5 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 );
               })
@@ -365,7 +634,7 @@ export default function LiveDispatchPage() {
                     handleSendChat();
                   }
                 }}
-                placeholder="現場の状況を入力(例: 到着しました。中継準備開始します)"
+                placeholder="メッセージを入力"
                 rows={1}
                 className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm text-base focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-24"
               />
