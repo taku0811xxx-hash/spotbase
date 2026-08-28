@@ -273,37 +273,89 @@ export default function Home() {
     });
   }
 
-  // 「新規出動」モーダルで現場名を入力して決定した時の処理。
-  // 現在地(GPS)を使って現場(ピン)と出動記録をその場で作成し、
-  // 詳細フォームの入力を待たず即座に「出動中」状態のライブ画面へ遷移する。
-  async function handleStartQuickDispatch(siteName: string) {
+  // 「新規出動」モーダルで既存現場を選択した時の処理。
+  // 詳細フォームの入力を待たず、即座に「出動中」状態の記録を作成して
+  // GPS+チャットのライブ画面へ遷移する。
+  async function handleSelectExistingSite(pin: Pin) {
     if (!profile || creatingDispatch) return;
     setCreatingDispatch(true);
     setNewSiteError("");
     try {
-      const loc = await getLocationForQuickDispatch();
-      let address = "";
-      try {
-        address = (await reverseGeocode(loc.lat, loc.lng)) || "";
-      } catch (error) {
-        console.warn("住所の取得に失敗しました(現在地のみで続行します):", error);
+      const recordId = await createQuickDispatchRecord({
+        locationName: pin.name,
+        address: pin.address,
+        lat: pin.lat,
+        lng: pin.lng,
+        organizationId: profile.organizationId,
+        category: profile.category,
+        recordedBy: profile.name,
+      });
+      setShowNewDispatchModal(false);
+      router.push(`/dispatch/${recordId}/live`);
+    } catch (error) {
+      console.error("新規出動の作成に失敗しました:", error);
+      setNewSiteError("新規出動の作成に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setCreatingDispatch(false);
+    }
+  }
+
+  // 「新規出動」モーダルで、既存の現場に該当がない場合(または初めての現場)の
+  // 新規現場登録+出動開始処理。住所/建物名が入力されていればそれを地名検索(geocode)し、
+  // 空欄の場合は現在地(GPS)を使って座標を取得する。現場(ピン)と出動記録の両方を
+  // その場で作成し、詳細フォームの入力を待たず即座にライブ画面へ遷移する。
+  async function handleCreateNewSite({
+    name,
+    addressQuery,
+  }: {
+    name: string;
+    addressQuery: string;
+  }) {
+    if (!profile || creatingDispatch) return;
+    setCreatingDispatch(true);
+    setNewSiteError("");
+    try {
+      let lat: number;
+      let lng: number;
+      let address: string;
+
+      if (addressQuery) {
+        const results = await geocodeQuery(addressQuery);
+        if (results.length === 0) {
+          setNewSiteError("入力した住所/建物名から位置情報を取得できませんでした。表記を変えて再度お試しください。");
+          return;
+        }
+        const top = results[0];
+        lat = top.lat;
+        lng = top.lng;
+        address = top.displayName;
+      } else {
+        const loc = await getLocationForQuickDispatch();
+        lat = loc.lat;
+        lng = loc.lng;
+        try {
+          address = (await reverseGeocode(lat, lng)) || "";
+        } catch (error) {
+          console.warn("住所の取得に失敗しました(現在地のみで続行します):", error);
+          address = "";
+        }
       }
 
       const pinId = await createQuickPin({
-        name: siteName,
+        name,
         address,
-        lat: loc.lat,
-        lng: loc.lng,
+        lat,
+        lng,
         organizationId: profile.organizationId,
         category: profile.category,
         recordedBy: profile.name,
       });
 
       const recordId = await createQuickDispatchRecord({
-        locationName: siteName,
+        locationName: name,
         address,
-        lat: loc.lat,
-        lng: loc.lng,
+        lat,
+        lng,
         organizationId: profile.organizationId,
         category: profile.category,
         recordedBy: profile.name,
@@ -313,10 +365,10 @@ export default function Home() {
       setPins((prev) => [
         {
           id: pinId,
-          name: siteName,
+          name,
           address,
-          lat: loc.lat,
-          lng: loc.lng,
+          lat,
+          lng,
           parkingInfo: "",
           shootingSpots: "",
           ipTransmissionInfo: "",
@@ -336,8 +388,8 @@ export default function Home() {
       setShowNewDispatchModal(false);
       router.push(`/dispatch/${recordId}/live`);
     } catch (error) {
-      console.error("新規出動の作成に失敗しました:", error);
-      setNewSiteError("新規出動の作成に失敗しました。位置情報の許可を確認のうえ、時間をおいて再度お試しください。");
+      console.error("新規現場の登録に失敗しました:", error);
+      setNewSiteError("新規現場の登録に失敗しました。位置情報の許可を確認のうえ、時間をおいて再度お試しください。");
     } finally {
       setCreatingDispatch(false);
     }
@@ -810,7 +862,9 @@ export default function Home() {
           setShowNewDispatchModal(false);
           setNewSiteError("");
         }}
-        onStart={handleStartQuickDispatch}
+        pins={pins}
+        onSelectExisting={handleSelectExistingSite}
+        onCreateNew={handleCreateNewSite}
         submitting={creatingDispatch}
         errorMessage={newSiteError}
       />
