@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
 type SummaryItem = { label: string; value: string };
 
 type Props = {
@@ -12,6 +15,15 @@ type Props = {
   onConfirm: () => void;
 };
 
+/**
+ * 確認ダイアログ(削除確認・登録確認など)。
+ *
+ * React Portal で document.body 直下に描画することで、地図(Leaflet)コンテナや
+ * 親要素の overflow/transform によるスタッキングコンテキストの影響を受けず、
+ * 常に画面の最前面に表示されるようにしている(MobileMenuPortalと同じ方針)。
+ * z-[9999] は Leaflet のタイル/コントロール(z-index: 200〜2000程度)より
+ * 確実に上に来るよう十分高い値にしている。
+ */
 export default function ConfirmDialog({
   open,
   title,
@@ -21,10 +33,18 @@ export default function ConfirmDialog({
   onCancel,
   onConfirm,
 }: Props) {
-  if (!open) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/40 p-4">
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!open) return null;
+  // ハイドレーション完了 + document.body が存在するまでは描画しない
+  if (!mounted || typeof window === "undefined" || !document.body) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
         <div className="p-5 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">{title}</h2>
@@ -60,6 +80,7 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
