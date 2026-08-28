@@ -74,6 +74,7 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
 
   function handleSuccess(pos: GeolocationPosition) {
     const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    console.log("[GPS Debug]", pos);
     map.setView([loc.lat, loc.lng], 16, { animate: true });
     onLocated?.(loc);
     setLoading(false);
@@ -84,11 +85,11 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
-        console.warn("現在地の取得に失敗しました(標準精度):", error);
+        console.warn("[GPS Error] 現在地の取得に失敗しました(標準精度):", error);
         setLoading(false);
         setErrorMessage(describeError(error));
       },
-      { enableHighAccuracy: false, timeout: 10000 }
+      { enableHighAccuracy: false, timeout: 8000 }
     );
   }
 
@@ -99,11 +100,12 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
     }
     setLoading(true);
     setErrorMessage(null);
+    console.log("[GPS Debug] 位置情報の取得を開始します(高精度, timeout 5000ms)");
 
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
-        console.warn("現在地の取得に失敗しました(高精度):", error);
+        console.warn("[GPS Error] 現在地の取得に失敗しました(高精度):", error);
         // 権限拒否の場合は再試行しても無駄なので、その場でユーザーに通知する
         if (error.code === error.PERMISSION_DENIED) {
           setLoading(false);
@@ -113,7 +115,7 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
         // タイムアウト・測位不能の場合は標準精度(Wi-Fi/IP測位)で再試行する
         tryStandardAccuracy();
       },
-      { enableHighAccuracy: true, timeout: 6000 }
+      { enableHighAccuracy: true, timeout: 5000 }
     );
   }
 

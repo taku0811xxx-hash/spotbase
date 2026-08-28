@@ -139,9 +139,9 @@ export default function LiveDispatchPage() {
   // 追跡を止めてバッテリー消費を抑える。
   //
   // 二段階フォールバック方式:
-  //   1. まず enableHighAccuracy:true (timeout 6000ms) で高精度測位を試みる
+  //   1. まず enableHighAccuracy:true (timeout 5000ms) で高精度測位を試みる
   //   2. タイムアウト・測位不可(POSITION_UNAVAILABLE/TIMEOUT)で失敗した場合は、
-  //      自動的に enableHighAccuracy:false (timeout 10000ms、Wi-Fi/IP測位)へ
+  //      自動的に enableHighAccuracy:false (timeout 8000ms、Wi-Fi/IP測位)へ
   //      切り替えて追跡を継続する
   //   3. 権限拒否(PERMISSION_DENIED)の場合は再試行しても無駄なので、その場で
   //      gpsStatusを"denied"にして通知するに留める(例外は投げずconsole.warnのみ)
@@ -154,6 +154,7 @@ export default function LiveDispatchPage() {
       typeof navigator === "undefined" ||
       !navigator.geolocation
     ) {
+      console.warn("[GPS Error] この端末/環境では位置情報が利用できません");
       setGpsStatus("unavailable");
       setCurrentLocation(DEFAULT_LOCATION);
       return;
@@ -165,6 +166,7 @@ export default function LiveDispatchPage() {
 
     function handleFix(position: GeolocationPosition) {
       gotFirstFixRef.current = true;
+      console.log("[GPS Debug]", position);
       setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
       setGpsStatus("active");
       if (fallbackTimerRef.current) {
@@ -178,10 +180,11 @@ export default function LiveDispatchPage() {
       // 既に権限拒否と判明している場合は再試行しても無駄なので何もしない
       if (permissionDeniedRef.current) return;
       if (standardAccuracyWatchIdRef.current !== null) return; // 二重起動を防ぐ
+      console.log("[GPS Debug] 標準精度(Wi-Fi/IP測位)へフォールバックします(timeout 8000ms)");
       const id = navigator.geolocation.watchPosition(
         handleFix,
         (error) => {
-          console.warn("現在地の取得に失敗しました(標準精度):", error);
+          console.warn("[GPS Error] 現在地の取得に失敗しました(標準精度):", error);
           if (error.code === error.PERMISSION_DENIED) {
             permissionDeniedRef.current = true;
             setGpsStatus("denied");
@@ -191,15 +194,16 @@ export default function LiveDispatchPage() {
             setCurrentLocation((prev) => prev ?? DEFAULT_LOCATION);
           }
         },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 5000 }
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 5000 }
       );
       standardAccuracyWatchIdRef.current = id;
     }
 
+    console.log("[GPS Debug] 継続追跡を開始します(高精度, timeout 5000ms)");
     const highId = navigator.geolocation.watchPosition(
       handleFix,
       (error) => {
-        console.warn("現在地の取得に失敗しました(高精度):", error);
+        console.warn("[GPS Error] 現在地の取得に失敗しました(高精度):", error);
         if (error.code === error.PERMISSION_DENIED) {
           permissionDeniedRef.current = true;
           setGpsStatus("denied");
@@ -208,11 +212,11 @@ export default function LiveDispatchPage() {
         // タイムアウト・測位不可の場合は標準精度(Wi-Fi/IP測位)へフォールバックする
         startStandardAccuracyWatch();
       },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
     );
     highAccuracyWatchIdRef.current = highId;
 
-    // 6.5秒経っても高精度側から一度もfixが得られない場合の保険として、
+    // 5.5秒経っても高精度側から一度もfixが得られない場合の保険として、
     // 標準精度の並行追跡を開始する(高精度watchPositionはtimeout到達後もエラー
     // コールバックが発火しない実装のブラウザがあるため、タイマーで確実に補う)。
     // ただし権限拒否と判明済みの場合はここでも再試行しない。
@@ -220,7 +224,7 @@ export default function LiveDispatchPage() {
       if (!gotFirstFixRef.current && !permissionDeniedRef.current) {
         startStandardAccuracyWatch();
       }
-    }, 6500);
+    }, 5500);
 
     return () => {
       if (highAccuracyWatchIdRef.current !== null) {

@@ -127,6 +127,54 @@ export default function Home() {
     });
   }
 
+  // 初回位置取得: GPS追跡(継続監視)がOFFのままだと現在地が一切表示されないため、
+  // ログイン後に一度だけ位置情報を取得して地図上の現在地ピンを初期表示する。
+  // 二段階フォールバック: 高精度(5000ms)→失敗時は標準精度(8000ms)で再試行。
+  useEffect(() => {
+    if (authLoading || !user || !profile) return;
+
+    if (
+      typeof window === "undefined" ||
+      typeof navigator === "undefined" ||
+      !navigator.geolocation
+    ) {
+      console.warn("[GPS Error] この端末/環境では位置情報が利用できません");
+      setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+      return;
+    }
+
+    console.log("[GPS Debug] 初回位置情報の取得を開始します(高精度, timeout 5000ms)");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        console.log("[GPS Debug] 初回取得成功(高精度):", pos);
+        setUserLocation(loc);
+      },
+      (error) => {
+        console.warn("[GPS Error] 初回取得失敗(高精度)。標準精度で再試行します:", error);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            console.log("[GPS Debug] 初回取得成功(標準精度):", pos);
+            setUserLocation(loc);
+          },
+          (error2) => {
+            console.warn(
+              "[GPS Error] 初回取得失敗(標準精度)。デフォルト座標を使用します:",
+              error2
+            );
+            setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 5000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
+    );
+  }, [authLoading, user, profile]);
+
+  // GPS追跡(継続監視)。「出動中[GPS ON]」ボタンでONにしている間だけ、
+  // watchPositionで現在地を継続的に更新し続ける(バッテリー消費を抑えるため
+  // OFF時は自動停止)。こちらも高精度→標準精度の二段階フォールバックを行う。
   useEffect(() => {
     // ログイン(認証完了)前は何もしない
     if (authLoading || !user || !profile) return;
@@ -144,32 +192,61 @@ export default function Home() {
     hasCenteredOnGpsRef.current = false;
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setUserLocation(DEFAULT_LOCATION);
+      console.warn("[GPS Error] この端末/環境では位置情報が利用できません");
+      setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
       return;
     }
 
-    const id = navigator.geolocation.watchPosition(
-      (position) => {
-        const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
-        setUserLocation(loc);
-        // 地図が動いて操作の邪魔にならないよう、ONにした直後の初回のみ中心移動する
-        if (!hasCenteredOnGpsRef.current) {
-          setFlyTo(loc);
-          hasCenteredOnGpsRef.current = true;
-        }
-      },
+    let usingStandardAccuracy = false;
+
+    function handleFix(position: GeolocationPosition) {
+      const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+      console.log(
+        `[GPS Debug] 継続追跡取得成功(${usingStandardAccuracy ? "標準精度" : "高精度"}):`,
+        position
+      );
+      setUserLocation(loc);
+      // 地図が動いて操作の邪魔にならないよう、ONにした直後の初回のみ中心移動する
+      if (!hasCenteredOnGpsRef.current) {
+        setFlyTo(loc);
+        hasCenteredOnGpsRef.current = true;
+      }
+    }
+
+    console.log("[GPS Debug] 継続追跡を開始します(高精度, timeout 5000ms)");
+    let id = navigator.geolocation.watchPosition(
+      handleFix,
       (error) => {
-        // 拒否・取得失敗時は安全にデフォルト座標へフォールバック
-        console.warn("現在地の取得に失敗しました。デフォルト座標を使用します:", error);
-        setUserLocation(DEFAULT_LOCATION);
+        console.warn("[GPS Error] 継続追跡失敗(高精度)。標準精度で再試行します:", error);
+        // 権限拒否の場合は標準精度でも許可されないため、再試行せずフォールバック座標を使う
+        if (error.code === error.PERMISSION_DENIED) {
+          setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+          return;
+        }
+        // 高精度側のwatchをやめて標準精度で張り直す
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+        usingStandardAccuracy = true;
+        id = navigator.geolocation.watchPosition(
+          handleFix,
+          (error2) => {
+            console.warn("[GPS Error] 継続追跡失敗(標準精度)。デフォルト座標を使用します:", error2);
+            setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 5000 }
+        );
+        watchIdRef.current = id;
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
     );
     watchIdRef.current = id;
 
     return () => {
-      navigator.geolocation.clearWatch(id);
-      watchIdRef.current = null;
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
     };
   }, [authLoading, user, profile, gpsTracking]);
 
