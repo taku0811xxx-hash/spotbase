@@ -12,11 +12,13 @@ import {
   toggleChatReaction,
   updateDispatchTitleSummary,
   completeDispatchRecord,
+  deleteDispatchRecord,
   type DispatchRecord,
   type ChatMessage,
 } from "@/lib/dispatchRecords";
 import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const LiveDispatchMap = dynamic(() => import("@/components/LiveDispatchMap"), { ssr: false });
@@ -78,6 +80,8 @@ export default function LiveDispatchPage() {
   const [savingDetails, setSavingDetails] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // 住所の自動補完: 現場名を基にジオコーディングした候補一覧
   const [addressCandidates, setAddressCandidates] = useState<GeocodeResult[]>([]);
@@ -93,6 +97,13 @@ export default function LiveDispatchPage() {
   // onSnapshotで他者の更新も即座に画面へ反映する。
   // タイトル・概要は自分が入力中に他者更新で上書きされないよう、初回読み込み時のみ反映する。
   const detailsInitializedRef = useRef(false);
+  // 削除実行時にリアルタイム購読を明示的に止めるためのref。
+  // (削除後もonSnapshotが生きたままだと、ドキュメントが無くなった直後に
+  // Firestoreルール上permission-deniedのエラーコールバックが発火してしまうため)
+  const unsubscribeSnapshotRef = useRef<(() => void) | null>(null);
+  // 削除処理中かどうか。onSnapshotのエラーハンドラで、削除に伴う想定内の
+  // 購読エラーをconsole.errorではなくconsole.warnに留めるために参照する。
+  const deletingRef = useRef(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -127,12 +138,21 @@ export default function LiveDispatchPage() {
         setLoading(false);
       },
       (error) => {
-        console.error("出動記録のリアルタイム購読に失敗しました:", error);
+        if (deletingRef.current) {
+          // 削除操作に伴う想定内のエラー(この画面から既に離脱中のため実害なし)
+          console.warn("出動記録の削除に伴い購読を終了しました:", error);
+        } else {
+          console.error("出動記録のリアルタイム購読に失敗しました:", error);
+        }
         setLoading(false);
       }
     );
+    unsubscribeSnapshotRef.current = unsubscribe;
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeSnapshotRef.current = null;
+    };
   }, [authLoading, user, recordId, router]);
 
   // 出動中は常時GPSを追跡し、現在地ピンをリアルタイム更新する。画面を離れたら
@@ -424,6 +444,30 @@ export default function LiveDispatchPage() {
     }
   }
 
+  // 「削除」: この出動記録を完全に削除する。誤操作防止のため確認ダイアログを
+  // 経てから実行し、削除後は出動中一覧画面へ遷移する(この記録はもう存在しないため)。
+  async function handleDelete() {
+    if (!recordId || deleting) return;
+    setDeleting(true);
+    deletingRef.current = true;
+    // 削除実行前にリアルタイム購読を止め、削除直後のpermission-deniedな
+    // エラーコールバックが発生しないようにする
+    if (unsubscribeSnapshotRef.current) {
+      unsubscribeSnapshotRef.current();
+      unsubscribeSnapshotRef.current = null;
+    }
+    try {
+      await deleteDispatchRecord(recordId);
+      router.push("/dispatch/active");
+    } catch (error) {
+      console.error("出動記録の削除に失敗しました:", error);
+      deletingRef.current = false;
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
   if (authLoading || loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-100 text-sm text-gray-500">
@@ -455,13 +499,22 @@ export default function LiveDispatchPage() {
         backHref={`/dispatch/${record.id}`}
         backLabel="記録詳細に戻る"
         action={
-          <button
-            onClick={() => setShowCompleteConfirm(true)}
-            disabled={completing}
-            className="bg-green-600 text-white text-xs sm:text-sm font-semibold rounded-lg px-3 py-1.5 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-          >
-            対応完了
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={deleting}
+              className="bg-transparent border border-red-500 text-red-400 text-xs sm:text-sm font-semibold rounded-lg px-3 py-1.5 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            >
+              削除
+            </button>
+            <button
+              onClick={() => setShowCompleteConfirm(true)}
+              disabled={completing}
+              className="bg-green-600 text-white text-xs sm:text-sm font-semibold rounded-lg px-3 py-1.5 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            >
+              対応完了
+            </button>
+          </div>
         }
       />
 
@@ -808,6 +861,21 @@ export default function LiveDispatchPage() {
           </div>
         </div>
       )}
+
+      {/* 削除確認ダイアログ - 地図等より確実に前面に表示するためPortalでbody直下に描画(z-[9999]) */}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="この出動記録を削除しますか?"
+        summary={[
+          { label: "現場名", value: record.locationName },
+          { label: "住所", value: record.address },
+          { label: "出動内容", value: record.incidentType },
+        ]}
+        confirmLabel="削除する"
+        submitting={deleting}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
