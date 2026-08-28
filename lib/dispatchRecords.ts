@@ -320,6 +320,20 @@ export async function createQuickDispatchRecord(
   return docRef.id;
 }
 
+// Firestoreのupdate系APIはvalue: undefinedのフィールドを許容せず
+// "invalid-argument"エラーになるため、書き込み前にundefinedのキーを取り除く。
+// (呼び出し側がDispatchRecordの任意項目(未設定ならundefined)をそのまま渡す
+// ケースがあるための共通ガード)
+function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Partial<T> = {};
+  for (const key of Object.keys(obj) as (keyof T)[]) {
+    if (obj[key] !== undefined) {
+      result[key] = obj[key];
+    }
+  }
+  return result;
+}
+
 // 出動中画面(タイトル・概要入力エリア)からの更新。デバウンス済みの
 // onBlur等から呼ばれる想定。
 export async function updateDispatchTitleSummary(
@@ -335,7 +349,7 @@ export async function updateDispatchTitleSummary(
     newsSummary?: string;
   }
 ): Promise<void> {
-  await updateDoc(doc(db, COLLECTION, recordId), fields);
+  await updateDoc(doc(db, COLLECTION, recordId), omitUndefined(fields));
 }
 
 // 「対応完了(出動終了)」ボタン押下時。タイトル・概要・チャット履歴・現場情報・
@@ -357,7 +371,7 @@ export async function completeDispatchRecord(
   }
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, recordId), {
-    ...fields,
+    ...omitUndefined(fields),
     status: "完了",
     completedAt: serverTimestamp(),
   });

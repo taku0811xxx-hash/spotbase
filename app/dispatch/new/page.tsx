@@ -622,7 +622,7 @@ function NewDispatchForm() {
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleConfirmedSubmit}
       />
-      <PageHeader title="出動記録" backHref="/dispatch" backLabel="一覧に戻る" />
+      <PageHeader title="出動記録" backHref="/dispatch/active" backLabel="出動中一覧に戻る" />
 
       <form onSubmit={handleOpenConfirm} className="max-w-2xl mx-auto p-5 sm:p-10 space-y-6 pb-28">
         <section className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-4">

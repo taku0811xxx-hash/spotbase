@@ -6,8 +6,14 @@ import Link from "next/link";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
-import { getDispatchRecords, type DispatchRecord } from "@/lib/dispatchRecords";
+import {
+  getDispatchRecords,
+  completeDispatchRecord,
+  deleteDispatchRecord,
+  type DispatchRecord,
+} from "@/lib/dispatchRecords";
 import PageHeader from "@/components/PageHeader";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 const DEFAULT_STATUS_CONFIG = {
   bg: "bg-gray-100",
@@ -29,6 +35,11 @@ export default function ActiveDispatchPage() {
   const [records, setRecords] = useState<DispatchRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [memoText, setMemoText] = useState<Record<string, string>>({});
+  // 「対応完了」処理中の出動記録ID(ボタンの二重押し防止用)
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  // 削除確認ダイアログの対象(nullなら非表示)
+  const [deleteTarget, setDeleteTarget] = useState<DispatchRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -87,6 +98,46 @@ export default function ActiveDispatchPage() {
       setMemoText((prev) => ({ ...prev, [recordId]: "" }));
     } catch (error) {
       console.error("Error adding memo:", error);
+    }
+  }
+
+  // 「対応完了」ボタン: 出動ステータスを完了にし、出動記録データとして蓄積・保存する。
+  // 既存の入力内容(タイトル・概要・住所等)はそのまま保持し、statusとcompletedAtのみ更新する。
+  async function handleComplete(record: DispatchRecord) {
+    if (completingId) return;
+    setCompletingId(record.id);
+    try {
+      await completeDispatchRecord(record.id, {
+        title: record.title,
+        summary: record.summary,
+        address: record.address,
+        incidentType: record.incidentType,
+        dispatcherName: record.dispatcherName,
+        siteManagerName: record.siteManagerName,
+        newsUrl: record.newsUrl,
+        newsSummary: record.newsSummary,
+      });
+      // 完了扱いになった記録は「出動中」一覧から即座に取り除く
+      setRecords((prev) => prev.filter((r) => r.id !== record.id));
+    } catch (error) {
+      console.error("対応完了の保存に失敗しました:", error);
+    } finally {
+      setCompletingId(null);
+    }
+  }
+
+  // 「削除」ボタン: 確認ダイアログを経て、出動記録データを削除する。
+  async function handleConfirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteDispatchRecord(deleteTarget.id);
+      setRecords((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error("出動記録の削除に失敗しました:", error);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -237,7 +288,7 @@ export default function ActiveDispatchPage() {
                       </div>
 
                       {/* View Details / Live Links */}
-                      <div className="mt-3 flex items-center justify-end gap-4">
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                         <Link
                           href={`/dispatch/${record.id}/live`}
                           className="text-red-600 hover:underline text-xs sm:text-sm font-medium"
@@ -250,6 +301,23 @@ export default function ActiveDispatchPage() {
                         >
                           詳細を見る →
                         </Link>
+
+                        {/* 対応完了・削除の操作ボタン */}
+                        <div className="flex items-center gap-2 ml-auto sm:ml-0">
+                          <button
+                            onClick={() => handleComplete(record)}
+                            disabled={completingId === record.id}
+                            className="px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {completingId === record.id ? "保存中..." : "対応完了"}
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(record)}
+                            className="px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            削除
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -259,6 +327,25 @@ export default function ActiveDispatchPage() {
           </div>
         )}
       </div>
+
+      {/* 削除確認ダイアログ - 地図等より確実に前面に表示するためPortalでbody直下に描画(z-[9999]) */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="この出動記録を削除しますか?"
+        summary={
+          deleteTarget
+            ? [
+                { label: "現場名", value: deleteTarget.locationName },
+                { label: "住所", value: deleteTarget.address },
+                { label: "出動内容", value: deleteTarget.incidentType },
+              ]
+            : []
+        }
+        confirmLabel="削除する"
+        submitting={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }
