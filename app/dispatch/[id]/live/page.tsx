@@ -439,9 +439,10 @@ export default function LiveDispatchPage() {
   const targetLocation =
     record.lat !== null && record.lng !== null ? { lat: record.lat, lng: record.lng } : null;
 
+  // コンパクト化された入力欄の共通スタイル(縦幅を抑えるためpy-1・text-xsに統一)
   const inputClass =
-    "w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400";
-  const labelClass = "block text-[11px] font-semibold text-gray-500 mb-0.5";
+    "w-full text-xs text-gray-700 border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const labelClass = "block text-[10px] font-semibold text-gray-500 mb-0.5";
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -460,186 +461,190 @@ export default function LiveDispatchPage() {
         }
       />
 
-      {/* タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュースの入力・保持エリア。
-          各項目はプレースホルダーではなく入力欄の外側に独立したラベルを配置する。 */}
-      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0 space-y-2 overflow-y-auto max-h-[45vh] md:max-h-[38vh]">
-        <div>
-          <label className={labelClass}>タイトル</label>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleSaveDetails}
-            className="w-full font-bold text-gray-900 text-sm sm:text-base border-0 border-b border-transparent focus:border-blue-400 focus:outline-none px-0 py-1 bg-transparent"
-          />
-        </div>
+      {/* メインエリア: 左カラム(入力+地図) / 右カラム(フルハイトのチャット) の2カラム構成。
+          lg未満では上から入力→地図→チャットの縦積みに切り替わる。 */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-3 p-3 min-h-0 overflow-hidden">
+        {/* 左カラム: コンパクトな入力エリア(上段) + 地図(下段、確保された余白を活かして大きく表示) */}
+        <div className="lg:col-span-2 flex flex-col gap-3 min-h-0 overflow-y-auto lg:overflow-visible">
+          {/* タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュースの入力・保持エリア。
+              各項目はプレースホルダーではなく入力欄の外側に独立したラベルを配置する。
+              グリッドで横方向に項目を並べ、縦幅を大幅に圧縮している。 */}
+          <div className="bg-white rounded-lg shadow border border-gray-200 px-2.5 py-2 flex-shrink-0 space-y-1.5">
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleSaveDetails}
+              placeholder="タイトル(事件・事故名など)"
+              className="w-full font-bold text-gray-900 text-sm border-0 border-b border-transparent focus:border-blue-400 focus:outline-none px-0 py-0.5 bg-transparent"
+            />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div className="relative">
-            <div className="flex items-center justify-between">
-              <label className={labelClass}>住所</label>
-              <button
-                type="button"
-                onClick={handleSearchAddressCandidates}
-                disabled={addressSearching}
-                className="text-[10px] text-blue-600 hover:underline disabled:opacity-50 disabled:cursor-wait mb-0.5"
-              >
-                {addressSearching ? "検索中..." : "現場名から住所候補を検索"}
-              </button>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5">
+              <div className="relative lg:col-span-2">
+                <div className="flex items-center justify-between gap-1">
+                  <label className={labelClass}>住所</label>
+                  <button
+                    type="button"
+                    onClick={handleSearchAddressCandidates}
+                    disabled={addressSearching}
+                    className="text-[9px] text-blue-600 hover:underline disabled:opacity-50 disabled:cursor-wait mb-0.5 truncate flex-shrink-0"
+                  >
+                    {addressSearching ? "検索中..." : "現場名から検索"}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  onBlur={handleSaveDetails}
+                  className={inputClass}
+                />
+                {addressSearchError && (
+                  <p className="text-[9px] text-red-600 mt-0.5">{addressSearchError}</p>
+                )}
+                {addressCandidates.length > 0 && (
+                  <ul className="absolute z-[1500] mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {addressCandidates.map((c, i) => (
+                      <li key={i}>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyAddressCandidate(c)}
+                          className="w-full text-left px-2.5 py-1.5 text-xs text-gray-700 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                        >
+                          {c.displayName}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <label className={labelClass}>出動内容(災害名・事件名)</label>
+                <input
+                  type="text"
+                  value={incidentType}
+                  onChange={(e) => setIncidentType(e.target.value)}
+                  onBlur={handleSaveDetails}
+                  placeholder="例: ○○火災"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>出動者</label>
+                <input
+                  type="text"
+                  value={dispatcherName}
+                  onChange={(e) => setDispatcherName(e.target.value)}
+                  onBlur={handleSaveDetails}
+                  placeholder="例: 林拓海"
+                  className={inputClass}
+                />
+              </div>
             </div>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              onBlur={handleSaveDetails}
-              className={inputClass}
-            />
-            {addressSearchError && (
-              <p className="text-[10px] text-red-600 mt-1">{addressSearchError}</p>
-            )}
-            {addressCandidates.length > 0 && (
-              <ul className="absolute z-[1500] mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {addressCandidates.map((c, i) => (
-                  <li key={i}>
-                    <button
-                      type="button"
-                      onClick={() => handleApplyAddressCandidate(c)}
-                      className="w-full text-left px-2.5 py-1.5 text-xs text-gray-700 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
-                    >
-                      {c.displayName}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <label className={labelClass}>出動内容(災害名・事件名)</label>
-            <input
-              type="text"
-              value={incidentType}
-              onChange={(e) => setIncidentType(e.target.value)}
-              onBlur={handleSaveDetails}
-              placeholder="例: ○○火災、○○事故"
-              className={inputClass}
-            />
-          </div>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
-            <label className={labelClass}>出動者</label>
-            <input
-              type="text"
-              value={dispatcherName}
-              onChange={(e) => setDispatcherName(e.target.value)}
-              onBlur={handleSaveDetails}
-              placeholder="例: 林拓海"
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>現場管理者</label>
-            <input
-              type="text"
-              value={siteManagerName}
-              onChange={(e) => setSiteManagerName(e.target.value)}
-              onBlur={handleSaveDetails}
-              placeholder="例: 佐藤デスク"
-              className={inputClass}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className={labelClass}>概要</label>
-          <textarea
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            onBlur={handleSaveDetails}
-            rows={2}
-            className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-
-        <div>
-          <label className={labelClass}>関連ニュースURL・概要整理</label>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={newsUrl}
-              onChange={(e) => setNewsUrl(e.target.value)}
-              placeholder="https://..."
-              className={inputClass}
-            />
-            <button
-              type="button"
-              onClick={handleFetchNewsSummary}
-              disabled={!newsUrl.trim() || newsLoading}
-              className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {newsLoading ? "取得中..." : "概要を取得"}
-            </button>
-          </div>
-          {newsError && <p className="text-[10px] text-red-600 mt-1">{newsError}</p>}
-          {newsSummary && (
-            <div className="mt-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2">
-              <p className="text-xs text-gray-700 whitespace-pre-wrap">{newsSummary}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5">
+              <div>
+                <label className={labelClass}>現場管理者</label>
+                <input
+                  type="text"
+                  value={siteManagerName}
+                  onChange={(e) => setSiteManagerName(e.target.value)}
+                  onBlur={handleSaveDetails}
+                  placeholder="例: 佐藤デスク"
+                  className={inputClass}
+                />
+              </div>
+              <div className="lg:col-span-3">
+                <label className={labelClass}>概要</label>
+                <textarea
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                  onBlur={handleSaveDetails}
+                  rows={1}
+                  className="w-full text-xs text-gray-700 border border-gray-200 rounded-md px-2 py-1 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0 gap-3 p-3 overflow-hidden">
-        {/* 地図エリア: 現在地(青) + 対象現場(赤) を自動fitBoundsで表示 */}
-        <div className="h-[40vh] md:h-auto md:flex-1 relative rounded-lg overflow-hidden shadow border border-gray-200">
-          <LiveDispatchMap
-            currentLocation={currentLocation}
-            targetLocation={targetLocation}
-            targetLabel={record.locationName}
-            onLocated={(loc) => {
-              gotFirstFixRef.current = true;
-              setCurrentLocation(loc);
-              setGpsStatus("active");
-            }}
-          />
-          <div className="absolute top-2 left-2 z-[1000] bg-white/95 rounded-lg shadow px-2.5 py-1.5 text-[11px] space-y-1">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 flex-shrink-0" />
-              <span className="text-gray-700">現在地(自分)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-600 flex-shrink-0" />
-              <span className="text-gray-700">対象現場</span>
+            <div>
+              <label className={labelClass}>関連ニュースURL・概要整理</label>
+              <div className="flex gap-1.5">
+                <input
+                  type="url"
+                  value={newsUrl}
+                  onChange={(e) => setNewsUrl(e.target.value)}
+                  placeholder="https://..."
+                  className={inputClass}
+                />
+                <button
+                  type="button"
+                  onClick={handleFetchNewsSummary}
+                  disabled={!newsUrl.trim() || newsLoading}
+                  className="flex-shrink-0 px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {newsLoading ? "取得中..." : "概要を取得"}
+                </button>
+              </div>
+              {newsError && <p className="text-[9px] text-red-600 mt-0.5">{newsError}</p>}
+              {newsSummary && (
+                <div className="mt-1 bg-gray-50 border border-gray-200 rounded-md px-2 py-1.5">
+                  <p className="text-[11px] text-gray-700 whitespace-pre-wrap">{newsSummary}</p>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* GPS取得状況バッジ - 一目で状態がわかるよう地図右上に常時表示 */}
-          <div
-            className={`absolute top-2 right-2 z-[1000] rounded-full shadow px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 ${
-              gpsStatus === "active"
-                ? "bg-green-600 text-white"
-                : gpsStatus === "acquiring"
-                  ? "bg-amber-500 text-white"
-                  : "bg-red-600 text-white"
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                gpsStatus === "acquiring" ? "animate-pulse bg-white" : "bg-white"
+          {/* 地図エリア: 現在地(青) + 対象現場(赤) を自動fitBoundsで表示。
+              入力エリアの圧縮で確保した余白を活かし、大きく見やすく表示する。 */}
+          <div className="flex-1 min-h-[320px] relative rounded-lg overflow-hidden shadow border border-gray-200">
+            <LiveDispatchMap
+              currentLocation={currentLocation}
+              targetLocation={targetLocation}
+              targetLabel={record.locationName}
+              onLocated={(loc) => {
+                gotFirstFixRef.current = true;
+                setCurrentLocation(loc);
+                setGpsStatus("active");
+              }}
+            />
+            <div className="absolute top-2 left-2 z-[1000] bg-white/95 rounded-lg shadow px-2.5 py-1.5 text-[11px] space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 flex-shrink-0" />
+                <span className="text-gray-700">現在地(自分)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-600 flex-shrink-0" />
+                <span className="text-gray-700">対象現場</span>
+              </div>
+            </div>
+
+            {/* GPS取得状況バッジ - 一目で状態がわかるよう地図右上に常時表示 */}
+            <div
+              className={`absolute top-2 right-2 z-[1000] rounded-full shadow px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 ${
+                gpsStatus === "active"
+                  ? "bg-green-600 text-white"
+                  : gpsStatus === "acquiring"
+                    ? "bg-amber-500 text-white"
+                    : "bg-red-600 text-white"
               }`}
-            />
-            <span>
-              {gpsStatus === "active" && "GPSアクティブ"}
-              {gpsStatus === "acquiring" && "GPS測位中..."}
-              {gpsStatus === "denied" && "位置情報が許可されていません"}
-              {gpsStatus === "unavailable" && "位置情報無効"}
-            </span>
+            >
+              <span
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  gpsStatus === "acquiring" ? "animate-pulse bg-white" : "bg-white"
+                }`}
+              />
+              <span>
+                {gpsStatus === "active" && "GPSアクティブ"}
+                {gpsStatus === "acquiring" && "GPS測位中..."}
+                {gpsStatus === "denied" && "位置情報が許可されていません"}
+                {gpsStatus === "unavailable" && "位置情報無効"}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* チャットエリア: Teams風レイアウト(発言者名・アバター・リアクション付き) */}
-        <div className="flex flex-col w-full md:w-96 flex-shrink-0 min-h-0 bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+        {/* 右カラム: 画面縦いっぱいのフルハイトチャット(Teams風、発言者名・アバター・リアクション付き) */}
+        <div className="lg:col-span-1 flex flex-col min-h-0 h-full bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0">
             <h2 className="text-sm font-bold text-gray-900">現場チャット</h2>
             <p className="text-[11px] text-gray-500">
