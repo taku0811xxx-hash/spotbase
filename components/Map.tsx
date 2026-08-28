@@ -10,7 +10,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
@@ -139,6 +139,31 @@ const userLocationIcon = L.divIcon({
 });
 
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
+
+/**
+ * Leafletのmapインスタンスが「操作可能な状態」かどうかを判定する。
+ *
+ * setView/panTo等をコンポーネントのアンマウント後(画面遷移後)や、DOM要素の
+ * レンダリングが完了する前に呼び出すと、Leaflet内部で座標キャッシュ
+ * (_leaflet_pos)を参照できず "Cannot read properties of undefined
+ * (reading '_leaflet_pos')" という実行時エラーになる。
+ * これは主に、GPSの非同期コールバック(getCurrentPosition/watchPosition)や
+ * setTimeoutが、mapがremove()された後・DOMにコンテナがまだ無い状態で
+ * 発火した場合に起きる。呼び出し側は必ずこのガードを通してから
+ * map操作を行うこと。
+ */
+function isMapReady(map: L.Map | null | undefined): boolean {
+  if (!map) return false;
+  try {
+    // map.remove() 済み、またはまだDOMにマウントされていない場合は
+    // getContainer() が null/undefined を返す(内部的には _container)
+    const container = map.getContainer();
+    return !!container && document.body.contains(container);
+  } catch {
+    // getContainer() 自体が例外を投げるケース(removeされた直後など)
+    return false;
+  }
+}
 
 /**
  * 座標の有効性をチェックするヘルパー関数
@@ -278,6 +303,11 @@ function PanelResizeHandler({ showDetailPanel, selectedPin }: { showDetailPanel:
 
     // アニメーション完了を待ってから再度 invalidateSize() と再センタリング
     const timeoutId = setTimeout(() => {
+      // タイマー発火時点でmapが既にアンマウント/remove済みでないことを確認
+      // (_leaflet_pos エラー対策: コンポーネントが画面遷移等で消えた後に
+      // このコールバックが呼ばれるケースがあるため)
+      if (!isMapReady(map)) return;
+
       map.invalidateSize();
 
       // 選択中のピンが存在する場合は再センタリング
@@ -322,7 +352,11 @@ function FlyToLocation({ target }: { target: any | null | undefined }) {
     const savedLat = coords.lat;
     const savedLng = coords.lng;
 
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
+      // タイマー発火時点でmapが既にアンマウント/remove済みでないことを確認
+      // (_leaflet_pos エラー対策)
+      if (!isMapReady(map)) return;
+
       // 最後のセーフティチェック: 座標が本当に有効であることを確認
       if (!isValidCoordinate(savedLat, savedLng)) {
         return;
@@ -338,6 +372,8 @@ function FlyToLocation({ target }: { target: any | null | undefined }) {
         console.error("FlyToLocation: 地図移動エラー", { error, savedLat, savedLng });
       }
     }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [target, map]);
   return null;
 }
@@ -366,7 +402,11 @@ function FlyToSelectedPin({ selectedPin }: { selectedPin: any | null | undefined
     const savedLat = coords.lat;
     const savedLng = coords.lng;
 
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
+      // タイマー発火時点でmapが既にアンマウント/remove済みでないことを確認
+      // (_leaflet_pos エラー対策)
+      if (!isMapReady(map)) return;
+
       // 最後のセーフティチェック: 座標が本当に有効であることを確認
       if (!isValidCoordinate(savedLat, savedLng)) {
         return;
@@ -382,6 +422,8 @@ function FlyToSelectedPin({ selectedPin }: { selectedPin: any | null | undefined
         console.error("FlyToSelectedPin: 地図移動エラー", { error, savedLat, savedLng });
       }
     }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [selectedPin, map]);
   return null;
 }
@@ -394,6 +436,18 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
   const map = useMap();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // getCurrentPositionはwatchPositionと違いclearWatchで途中キャンセルできない
+  // 一回きりの非同期コールバックのため、コンポーネントが既にアンマウントされた後に
+  // 結果が返ってきてmap.setView等を呼んでしまう(_leaflet_posエラーの原因になる)
+  // ケースをこのrefで防ぐ。
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!errorMessage) return;
@@ -409,6 +463,10 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
   }
 
   function handleSuccess(pos: GeolocationPosition) {
+    // コンポーネントが既にアンマウントされている、またはmapインスタンスが
+    // 既にremove()されている場合はsetView等を呼び出さない(_leaflet_pos対策)
+    if (!mountedRef.current || !isMapReady(map)) return;
+
     const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     console.log("[GPS Debug]", pos);
     map.setView([loc.lat, loc.lng], 16, { animate: true });
@@ -421,6 +479,7 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
+        if (!mountedRef.current) return;
         console.warn("[GPS Error] 現在地の取得に失敗しました(標準精度):", error);
         setLoading(false);
         setErrorMessage(describeError(error));
@@ -441,6 +500,7 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
+        if (!mountedRef.current) return;
         console.warn("[GPS Error] 現在地の取得に失敗しました(高精度):", error);
         // 権限拒否の場合は再試行しても無駄なので、その場でユーザーに通知する
         if (error.code === error.PERMISSION_DENIED) {

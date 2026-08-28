@@ -3,7 +3,7 @@
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // 出動者(自分)の現在地用アイコン - 青い光暈付きドット
 const currentLocationIcon = L.divIcon({
@@ -43,6 +43,23 @@ const targetSiteIcon = L.divIcon({
 
 type LatLng = { lat: number; lng: number };
 
+/**
+ * Leafletのmapインスタンスが「操作可能な状態」かどうかを判定する。
+ * setView/panTo等をコンポーネントのアンマウント後(画面遷移後)や、DOM要素の
+ * レンダリングが完了する前に呼び出すと "Cannot read properties of undefined
+ * (reading '_leaflet_pos')" という実行時エラーになるため、呼び出し前に
+ * 必ずこのガードを通す(Map.tsxのisMapReadyと同じ方針)。
+ */
+function isMapReady(map: L.Map | null | undefined): boolean {
+  if (!map) return false;
+  try {
+    const container = map.getContainer();
+    return !!container && document.body.contains(container);
+  } catch {
+    return false;
+  }
+}
+
 interface Props {
   currentLocation: LatLng | null;
   targetLocation: LatLng | null;
@@ -59,6 +76,18 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // getCurrentPositionはwatchPositionと違いclearWatchで途中キャンセルできない
+  // 一回きりの非同期コールバックのため、コンポーネントが既にアンマウントされた後に
+  // 結果が返ってきてmap.setView等を呼んでしまう(_leaflet_posエラーの原因になる)
+  // ケースをこのrefで防ぐ。
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (!errorMessage) return;
     const timer = setTimeout(() => setErrorMessage(null), 5000);
@@ -73,6 +102,10 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
   }
 
   function handleSuccess(pos: GeolocationPosition) {
+    // コンポーネントが既にアンマウントされている、またはmapインスタンスが
+    // 既にremove()されている場合はsetView等を呼び出さない(_leaflet_pos対策)
+    if (!mountedRef.current || !isMapReady(map)) return;
+
     const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     console.log("[GPS Debug]", pos);
     map.setView([loc.lat, loc.lng], 16, { animate: true });
@@ -85,6 +118,7 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
+        if (!mountedRef.current) return;
         console.warn("[GPS Error] 現在地の取得に失敗しました(標準精度):", error);
         setLoading(false);
         setErrorMessage(describeError(error));
@@ -105,6 +139,7 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
+        if (!mountedRef.current) return;
         console.warn("[GPS Error] 現在地の取得に失敗しました(高精度):", error);
         // 権限拒否の場合は再試行しても無駄なので、その場でユーザーに通知する
         if (error.code === error.PERMISSION_DENIED) {
@@ -166,19 +201,25 @@ function AutoFitBounds({
   const map = useMap();
 
   useEffect(() => {
+    if (!isMapReady(map)) return;
+
     const points: [number, number][] = [];
     if (currentLocation) points.push([currentLocation.lat, currentLocation.lng]);
     if (targetLocation) points.push([targetLocation.lat, targetLocation.lng]);
 
     if (points.length === 0) return;
 
-    if (points.length === 1) {
-      map.setView(points[0], 16, { animate: true });
-      return;
-    }
+    try {
+      if (points.length === 1) {
+        map.setView(points[0], 16, { animate: true });
+        return;
+      }
 
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, { padding: [56, 56], maxZoom: 17, animate: true });
+      const bounds = L.latLngBounds(points);
+      map.fitBounds(bounds, { padding: [56, 56], maxZoom: 17, animate: true });
+    } catch (error) {
+      console.error("AutoFitBounds: 地図移動エラー", error);
+    }
   }, [currentLocation, targetLocation, map]);
 
   return null;
