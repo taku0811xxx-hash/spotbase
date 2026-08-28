@@ -312,7 +312,7 @@ export async function createQuickDispatchRecord(
 // onBlur等から呼ばれる想定。
 export async function updateDispatchTitleSummary(
   recordId: string,
-  fields: { title?: string; summary?: string }
+  fields: { title?: string; summary?: string; address?: string; incidentType?: string }
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, recordId), fields);
 }
@@ -324,7 +324,7 @@ export async function updateDispatchTitleSummary(
 // /dispatch の「出動記録」一覧からは確認できるようになる。
 export async function completeDispatchRecord(
   recordId: string,
-  fields: { title?: string; summary?: string }
+  fields: { title?: string; summary?: string; address?: string; incidentType?: string }
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, recordId), {
     ...fields,

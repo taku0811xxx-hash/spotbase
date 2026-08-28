@@ -226,6 +226,7 @@ type Props = {
   incidents?: Incident[]; // 速報事案
   breakingAlerts?: BreakingAlert[]; // 未確認速報ピン
   userLocation?: { lat: number; lng: number } | null; // ログイン時に取得した現在地(GPS)
+  onLocated?: (loc: { lat: number; lng: number }) => void; // 現在地表示ボタン押下時のコールバック
 };
 
 // CSS for Leaflet controls positioning
@@ -385,6 +386,54 @@ function FlyToSelectedPin({ selectedPin }: { selectedPin: any | null | undefined
   return null;
 }
 
+// 現在地表示ボタン - 押下時にGPSで現在地を取得し、地図の中心をスムーズに移動させる
+function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: number }) => void }) {
+  const map = useMap();
+  const [loading, setLoading] = useState(false);
+
+  function handleClick() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        map.setView([loc.lat, loc.lng], 16, { animate: true });
+        onLocated?.(loc);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("現在地の取得に失敗しました:", error);
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={loading}
+      aria-label="現在地を表示"
+      title="現在地を表示"
+      className="absolute left-2 bottom-24 sm:left-4 sm:bottom-8 z-[2000] w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full shadow-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform disabled:opacity-60 pointer-events-auto"
+    >
+      {loading ? (
+        <span className="block w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      ) : (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="3" fill="#2563eb" />
+          <circle cx="12" cy="12" r="8" stroke="#2563eb" strokeWidth="2" />
+          <line x1="12" y1="1" x2="12" y2="4" stroke="#2563eb" strokeWidth="2" />
+          <line x1="12" y1="20" x2="12" y2="23" stroke="#2563eb" strokeWidth="2" />
+          <line x1="1" y1="12" x2="4" y2="12" stroke="#2563eb" strokeWidth="2" />
+          <line x1="20" y1="12" x2="23" y2="12" stroke="#2563eb" strokeWidth="2" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 // Inject Leaflet control styles
 function MapStyleInjector() {
   useEffect(() => {
@@ -412,6 +461,7 @@ export default function Map({
   incidents = [],
   breakingAlerts = [],
   userLocation = null,
+  onLocated,
 }: Props) {
   return (
     <>
@@ -458,6 +508,8 @@ export default function Map({
       <FlyToSelectedPin selectedPin={selectedPin} />
       {/* 詳細パネル開閉時のリサイズ処理 */}
       <PanelResizeHandler showDetailPanel={showDetailPanel} selectedPin={selectedPin} />
+      {/* 現在地表示ボタン */}
+      <LocateControl onLocated={onLocated} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

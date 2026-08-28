@@ -1,53 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { Pin } from "@/lib/pins";
+import { useState } from "react";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  pins: Pin[];
-  onSelect: (pin: Pin) => void;
-  onCreateNewSite: (input: { name: string; addressQuery: string }) => void;
+  onStart: (siteName: string) => void;
   submitting?: boolean;
   errorMessage?: string;
 }
 
 /**
- * 新規出動フロー用の現場選択・現場登録モーダル。
- * - 登録済みの現場(ピン)から選ぶだけで即座に「出動中」状態へ移行できる
- * - 該当する現場が見つからない場合は、名前と住所/建物名を入力して
- *   その場で新しい現場を登録し、そのまま出動を開始できる
+ * 新規出動フロー用のモーダル。
+ * 入力項目は「現場名」のみに簡略化されており、入力して決定すると
+ * 即座に現在地を使って現場登録・出動記録の作成が行われ、出動中画面へ遷移する。
  */
 export default function NewDispatchModal({
   isOpen,
   onClose,
-  pins,
-  onSelect,
-  onCreateNewSite,
+  onStart,
   submitting = false,
   errorMessage,
 }: Props) {
-  const [query, setQuery] = useState("");
-  const [newSiteName, setNewSiteName] = useState("");
-  const [newSiteAddress, setNewSiteAddress] = useState("");
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return pins;
-    return pins.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.address.toLowerCase().includes(q) ||
-        (p.parentLocation || "").toLowerCase().includes(q)
-    );
-  }, [pins, query]);
+  const [siteName, setSiteName] = useState("");
 
   if (!isOpen) return null;
 
-  function handleCreateNewSite() {
-    if (!newSiteName.trim() || !newSiteAddress.trim() || submitting) return;
-    onCreateNewSite({ name: newSiteName.trim(), addressQuery: newSiteAddress.trim() });
+  function handleStart() {
+    if (!siteName.trim() || submitting) return;
+    onStart(siteName.trim());
   }
 
   return (
@@ -60,9 +41,9 @@ export default function NewDispatchModal({
       />
 
       {/* Modal Body */}
-      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div className="relative w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-          <h2 className="font-bold text-gray-900 text-sm sm:text-base">新規出動 - 出動先を選択</h2>
+          <h2 className="font-bold text-gray-900 text-sm sm:text-base">新規出動</h2>
           <button
             onClick={onClose}
             disabled={submitting}
@@ -73,79 +54,34 @@ export default function NewDispatchModal({
           </button>
         </div>
 
-        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="現場名・住所・地名で絞り込み"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            autoFocus
-          />
-          <p className="text-[11px] text-gray-500 mt-1.5">
-            選んだ現場で即座に「出動中」の記録を作成し、GPSとチャットのライブ画面を開きます。
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-2 py-2 min-h-[80px]">
-          {filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-6">
-              一致する現場が見つかりません
+        <div className="px-4 py-4 space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">現場名</label>
+            <input
+              type="text"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              placeholder="例: ○○ビル前"
+              disabled={submitting}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleStart();
+              }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            />
+            <p className="text-[11px] text-gray-500 mt-1.5">
+              現在地を使って現場を登録し、即座に「出動中」の記録を作成してGPSとチャットのライブ画面を開きます。
             </p>
-          ) : (
-            <ul className="space-y-1">
-              {filtered.map((pin) => (
-                <li key={pin.id}>
-                  <button
-                    onClick={() => onSelect(pin)}
-                    disabled={submitting}
-                    className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
-                  >
-                    <p className="font-medium text-gray-900 text-sm truncate">
-                      {pin.parentLocation ? `${pin.parentLocation} / ` : ""}
-                      {pin.name}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">{pin.address}</p>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+          </div>
 
-        {/* 見つからない場合: その場で新しい現場を登録 */}
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0 space-y-2">
-          <p className="text-xs font-semibold text-gray-700">
-            見つからない場合は新しい現場を登録して出動できます
-          </p>
-          <input
-            type="text"
-            value={newSiteName}
-            onChange={(e) => setNewSiteName(e.target.value)}
-            placeholder="現場名(例: ○○ビル前)"
-            disabled={submitting}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          />
-          <input
-            type="text"
-            value={newSiteAddress}
-            onChange={(e) => setNewSiteAddress(e.target.value)}
-            placeholder="住所または建物名(位置情報の検索に使用)"
-            disabled={submitting}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreateNewSite();
-            }}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          />
-          {errorMessage && (
-            <p className="text-xs text-red-600">{errorMessage}</p>
-          )}
+          {errorMessage && <p className="text-xs text-red-600">{errorMessage}</p>}
+
           <button
-            onClick={handleCreateNewSite}
-            disabled={!newSiteName.trim() || !newSiteAddress.trim() || submitting}
-            className="w-full py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            onClick={handleStart}
+            disabled={!siteName.trim() || submitting}
+            className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
-            {submitting ? "登録中..." : "この内容で新しい現場を登録して出動"}
+            {submitting ? "出動を開始しています..." : "出動開始"}
           </button>
         </div>
       </div>

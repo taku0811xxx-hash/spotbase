@@ -37,9 +37,11 @@ export default function LiveDispatchPage() {
   const watchIdRef = useRef<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // タイトル・概要(出動中画面での編集用)
+  // タイトル・概要・住所・出動内容(出動中画面での編集用)
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
+  const [address, setAddress] = useState("");
+  const [incidentType, setIncidentType] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -72,6 +74,8 @@ export default function LiveDispatchPage() {
         if (!detailsInitializedRef.current) {
           setTitle(data.title || data.locationName || "");
           setSummary(data.summary || "");
+          setAddress(data.address || "");
+          setIncidentType(data.incidentType || "");
           detailsInitializedRef.current = true;
         }
         setLoading(false);
@@ -152,27 +156,28 @@ export default function LiveDispatchPage() {
     }
   }
 
-  // タイトル・概要はonBlurで都度保存する(入力の妨げにならないようデバウンスは行わず、
-  // フォーカスが外れたタイミングでのみ書き込む)
+  // タイトル・概要・住所・出動内容はonBlurで都度保存する(入力の妨げにならないよう
+  // デバウンスは行わず、フォーカスが外れたタイミングでのみ書き込む)
   async function handleSaveDetails() {
     if (!recordId || savingDetails) return;
     setSavingDetails(true);
     try {
-      await updateDispatchTitleSummary(recordId, { title, summary });
+      await updateDispatchTitleSummary(recordId, { title, summary, address, incidentType });
     } catch (error) {
-      console.error("タイトル・概要の保存に失敗しました:", error);
+      console.error("タイトル・概要・住所・出動内容の保存に失敗しました:", error);
     } finally {
       setSavingDetails(false);
     }
   }
 
-  // 「対応完了(出動終了)」: タイトル・概要・チャット履歴・現場情報・日時をまとめて
-  // 構造化データとして保存し、出動状態をクローズする。以後は「出動記録」一覧から確認できる。
+  // 「対応完了(出動終了)」: タイトル・概要・住所・出動内容・チャット履歴・現場情報・
+  // 日時をまとめて構造化データとして保存し、出動状態をクローズする。
+  // 以後は「出動記録」一覧から確認できる。
   async function handleComplete() {
     if (!recordId || completing) return;
     setCompleting(true);
     try {
-      await completeDispatchRecord(recordId, { title, summary });
+      await completeDispatchRecord(recordId, { title, summary, address, incidentType });
       router.push(`/dispatch/${recordId}`);
     } catch (error) {
       console.error("対応完了の保存に失敗しました:", error);
@@ -218,24 +223,51 @@ export default function LiveDispatchPage() {
         }
       />
 
-      {/* タイトル・概要の入力・保持エリア */}
-      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0 space-y-1.5">
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={handleSaveDetails}
-          placeholder="事件・事故のタイトル"
-          className="w-full font-bold text-gray-900 text-sm sm:text-base border-0 border-b border-transparent focus:border-blue-400 focus:outline-none px-0 py-1 bg-transparent"
-        />
-        <textarea
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-          onBlur={handleSaveDetails}
-          placeholder="概要(状況の要点をメモしておくと後で報告書作成が楽になります)"
-          rows={2}
-          className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
+      {/* タイトル・概要・住所・出動内容の入力・保持エリア。
+          各項目はプレースホルダーではなく入力欄の外側に独立したラベルを配置する。 */}
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0 space-y-2">
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">タイトル</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleSaveDetails}
+            className="w-full font-bold text-gray-900 text-sm sm:text-base border-0 border-b border-transparent focus:border-blue-400 focus:outline-none px-0 py-1 bg-transparent"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">住所</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onBlur={handleSaveDetails}
+              className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">出動内容</label>
+            <input
+              type="text"
+              value={incidentType}
+              onChange={(e) => setIncidentType(e.target.value)}
+              onBlur={handleSaveDetails}
+              className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">概要</label>
+          <textarea
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            onBlur={handleSaveDetails}
+            rows={2}
+            className="w-full text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0">
@@ -245,6 +277,7 @@ export default function LiveDispatchPage() {
             currentLocation={currentLocation}
             targetLocation={targetLocation}
             targetLabel={record.locationName}
+            onLocated={setCurrentLocation}
           />
           <div className="absolute top-2 left-2 z-[1000] bg-white/95 rounded-lg shadow px-2.5 py-1.5 text-[11px] space-y-1">
             <div className="flex items-center gap-1.5">

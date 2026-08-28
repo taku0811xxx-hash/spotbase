@@ -11,7 +11,7 @@ import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import { useBreakingAlerts } from "@/lib/hooks/useBreakingAlerts";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
-import { geocodeQuery } from "@/lib/geocode";
+import { geocodeQuery, reverseGeocode } from "@/lib/geocode";
 import { findWideRoadsNear, findStoppableRoadsNear, type RoadSuggestion } from "@/lib/roads";
 import SearchBar from "@/components/SearchBar";
 import PinSidePanel from "@/components/PinSidePanel";
@@ -256,68 +256,54 @@ export default function Home() {
     router.push("/login");
   }
 
-  // 「新規出動」モーダルで現場を選択した時の処理。
-  // 詳細フォームの入力を待たず、即座に「出動中」状態の記録を作成して
-  // GPS+チャットのライブ画面へ遷移する。
-  async function handleQuickDispatch(pin: Pin) {
-    if (!profile || creatingDispatch) return;
-    setCreatingDispatch(true);
-    setNewSiteError("");
-    try {
-      const recordId = await createQuickDispatchRecord({
-        locationName: pin.name,
-        address: pin.address,
-        lat: pin.lat,
-        lng: pin.lng,
-        organizationId: profile.organizationId,
-        category: profile.category,
-        recordedBy: profile.name,
-      });
-      setShowNewDispatchModal(false);
-      router.push(`/dispatch/${recordId}/live`);
-    } catch (error) {
-      console.error("新規出動の作成に失敗しました:", error);
-    } finally {
-      setCreatingDispatch(false);
-    }
-  }
-
-  // 「新規出動」モーダルで、既存の現場に該当がない場合の新規現場登録+出動開始処理。
-  // 入力された住所/建物名を地名検索(geocode)して座標を取得し、
-  // 現場(ピン)と出動記録の両方をその場で作成する。
-  async function handleQuickDispatchNewSite({
-    name,
-    addressQuery,
-  }: {
-    name: string;
-    addressQuery: string;
-  }) {
-    if (!profile || creatingDispatch) return;
-    setCreatingDispatch(true);
-    setNewSiteError("");
-    try {
-      const results = await geocodeQuery(addressQuery);
-      if (results.length === 0) {
-        setNewSiteError("入力した住所/建物名から位置情報を取得できませんでした。表記を変えて再度お試しください。");
+  // 現在地(GPS)を取得するヘルパー。既に取得済みのuserLocationがあればそれを使い、
+  // なければその場でgetCurrentPositionを実行する。
+  function getLocationForQuickDispatch(): Promise<{ lat: number; lng: number }> {
+    if (userLocation) return Promise.resolve(userLocation);
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        reject(new Error("この端末では位置情報を利用できません"));
         return;
       }
-      const top = results[0];
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (error) => reject(error),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  }
+
+  // 「新規出動」モーダルで現場名を入力して決定した時の処理。
+  // 現在地(GPS)を使って現場(ピン)と出動記録をその場で作成し、
+  // 詳細フォームの入力を待たず即座に「出動中」状態のライブ画面へ遷移する。
+  async function handleStartQuickDispatch(siteName: string) {
+    if (!profile || creatingDispatch) return;
+    setCreatingDispatch(true);
+    setNewSiteError("");
+    try {
+      const loc = await getLocationForQuickDispatch();
+      let address = "";
+      try {
+        address = (await reverseGeocode(loc.lat, loc.lng)) || "";
+      } catch (error) {
+        console.warn("住所の取得に失敗しました(現在地のみで続行します):", error);
+      }
 
       const pinId = await createQuickPin({
-        name,
-        address: top.displayName,
-        lat: top.lat,
-        lng: top.lng,
+        name: siteName,
+        address,
+        lat: loc.lat,
+        lng: loc.lng,
         organizationId: profile.organizationId,
         category: profile.category,
         recordedBy: profile.name,
       });
 
       const recordId = await createQuickDispatchRecord({
-        locationName: name,
-        address: top.displayName,
-        lat: top.lat,
-        lng: top.lng,
+        locationName: siteName,
+        address,
+        lat: loc.lat,
+        lng: loc.lng,
         organizationId: profile.organizationId,
         category: profile.category,
         recordedBy: profile.name,
@@ -327,10 +313,10 @@ export default function Home() {
       setPins((prev) => [
         {
           id: pinId,
-          name,
-          address: top.displayName,
-          lat: top.lat,
-          lng: top.lng,
+          name: siteName,
+          address,
+          lat: loc.lat,
+          lng: loc.lng,
           parkingInfo: "",
           shootingSpots: "",
           ipTransmissionInfo: "",
@@ -350,8 +336,8 @@ export default function Home() {
       setShowNewDispatchModal(false);
       router.push(`/dispatch/${recordId}/live`);
     } catch (error) {
-      console.error("新規現場の登録に失敗しました:", error);
-      setNewSiteError("新規現場の登録に失敗しました。時間をおいて再度お試しください。");
+      console.error("新規出動の作成に失敗しました:", error);
+      setNewSiteError("新規出動の作成に失敗しました。位置情報の許可を確認のうえ、時間をおいて再度お試しください。");
     } finally {
       setCreatingDispatch(false);
     }
@@ -653,6 +639,7 @@ export default function Home() {
               incidents={incidents}
               breakingAlerts={breakingAlerts}
               userLocation={userLocation}
+              onLocated={setUserLocation}
             />
           </main>
         </div>
@@ -823,9 +810,7 @@ export default function Home() {
           setShowNewDispatchModal(false);
           setNewSiteError("");
         }}
-        pins={pins}
-        onSelect={handleQuickDispatch}
-        onCreateNewSite={handleQuickDispatchNewSite}
+        onStart={handleStartQuickDispatch}
         submitting={creatingDispatch}
         errorMessage={newSiteError}
       />
