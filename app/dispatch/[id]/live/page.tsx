@@ -50,10 +50,20 @@ export default function LiveDispatchPage() {
   const [record, setRecord] = useState<DispatchRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  // GPS取得状況: acquiring=測位中 / active=取得中 / denied=権限拒否 / unavailable=測位不可
+  const [gpsStatus, setGpsStatus] = useState<"acquiring" | "active" | "denied" | "unavailable">("acquiring");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [sending, setSending] = useState(false);
-  const watchIdRef = useRef<number | null>(null);
+  // 高精度測位用と、そのフォールバック(標準精度)用のwatchIdを別々に保持する
+  const highAccuracyWatchIdRef = useRef<number | null>(null);
+  const standardAccuracyWatchIdRef = useRef<number | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gotFirstFixRef = useRef(false);
+  // 権限拒否と判明した後は標準精度側へのフォールバックも試みない(再試行しても
+  // 無駄なため)。setState(gpsStatus)はクロージャ内で古い値を参照してしまうので
+  // refで即座に確認できるようにする。
+  const permissionDeniedRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュース(出動中画面での編集用)
@@ -125,31 +135,106 @@ export default function LiveDispatchPage() {
     return () => unsubscribe();
   }, [authLoading, user, recordId, router]);
 
-  // 出動中は常時GPSを追跡し、現在地ピンをリアルタイム更新する。
-  // 画面を離れたら追跡を止めてバッテリー消費を抑える。
+  // 出動中は常時GPSを追跡し、現在地ピンをリアルタイム更新する。画面を離れたら
+  // 追跡を止めてバッテリー消費を抑える。
+  //
+  // 二段階フォールバック方式:
+  //   1. まず enableHighAccuracy:true (timeout 6000ms) で高精度測位を試みる
+  //   2. タイムアウト・測位不可(POSITION_UNAVAILABLE/TIMEOUT)で失敗した場合は、
+  //      自動的に enableHighAccuracy:false (timeout 10000ms、Wi-Fi/IP測位)へ
+  //      切り替えて追跡を継続する
+  //   3. 権限拒否(PERMISSION_DENIED)の場合は再試行しても無駄なので、その場で
+  //      gpsStatusを"denied"にして通知するに留める(例外は投げずconsole.warnのみ)
   useEffect(() => {
     if (authLoading || !user) return;
 
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
+    // SSR環境やGeolocation非対応端末では即座にフォールバック座標を使う
+    if (
+      typeof window === "undefined" ||
+      typeof navigator === "undefined" ||
+      !navigator.geolocation
+    ) {
+      setGpsStatus("unavailable");
       setCurrentLocation(DEFAULT_LOCATION);
       return;
     }
 
-    const id = navigator.geolocation.watchPosition(
-      (position) => {
-        setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-      },
+    gotFirstFixRef.current = false;
+    permissionDeniedRef.current = false;
+    setGpsStatus("acquiring");
+
+    function handleFix(position: GeolocationPosition) {
+      gotFirstFixRef.current = true;
+      setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+      setGpsStatus("active");
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+    }
+
+    // 標準精度(Wi-Fi/IP測位)での追跡。高精度測位のタイムアウト/測位不可時のフォールバック。
+    function startStandardAccuracyWatch() {
+      // 既に権限拒否と判明している場合は再試行しても無駄なので何もしない
+      if (permissionDeniedRef.current) return;
+      if (standardAccuracyWatchIdRef.current !== null) return; // 二重起動を防ぐ
+      const id = navigator.geolocation.watchPosition(
+        handleFix,
+        (error) => {
+          console.warn("現在地の取得に失敗しました(標準精度):", error);
+          if (error.code === error.PERMISSION_DENIED) {
+            permissionDeniedRef.current = true;
+            setGpsStatus("denied");
+          } else if (!gotFirstFixRef.current) {
+            // 両方の試行で一度も測位できていない場合のみ、フォールバック座標を使う
+            setGpsStatus("unavailable");
+            setCurrentLocation((prev) => prev ?? DEFAULT_LOCATION);
+          }
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 5000 }
+      );
+      standardAccuracyWatchIdRef.current = id;
+    }
+
+    const highId = navigator.geolocation.watchPosition(
+      handleFix,
       (error) => {
-        console.warn("現在地の取得に失敗しました。デフォルト座標を使用します:", error);
-        setCurrentLocation(DEFAULT_LOCATION);
+        console.warn("現在地の取得に失敗しました(高精度):", error);
+        if (error.code === error.PERMISSION_DENIED) {
+          permissionDeniedRef.current = true;
+          setGpsStatus("denied");
+          return;
+        }
+        // タイムアウト・測位不可の場合は標準精度(Wi-Fi/IP測位)へフォールバックする
+        startStandardAccuracyWatch();
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 5000 }
     );
-    watchIdRef.current = id;
+    highAccuracyWatchIdRef.current = highId;
+
+    // 6.5秒経っても高精度側から一度もfixが得られない場合の保険として、
+    // 標準精度の並行追跡を開始する(高精度watchPositionはtimeout到達後もエラー
+    // コールバックが発火しない実装のブラウザがあるため、タイマーで確実に補う)。
+    // ただし権限拒否と判明済みの場合はここでも再試行しない。
+    fallbackTimerRef.current = setTimeout(() => {
+      if (!gotFirstFixRef.current && !permissionDeniedRef.current) {
+        startStandardAccuracyWatch();
+      }
+    }, 6500);
 
     return () => {
-      navigator.geolocation.clearWatch(id);
-      watchIdRef.current = null;
+      if (highAccuracyWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(highAccuracyWatchIdRef.current);
+        highAccuracyWatchIdRef.current = null;
+      }
+      if (standardAccuracyWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(standardAccuracyWatchIdRef.current);
+        standardAccuracyWatchIdRef.current = null;
+      }
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
     };
   }, [authLoading, user]);
 
@@ -512,7 +597,11 @@ export default function LiveDispatchPage() {
             currentLocation={currentLocation}
             targetLocation={targetLocation}
             targetLabel={record.locationName}
-            onLocated={setCurrentLocation}
+            onLocated={(loc) => {
+              gotFirstFixRef.current = true;
+              setCurrentLocation(loc);
+              setGpsStatus("active");
+            }}
           />
           <div className="absolute top-2 left-2 z-[1000] bg-white/95 rounded-lg shadow px-2.5 py-1.5 text-[11px] space-y-1">
             <div className="flex items-center gap-1.5">
@@ -523,6 +612,29 @@ export default function LiveDispatchPage() {
               <span className="w-2.5 h-2.5 rounded-full bg-red-600 flex-shrink-0" />
               <span className="text-gray-700">対象現場</span>
             </div>
+          </div>
+
+          {/* GPS取得状況バッジ - 一目で状態がわかるよう地図右上に常時表示 */}
+          <div
+            className={`absolute top-2 right-2 z-[1000] rounded-full shadow px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 ${
+              gpsStatus === "active"
+                ? "bg-green-600 text-white"
+                : gpsStatus === "acquiring"
+                  ? "bg-amber-500 text-white"
+                  : "bg-red-600 text-white"
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                gpsStatus === "acquiring" ? "animate-pulse bg-white" : "bg-white"
+              }`}
+            />
+            <span>
+              {gpsStatus === "active" && "GPSアクティブ"}
+              {gpsStatus === "acquiring" && "GPS測位中..."}
+              {gpsStatus === "denied" && "位置情報が許可されていません"}
+              {gpsStatus === "unavailable" && "位置情報無効"}
+            </span>
           </div>
         </div>
 
