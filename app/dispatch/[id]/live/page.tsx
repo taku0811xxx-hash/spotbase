@@ -15,6 +15,7 @@ import {
   updateDispatchTitleSummary,
   completeDispatchRecord,
   deleteDispatchRecord,
+  replaceChatMessages,
   type DispatchRecord,
   type ChatMessage,
   type TrackPoint,
@@ -57,6 +58,81 @@ function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: 
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// 動作確認用: 技術担当シナリオのダミーチャット履歴。
+// 「自分」の発言は現在ログイン中のユーザー名(profile.name)を送信者として
+// 割り当てることで、実際の画面と同じく右側・緑背景で表示されるようにする。
+function buildDummyTechChatMessages(selfName: string): ChatMessage[] {
+  const now = Date.now();
+  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60 * 1000).toISOString();
+
+  return [
+    {
+      id: `dummy-1-${now}`,
+      sender: "佐藤デスク",
+      text: "【出動指示】東京駅 丸の内駅前広場の状況確認に向かってください。位置情報ログの同期を開始しています。",
+      timestamp: at(16),
+      type: "text",
+    },
+    {
+      id: `dummy-2-${now}`,
+      sender: "田中技術",
+      text: "了解です。現在現場付近に到着。中継機材の搬入および回線状況の確認を開始します。",
+      timestamp: at(14),
+      type: "text",
+      reactions: [
+        { emoji: "了解", users: [selfName] },
+        { emoji: "👍", users: [selfName] },
+      ],
+    },
+    {
+      id: `dummy-3-${now}`,
+      sender: selfName,
+      text: "こちらカメラ準備完了。GPSアクティブで位置情報を送信中。",
+      timestamp: at(12),
+      type: "text",
+    },
+    {
+      id: `dummy-4-${now}`,
+      sender: "田中技術",
+      text: "現場の電波状態ですが、モバイル回線・FPUともに良好です。大きな通信遅延は見られません。",
+      timestamp: at(10),
+      type: "text",
+    },
+    {
+      id: `dummy-5-${now}`,
+      sender: "佐藤デスク",
+      text: "了解。関連のSNS第一報URLを貼ります。",
+      timestamp: at(8),
+      type: "text",
+    },
+    {
+      id: `dummy-6-${now}`,
+      sender: "佐藤デスク",
+      text: "https://news.example.com/article/12345",
+      timestamp: at(7),
+      type: "text",
+    },
+    {
+      id: `dummy-7-${now}`,
+      sender: selfName,
+      text: "ニュース概要を確認しました。広場東側の撮影・伝送ポジションへ移動します。",
+      timestamp: at(5),
+      type: "text",
+      reactions: [
+        { emoji: "了解", users: ["佐藤デスク"] },
+        { emoji: "🙏", users: ["佐藤デスク"] },
+      ],
+    },
+    {
+      id: `dummy-8-${now}`,
+      sender: "田中技術",
+      text: "現場管理者と合流しました。これより現地での仮設アンテナ設営と合わせてチャットで状況を共有します。",
+      timestamp: at(2),
+      type: "text",
+    },
+  ];
+}
+
 // チャット履歴のAI要約結果(/api/dispatch/chat-summary のレスポンス)
 type ChatSummary = {
   overview: string;
@@ -93,6 +169,9 @@ export default function LiveDispatchPage() {
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState("");
   const [showSummaryPanel, setShowSummaryPanel] = useState(false);
+  // 動作確認用ダミーチャット(技術担当シナリオ)の読み込み状態・確認ダイアログ
+  const [loadingDummyChat, setLoadingDummyChat] = useState(false);
+  const [showDummyChatConfirm, setShowDummyChatConfirm] = useState(false);
   // 高精度測位用と、そのフォールバック(標準精度)用のwatchIdを別々に保持する
   const highAccuracyWatchIdRef = useRef<number | null>(null);
   const standardAccuracyWatchIdRef = useRef<number | null>(null);
@@ -492,6 +571,23 @@ export default function LiveDispatchPage() {
     }
   }
 
+  // 動作確認用: 技術担当シナリオのダミーチャット履歴を読み込む(既存のチャットは上書きされる)
+  async function handleLoadDummyChat() {
+    if (!recordId || loadingDummyChat) return;
+    setLoadingDummyChat(true);
+    try {
+      const selfName = profile?.name || "管理者(自分)";
+      const dummyMessages = buildDummyTechChatMessages(selfName);
+      await replaceChatMessages(recordId, dummyMessages);
+      setChatMessages(dummyMessages);
+    } catch (error) {
+      console.error("ダミーチャットの読み込みに失敗しました:", error);
+    } finally {
+      setLoadingDummyChat(false);
+      setShowDummyChatConfirm(false);
+    }
+  }
+
   // タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュースはonBlurで都度保存する
   // (入力の妨げにならないようデバウンスは行わず、フォーカスが外れたタイミングでのみ書き込む)
   async function handleSaveDetails() {
@@ -593,7 +689,8 @@ export default function LiveDispatchPage() {
         newsSummary,
         track,
       });
-      router.push(`/dispatch/${recordId}`);
+      // 対応完了後は「出動記録一覧」画面へ自動遷移する
+      router.push("/dispatch");
     } catch (error) {
       console.error("対応完了の保存に失敗しました:", error);
     } finally {
@@ -654,7 +751,7 @@ export default function LiveDispatchPage() {
     <div className="h-screen flex flex-col bg-gray-100">
       <PageHeader
         title={`出動中: ${record.locationName}`}
-        backHref="/dispatch"
+        backHref="/dispatch/active"
         backLabel="出動中一覧に戻る"
         action={
           <div className="flex items-center gap-2">
@@ -870,14 +967,25 @@ export default function LiveDispatchPage() {
                   現場の状況を短くメモとして共有できます({chatMessages.length}件)
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleSummarizeChat}
-                disabled={summarizing || chatMessages.length === 0}
-                className="flex-shrink-0 text-[11px] px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {summarizing ? "要約中..." : "チャット履歴を要約"}
-              </button>
+              <div className="flex flex-col gap-1 flex-shrink-0 items-end">
+                <button
+                  type="button"
+                  onClick={handleSummarizeChat}
+                  disabled={summarizing || chatMessages.length === 0}
+                  className="text-[11px] px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {summarizing ? "要約中..." : "チャット履歴を要約"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDummyChatConfirm(true)}
+                  disabled={loadingDummyChat}
+                  title="動作確認用の技術担当シナリオのダミーチャットを読み込みます(既存のチャットは上書きされます)"
+                  className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 font-semibold hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {loadingDummyChat ? "読み込み中..." : "ダミーチャットを読み込む"}
+                </button>
+              </div>
             </div>
 
             {/* AI要約の結果パネル */}
@@ -1189,6 +1297,20 @@ export default function LiveDispatchPage() {
         submitting={deleting}
         onCancel={() => setShowDeleteConfirm(false)}
         onConfirm={handleDelete}
+      />
+
+      {/* ダミーチャット読み込みの確認ダイアログ(動作確認用) */}
+      <ConfirmDialog
+        open={showDummyChatConfirm}
+        title="動作確認用のダミーチャットを読み込みますか?"
+        summary={[
+          { label: "内容", value: "技術担当シナリオ(佐藤デスク・田中技術とのやり取り、8件)" },
+          { label: "注意", value: "現在のチャット履歴は上書きされます" },
+        ]}
+        confirmLabel="読み込む"
+        submitting={loadingDummyChat}
+        onCancel={() => setShowDummyChatConfirm(false)}
+        onConfirm={handleLoadDummyChat}
       />
 
       {/* チャットメッセージの削除確認ダイアログ(自分の発言のみ) */}

@@ -469,6 +469,14 @@ export async function deleteChatMessage(
   return updated;
 }
 
+// チャット履歴全体を置き換える(動作確認用のダミーデータ読み込み等に使用)
+export async function replaceChatMessages(
+  recordId: string,
+  messages: ChatMessage[]
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, recordId), { chatMessages: messages });
+}
+
 // 編集可能な項目とその表示名(履歴に「何が変わったか」を記録するために使う)
 const EDITABLE_FIELD_LABELS: Record<string, string> = {
   locationName: "場所名",
