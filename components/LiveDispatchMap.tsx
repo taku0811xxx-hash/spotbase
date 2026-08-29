@@ -65,6 +65,7 @@ interface Props {
   targetLocation: LatLng | null;
   targetLabel: string;
   onLocated?: (loc: LatLng) => void;
+  trackPoints?: LatLng[]; // GPS移動履歴(軌跡)。時系列順の座標配列
 }
 
 // 現在地表示ボタン - 押下時にGPSで現在地を取得し、地図の中心をスムーズに移動させる。
@@ -190,6 +191,58 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
   );
 }
 
+// カメラ自動追従のON/OFFトグルボタン。ONの間は現在地が更新されるたびに
+// 地図の中心を現在地へ自動的に追従させる(FollowCameraコンポーネント側で実処理)。
+function AutoFollowToggle({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={enabled}
+      title="現在地への自動追従"
+      className={`absolute right-2 bottom-24 sm:right-4 sm:bottom-8 z-[2000] flex items-center gap-1.5 rounded-full shadow-lg border px-3 py-2 text-[11px] font-semibold transition-colors pointer-events-auto ${
+        enabled
+          ? "bg-blue-600 border-blue-600 text-white"
+          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+      }`}
+    >
+      <span
+        className={`w-2 h-2 rounded-full flex-shrink-0 ${enabled ? "bg-white animate-pulse" : "bg-gray-400"}`}
+      />
+      カメラ自動追従{enabled ? "ON" : "OFF"}
+    </button>
+  );
+}
+
+// autoFollowがONの間、現在地(currentLocation)が更新されるたびに地図の中心を
+// 現在地へパン(panTo)する。ユーザーが手動でOFFにした場合は何もしない。
+function FollowCamera({
+  currentLocation,
+  enabled,
+}: {
+  currentLocation: LatLng | null;
+  enabled: boolean;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled || !currentLocation || !isMapReady(map)) return;
+    try {
+      map.panTo([currentLocation.lat, currentLocation.lng], { animate: true });
+    } catch (error) {
+      console.error("FollowCamera: 地図追従エラー", error);
+    }
+  }, [currentLocation, enabled, map]);
+
+  return null;
+}
+
 /**
  * 現在地・対象現場のどちらか(または両方)が更新されるたびに、
  * 両方が画面内に収まるよう地図の表示範囲を自動調整する。
@@ -199,8 +252,12 @@ function AutoFitBounds({
   targetLocation,
 }: Pick<Props, "currentLocation" | "targetLocation">) {
   const map = useMap();
+  // 初回に座標が揃った時だけ自動でフィットさせる。以降の追従は
+  // カメラ自動追従トグル(FollowCamera)側に委ね、ユーザーの手動操作を尊重する。
+  const hasFitRef = useRef(false);
 
   useEffect(() => {
+    if (hasFitRef.current) return;
     if (!isMapReady(map)) return;
 
     const points: [number, number][] = [];
@@ -212,11 +269,11 @@ function AutoFitBounds({
     try {
       if (points.length === 1) {
         map.setView(points[0], 16, { animate: true });
-        return;
+      } else {
+        const bounds = L.latLngBounds(points);
+        map.fitBounds(bounds, { padding: [56, 56], maxZoom: 17, animate: true });
       }
-
-      const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { padding: [56, 56], maxZoom: 17, animate: true });
+      hasFitRef.current = true;
     } catch (error) {
       console.error("AutoFitBounds: 地図移動エラー", error);
     }
@@ -225,12 +282,19 @@ function AutoFitBounds({
   return null;
 }
 
-export default function LiveDispatchMap({ currentLocation, targetLocation, targetLabel, onLocated }: Props) {
+export default function LiveDispatchMap({ currentLocation, targetLocation, targetLabel, onLocated, trackPoints }: Props) {
+  const [autoFollow, setAutoFollow] = useState(true);
+
   const initialCenter: [number, number] = targetLocation
     ? [targetLocation.lat, targetLocation.lng]
     : currentLocation
       ? [currentLocation.lat, currentLocation.lng]
       : [35.681236, 139.767125];
+
+  const trackPositions: [number, number][] | null =
+    trackPoints && trackPoints.length > 1
+      ? trackPoints.map((p) => [p.lat, p.lng])
+      : null;
 
   return (
     <MapContainer
@@ -246,7 +310,17 @@ export default function LiveDispatchMap({ currentLocation, targetLocation, targe
       />
 
       <AutoFitBounds currentLocation={currentLocation} targetLocation={targetLocation} />
+      <FollowCamera currentLocation={currentLocation} enabled={autoFollow} />
       <LocateControl onLocated={onLocated} />
+      <AutoFollowToggle enabled={autoFollow} onToggle={() => setAutoFollow((v) => !v)} />
+
+      {/* GPS移動履歴(軌跡) - これまで通過した経路を実線で描画 */}
+      {trackPositions && (
+        <Polyline
+          positions={trackPositions}
+          pathOptions={{ color: "#16a34a", weight: 4, opacity: 0.8 }}
+        />
+      )}
 
       {currentLocation && targetLocation && (
         <Polyline

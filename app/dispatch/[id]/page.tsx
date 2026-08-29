@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import {
   deleteDispatchRecord,
@@ -13,6 +14,9 @@ import { useAuth } from "@/components/AuthProvider";
 import PageHeader from "@/components/PageHeader";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Toast, { type ToastState } from "@/components/Toast";
+
+// LeafletはSSR非対応なのでクライアント側のみで読み込む
+const DispatchTrackMap = dynamic(() => import("@/components/DispatchTrackMap"), { ssr: false });
 
 type PinSummary = {
   parkingInfo: string;
@@ -463,13 +467,18 @@ export default function DispatchDetailPage() {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="font-semibold text-gray-900 mb-2">リアルタイム軌跡</h2>
+          <h2 className="font-semibold text-gray-900 mb-2">GPS移動履歴(軌跡)</h2>
           <p className="text-sm text-gray-600">{record.track.length}件のポイントを記録</p>
           {record.track.length > 0 && (
             <p className="text-xs text-gray-400 mt-1">
               {new Date(record.track[0].time).toLocaleTimeString("ja-JP")} 〜{" "}
               {new Date(record.track[record.track.length - 1].time).toLocaleTimeString("ja-JP")}
             </p>
+          )}
+          {record.track.length > 0 && (
+            <div className="mt-3 h-[320px] rounded-lg overflow-hidden border border-gray-200">
+              <DispatchTrackMap track={record.track} />
+            </div>
           )}
         </div>
 

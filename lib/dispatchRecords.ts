@@ -369,6 +369,7 @@ export async function completeDispatchRecord(
     siteManagerName?: string;
     newsUrl?: string;
     newsSummary?: string;
+    track?: TrackPoint[]; // 出動中に記録したGPS移動履歴(軌跡)
   }
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, recordId), {

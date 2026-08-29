@@ -17,6 +17,7 @@ import {
   deleteDispatchRecord,
   type DispatchRecord,
   type ChatMessage,
+  type TrackPoint,
 } from "@/lib/dispatchRecords";
 import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
@@ -45,6 +46,17 @@ function avatarInitial(name: string): string {
   return (name.trim()[0] || "?").toUpperCase();
 }
 
+// 2点間の距離(メートル)。軌跡記録の間引き判定に使う。
+function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 // チャット履歴のAI要約結果(/api/dispatch/chat-summary のレスポンス)
 type ChatSummary = {
   overview: string;
@@ -64,6 +76,10 @@ export default function LiveDispatchPage() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   // GPS取得状況: acquiring=測位中 / active=取得中 / denied=権限拒否 / unavailable=測位不可
   const [gpsStatus, setGpsStatus] = useState<"acquiring" | "active" | "denied" | "unavailable">("acquiring");
+  // GPS移動履歴(軌跡)。位置情報を取得するたびに蓄積し、対応完了時に出動記録として保存する。
+  const [track, setTrack] = useState<TrackPoint[]>([]);
+  // 直近で記録した軌跡の座標(近すぎる点を連続で積み増ししないための間引き用)
+  const lastTrackPointRef = useRef<{ lat: number; lng: number } | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -125,6 +141,16 @@ export default function LiveDispatchPage() {
   // 購読エラーをconsole.errorではなくconsole.warnに留めるために参照する。
   const deletingRef = useRef(false);
 
+  // GPS移動履歴(軌跡)に1点追加する。直前の記録点から一定距離(10m)以上
+  // 離れている場合のみ追加し、停止中に無意味な点が大量に積み上がるのを防ぐ。
+  function recordTrackPoint(loc: { lat: number; lng: number }) {
+    const last = lastTrackPointRef.current;
+    if (last && distanceMeters(last, loc) < 10) return;
+    lastTrackPointRef.current = loc;
+    const point: TrackPoint = { lat: loc.lat, lng: loc.lng, time: new Date().toISOString() };
+    setTrack((prev) => [...prev, point]);
+  }
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -153,6 +179,11 @@ export default function LiveDispatchPage() {
           setSiteManagerName(data.siteManagerName || "");
           setNewsUrl(data.newsUrl || "");
           setNewsSummary(data.newsSummary || "");
+          setTrack(data.track || []);
+          if (data.track && data.track.length > 0) {
+            const last = data.track[data.track.length - 1];
+            lastTrackPointRef.current = { lat: last.lat, lng: last.lng };
+          }
           detailsInitializedRef.current = true;
         }
         setLoading(false);
@@ -207,8 +238,10 @@ export default function LiveDispatchPage() {
     function handleFix(position: GeolocationPosition) {
       gotFirstFixRef.current = true;
       console.log("[GPS Debug]", position);
-      setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+      const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+      setCurrentLocation(loc);
       setGpsStatus("active");
+      recordTrackPoint(loc);
       if (fallbackTimerRef.current) {
         clearTimeout(fallbackTimerRef.current);
         fallbackTimerRef.current = null;
@@ -558,6 +591,7 @@ export default function LiveDispatchPage() {
         siteManagerName,
         newsUrl,
         newsSummary,
+        track,
       });
       router.push(`/dispatch/${recordId}`);
     } catch (error) {
@@ -782,10 +816,12 @@ export default function LiveDispatchPage() {
               currentLocation={currentLocation}
               targetLocation={targetLocation}
               targetLabel={record.locationName}
+              trackPoints={track}
               onLocated={(loc) => {
                 gotFirstFixRef.current = true;
                 setCurrentLocation(loc);
                 setGpsStatus("active");
+                recordTrackPoint(loc);
               }}
             />
             <div className="absolute top-2 left-2 z-[1000] bg-white/95 rounded-lg shadow px-2.5 py-1.5 text-[11px] space-y-1">
@@ -1117,7 +1153,7 @@ export default function LiveDispatchPage() {
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-5 space-y-3">
             <h3 className="font-bold text-gray-900">対応完了として保存しますか?</h3>
             <p className="text-xs text-gray-600">
-              タイトル・概要・チャット履歴・現場情報・日時をまとめて出動記録として保存し、
+              タイトル・概要・チャット履歴・GPS移動履歴(軌跡)・現場情報・日時をまとめて出動記録として保存し、
               出動状態を終了します。「出動記録」一覧から確認できるようになります。
             </p>
             <div className="flex gap-2 pt-1">
