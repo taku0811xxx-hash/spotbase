@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import {
   getDispatchRecords,
@@ -34,7 +32,6 @@ export default function ActiveDispatchPage() {
   const { user, profile, loading: authLoading } = useAuth();
   const [records, setRecords] = useState<DispatchRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [memoText, setMemoText] = useState<Record<string, string>>({});
   // 「対応完了」処理中の出動記録ID(ボタンの二重押し防止用)
   const [completingId, setCompletingId] = useState<string | null>(null);
   // 削除確認ダイアログの対象(nullなら非表示)
@@ -65,41 +62,6 @@ export default function ActiveDispatchPage() {
       .catch((error) => console.error("Error loading dispatch records:", error))
       .finally(() => setLoading(false));
   }, [authLoading, user, profile, router]);
-
-  async function handleAddMemo(recordId: string) {
-    if (!memoText[recordId]?.trim()) return;
-
-    try {
-      const record = records.find((r) => r.id === recordId);
-      if (!record) return;
-
-      const newMemo = {
-        timestamp: new Date().toISOString(),
-        text: memoText[recordId],
-      };
-
-      const existingMemos = record.memos || [];
-      const docRef = doc(db, "dispatch_records", recordId);
-      await updateDoc(docRef, {
-        memos: [...existingMemos, newMemo],
-      });
-
-      setRecords((prev) =>
-        prev.map((r) =>
-          r.id === recordId
-            ? {
-                ...r,
-                memos: [...(r.memos || []), newMemo],
-              }
-            : r
-        )
-      );
-
-      setMemoText((prev) => ({ ...prev, [recordId]: "" }));
-    } catch (error) {
-      console.error("Error adding memo:", error);
-    }
-  }
 
   // 「対応完了」ボタン: 出動ステータスを完了にし、出動記録データとして蓄積・保存する。
   // 既存の入力内容(タイトル・概要・住所等)はそのまま保持し、statusとcompletedAtのみ更新する。
@@ -237,69 +199,13 @@ export default function ActiveDispatchPage() {
                         </div>
                       </div>
 
-                      {/* Memos Timeline */}
-                      {record.memos && record.memos.length > 0 && (
-                        <div className="mb-4 p-3 bg-gray-50 rounded-lg text-xs">
-                          <p className="font-semibold text-gray-900 mb-2">現場メモ ({record.memos.length}件)</p>
-                          <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                            {record.memos.map((memo: any, idx: number) => {
-                              const memoTime = memo.timestamp
-                                ? new Date(memo.timestamp).toLocaleTimeString("ja-JP", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })
-                                : "---";
-                              return (
-                                <div key={idx} className="flex gap-2 text-gray-700">
-                                  <span className="text-gray-500 flex-shrink-0">[{memoTime}]</span>
-                                  <span>{memo.text}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Add Memo Input */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="現場メモを入力（例: FPU回線確保、中継車設営完了）"
-                          value={memoText[record.id] || ""}
-                          onChange={(e) =>
-                            setMemoText((prev) => ({
-                              ...prev,
-                              [record.id]: e.target.value,
-                            }))
-                          }
-                          onKeyPress={(e) => {
-                            if (e.key === "Enter") {
-                              handleAddMemo(record.id);
-                            }
-                          }}
-                          className="flex-1 px-3 py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <button
-                          onClick={() => handleAddMemo(record.id)}
-                          className="px-3 py-2 bg-gray-200 text-gray-700 text-xs sm:text-sm font-medium rounded-lg hover:bg-gray-300 transition-colors flex-shrink-0"
-                        >
-                          追加
-                        </button>
-                      </div>
-
-                      {/* View Details / Live Links */}
+                      {/* Live Link */}
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                         <Link
                           href={`/dispatch/${record.id}/live`}
                           className="text-red-600 hover:underline text-xs sm:text-sm font-medium"
                         >
                           ライブ画面(GPS+チャット) →
-                        </Link>
-                        <Link
-                          href={`/dispatch/${record.id}`}
-                          className="text-blue-600 hover:underline text-xs sm:text-sm font-medium"
-                        >
-                          詳細を見る →
                         </Link>
 
                         {/* 対応完了・削除の操作ボタン */}

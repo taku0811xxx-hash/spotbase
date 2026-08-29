@@ -70,6 +70,7 @@ export type ChatMessage = {
   timestamp: string; // ISO 8601文字列
   type?: "text" | "image" | "voice"; // 将来の画像・音声添付を見据えた種別(現状はtextのみ送信可)
   reactions?: ChatReaction[]; // クイックリアクション(了解 等)
+  editedAt?: string; // 編集された場合の最終更新日時(ISO 8601文字列。未編集ならフィールドごと持たない)
 };
 
 export type AiProposalForDispatch = {
@@ -427,6 +428,41 @@ export async function toggleChatReaction(
 
     return { ...msg, reactions };
   });
+
+  await updateDoc(doc(db, COLLECTION, recordId), { chatMessages: updated });
+  return updated;
+}
+
+// 自分が送信したチャットメッセージの本文を書き換える。編集したことが後から
+// 分かるように editedAt(ISO文字列)を付与する。呼び出し側で本人確認を行う前提だが、
+// 念のためここでも sender 一致をチェックする。
+export async function editChatMessage(
+  recordId: string,
+  existingMessages: ChatMessage[],
+  input: { messageId: string; text: string; user: string }
+): Promise<ChatMessage[]> {
+  const text = input.text.trim();
+  if (!text) throw new Error("メッセージ本文が空です");
+
+  const updated = existingMessages.map((msg) => {
+    if (msg.id !== input.messageId) return msg;
+    if (msg.sender !== input.user) return msg; // 他人の発言は編集しない
+    return { ...msg, text, editedAt: new Date().toISOString() };
+  });
+
+  await updateDoc(doc(db, COLLECTION, recordId), { chatMessages: updated });
+  return updated;
+}
+
+// 自分が送信したチャットメッセージを削除する(配列から取り除いて書き戻す)。
+export async function deleteChatMessage(
+  recordId: string,
+  existingMessages: ChatMessage[],
+  input: { messageId: string; user: string }
+): Promise<ChatMessage[]> {
+  const updated = existingMessages.filter(
+    (msg) => !(msg.id === input.messageId && msg.sender === input.user)
+  );
 
   await updateDoc(doc(db, COLLECTION, recordId), { chatMessages: updated });
   return updated;

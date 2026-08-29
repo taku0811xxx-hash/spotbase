@@ -10,6 +10,8 @@ import { useAuth } from "@/components/AuthProvider";
 import {
   addChatMessage,
   toggleChatReaction,
+  editChatMessage,
+  deleteChatMessage,
   updateDispatchTitleSummary,
   completeDispatchRecord,
   deleteDispatchRecord,
@@ -43,6 +45,14 @@ function avatarInitial(name: string): string {
   return (name.trim()[0] || "?").toUpperCase();
 }
 
+// チャット履歴のAI要約結果(/api/dispatch/chat-summary のレスポンス)
+type ChatSummary = {
+  overview: string;
+  crewActions: string[];
+  instructions: string[];
+  pendingItems: string[];
+};
+
 export default function LiveDispatchPage() {
   const params = useParams();
   const router = useRouter();
@@ -57,6 +67,16 @@ export default function LiveDispatchPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [sending, setSending] = useState(false);
+  // 自分のメッセージのインライン編集・削除
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  // チャット履歴のAI要約
+  const [chatSummary, setChatSummary] = useState<ChatSummary | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState("");
+  const [showSummaryPanel, setShowSummaryPanel] = useState(false);
   // 高精度測位用と、そのフォールバック(標準精度)用のwatchIdを別々に保持する
   const highAccuracyWatchIdRef = useRef<number | null>(null);
   const standardAccuracyWatchIdRef = useRef<number | null>(null);
@@ -332,6 +352,110 @@ export default function LiveDispatchPage() {
       await toggleChatReaction(recordId, chatMessages, { messageId, emoji, user });
     } catch (error) {
       console.error("リアクションの送信に失敗しました:", error);
+    }
+  }
+
+  // 自分のメッセージのインライン編集を開始する
+  function startEditMessage(msg: ChatMessage) {
+    setEditingMessageId(msg.id);
+    setEditingText(msg.text);
+  }
+
+  function cancelEditMessage() {
+    setEditingMessageId(null);
+    setEditingText("");
+  }
+
+  // 編集内容を保存する(editedAtが付与され「(編集済み)」表示になる)
+  async function handleSaveEditMessage(messageId: string) {
+    const text = editingText.trim();
+    if (!recordId || !text || savingEdit) return;
+
+    const myName = profile?.name || "不明";
+    const target = chatMessages.find((m) => m.id === messageId);
+    if (!target || target.sender !== myName) return;
+    if (text === target.text) {
+      cancelEditMessage();
+      return;
+    }
+
+    setSavingEdit(true);
+    const previous = chatMessages;
+    // 楽観的更新
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, text, editedAt: new Date().toISOString() } : m
+      )
+    );
+    cancelEditMessage();
+
+    try {
+      await editChatMessage(recordId, previous, { messageId, text, user: myName });
+    } catch (error) {
+      console.error("メッセージの編集に失敗しました:", error);
+      setChatMessages(previous);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  // 自分のメッセージを削除する(確認ダイアログでOKされた後に呼ばれる)
+  async function handleDeleteMessage(messageId: string) {
+    if (!recordId) return;
+    const myName = profile?.name || "不明";
+    const previous = chatMessages;
+
+    setDeleteTargetId(null);
+    // 楽観的更新
+    setChatMessages((prev) => prev.filter((m) => m.id !== messageId));
+
+    try {
+      await deleteChatMessage(recordId, previous, { messageId, user: myName });
+    } catch (error) {
+      console.error("メッセージの削除に失敗しました:", error);
+      setChatMessages(previous);
+    }
+  }
+
+  // チャット履歴をAI(Claude Haiku)で要約する
+  async function handleSummarizeChat() {
+    if (summarizing || chatMessages.length === 0) return;
+    setSummarizing(true);
+    setSummaryError("");
+    setShowSummaryPanel(true);
+
+    try {
+      const res = await fetch("/api/dispatch/chat-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: chatMessages.map((m) => ({
+            sender: m.sender,
+            text: m.text,
+            timestamp: m.timestamp,
+          })),
+          locationName: record?.locationName || "",
+          incidentType: record?.incidentType || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSummaryError(data.error || "要約の生成に失敗しました");
+        setChatSummary(null);
+        return;
+      }
+      setChatSummary({
+        overview: data.overview || "",
+        crewActions: data.crewActions || [],
+        instructions: data.instructions || [],
+        pendingItems: data.pendingItems || [],
+      });
+    } catch (error) {
+      console.error("チャット要約の生成に失敗しました:", error);
+      setSummaryError("要約の生成中にエラーが発生しました");
+      setChatSummary(null);
+    } finally {
+      setSummarizing(false);
     }
   }
 
@@ -703,10 +827,82 @@ export default function LiveDispatchPage() {
         {/* 右カラム: 画面縦いっぱいのフルハイトチャット(Teams風、発言者名・アバター・リアクション付き) */}
         <div className="lg:col-span-1 flex flex-col min-h-0 h-full bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0">
-            <h2 className="text-sm font-bold text-gray-900">現場チャット</h2>
-            <p className="text-[11px] text-gray-500">
-              現場の状況を短くメモとして共有できます({chatMessages.length}件)
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold text-gray-900">現場チャット</h2>
+                <p className="text-[11px] text-gray-500">
+                  現場の状況を短くメモとして共有できます({chatMessages.length}件)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSummarizeChat}
+                disabled={summarizing || chatMessages.length === 0}
+                className="flex-shrink-0 text-[11px] px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {summarizing ? "要約中..." : "チャット履歴を要約"}
+              </button>
+            </div>
+
+            {/* AI要約の結果パネル */}
+            {showSummaryPanel && (
+              <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/60 px-2.5 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-blue-900">AIによるチャット履歴の要約</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowSummaryPanel(false)}
+                    className="text-[11px] text-blue-700 hover:underline flex-shrink-0"
+                  >
+                    閉じる
+                  </button>
+                </div>
+
+                {summarizing && (
+                  <p className="text-[11px] text-blue-800 mt-1">履歴を読み込んで要約しています...</p>
+                )}
+                {!summarizing && summaryError && (
+                  <p className="text-[11px] text-red-600 mt-1">{summaryError}</p>
+                )}
+                {!summarizing && !summaryError && chatSummary && (
+                  <div className="mt-1.5 space-y-2 max-h-56 overflow-y-auto">
+                    {chatSummary.overview && (
+                      <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{chatSummary.overview}</p>
+                    )}
+                    {chatSummary.crewActions.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-900">現場クルーの動き</p>
+                        <ul className="list-disc list-inside text-[11px] text-gray-800 space-y-0.5">
+                          {chatSummary.crewActions.map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {chatSummary.instructions.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-900">出された指示内容</p>
+                        <ul className="list-disc list-inside text-[11px] text-gray-800 space-y-0.5">
+                          {chatSummary.instructions.map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {chatSummary.pendingItems.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-900">未確認・未解決の事項</p>
+                        <ul className="list-disc list-inside text-[11px] text-gray-800 space-y-0.5">
+                          {chatSummary.pendingItems.map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 min-h-[120px]">
@@ -721,27 +917,105 @@ export default function LiveDispatchPage() {
                   minute: "2-digit",
                 });
                 const myName = profile?.name || "不明";
+                // 自分の発言は右側・緑の吹き出し、相手の発言は従来どおり左側・グレー
+                const isMine = msg.sender === myName;
+                const isEditing = editingMessageId === msg.id;
                 return (
-                  <div key={msg.id} className="flex items-start gap-2">
+                  <div
+                    key={msg.id}
+                    className={`group flex items-start gap-2 ${isMine ? "flex-row-reverse" : ""}`}
+                  >
                     {/* アバター - 誰の発言か一目でわかるように常時表示 */}
                     <div
                       className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 mt-0.5 ${avatarColorFor(msg.sender)}`}
                     >
                       {avatarInitial(msg.sender)}
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className={`min-w-0 flex-1 ${isMine ? "flex flex-col items-end" : ""}`}>
                       {/* 発言者名 - メッセージ本文の上に常時表示 */}
-                      <div className="flex items-baseline gap-1.5">
+                      <div className={`flex items-baseline gap-1.5 ${isMine ? "flex-row-reverse" : ""}`}>
                         <span className="text-xs font-semibold text-gray-900 truncate">{msg.sender}</span>
                         <span className="text-[10px] text-gray-400 flex-shrink-0">{time}</span>
+                        {msg.editedAt && (
+                          <span className="text-[10px] text-gray-400 flex-shrink-0">(編集済み)</span>
+                        )}
                       </div>
-                      <div className="mt-0.5 bg-gray-100 rounded-lg rounded-tl-sm px-3 py-1.5 text-sm text-gray-900 inline-block max-w-full">
-                        <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-                      </div>
+
+                      {isEditing ? (
+                        /* インライン編集: 自分のメッセージのみ */
+                        <div className="mt-0.5 w-full">
+                          <textarea
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              // IME変換確定のEnterでは保存しない
+                              if (e.nativeEvent.isComposing || e.key === "Process") return;
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSaveEditMessage(msg.id);
+                              }
+                              if (e.key === "Escape") cancelEditMessage();
+                            }}
+                            rows={2}
+                            className="w-full resize-none border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                          <div className="flex gap-1.5 mt-1 justify-end">
+                            <button
+                              type="button"
+                              onClick={cancelEditMessage}
+                              className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditMessage(msg.id)}
+                              disabled={!editingText.trim() || savingEdit}
+                              className="text-[11px] px-2 py-0.5 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                              保存
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`flex items-center gap-1 mt-0.5 ${isMine ? "flex-row-reverse" : ""}`}>
+                          <div
+                            className={`rounded-lg px-3 py-1.5 text-sm inline-block max-w-full ${
+                              isMine
+                                ? "bg-emerald-600 text-white rounded-tr-sm"
+                                : "bg-gray-100 text-gray-900 rounded-tl-sm"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                          </div>
+
+                          {/* 自分の発言だけホバーで編集・削除を出す */}
+                          {isMine && (
+                            <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => startEditMessage(msg)}
+                                title="編集"
+                                className="text-[11px] px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+                              >
+                                編集
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTargetId(msg.id)}
+                                title="削除"
+                                className="text-[11px] px-1.5 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                              >
+                                削除
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* 既についているリアクションの表示 */}
                       {msg.reactions && msg.reactions.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? "justify-end" : ""}`}>
                           {msg.reactions.map((r) => (
                             <button
                               key={r.emoji}
@@ -761,7 +1035,7 @@ export default function LiveDispatchPage() {
                       )}
 
                       {/* クイックリアクションボタン - ワンタップで反応できる */}
-                      <div className="flex gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
+                      <div className={`flex gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity ${isMine ? "justify-end" : ""}`}>
                         {QUICK_REACTIONS.map((emoji) => (
                           <button
                             key={emoji}
@@ -803,6 +1077,10 @@ export default function LiveDispatchPage() {
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
+                  // IME変換中(日本語入力の確定Enter)は送信しない。
+                  // isComposingはブラウザによりkeydown時点でfalseになる場合があるため、
+                  // key === "Process" も併せて判定する。
+                  if (e.nativeEvent.isComposing || e.key === "Process") return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     handleSendChat();
@@ -875,6 +1153,23 @@ export default function LiveDispatchPage() {
         submitting={deleting}
         onCancel={() => setShowDeleteConfirm(false)}
         onConfirm={handleDelete}
+      />
+
+      {/* チャットメッセージの削除確認ダイアログ(自分の発言のみ) */}
+      <ConfirmDialog
+        open={deleteTargetId !== null}
+        title="このメッセージを削除しますか?"
+        summary={[
+          {
+            label: "本文",
+            value: chatMessages.find((m) => m.id === deleteTargetId)?.text || "",
+          },
+        ]}
+        confirmLabel="削除する"
+        onCancel={() => setDeleteTargetId(null)}
+        onConfirm={() => {
+          if (deleteTargetId) handleDeleteMessage(deleteTargetId);
+        }}
       />
     </div>
   );

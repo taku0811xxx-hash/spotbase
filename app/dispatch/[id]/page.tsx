@@ -212,6 +212,75 @@ export default function DispatchDetailPage() {
           </p>
         )}
 
+        {(record.title || record.summary || record.dispatcherName || record.siteManagerName || record.newsSummary) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+            <h2 className="font-semibold text-gray-900">出動サマリー</h2>
+            {record.title && (
+              <div>
+                <p className="text-xs text-gray-500 font-medium">タイトル</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.title}</p>
+              </div>
+            )}
+            {record.summary && (
+              <div>
+                <p className="text-xs text-gray-500 font-medium">概要</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.summary}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {record.dispatcherName && (
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">出動者</p>
+                  <p className="text-sm text-gray-800">{record.dispatcherName}</p>
+                </div>
+              )}
+              {record.siteManagerName && (
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">現場管理者</p>
+                  <p className="text-sm text-gray-800">{record.siteManagerName}</p>
+                </div>
+              )}
+            </div>
+            {record.newsSummary && (
+              <div>
+                <p className="text-xs text-gray-500 font-medium">関連ニュース</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{record.newsSummary}</p>
+                {record.newsUrl && (
+                  <a
+                    href={record.newsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 hover:underline break-all"
+                  >
+                    {record.newsUrl}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {record.chatMessages && record.chatMessages.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="font-semibold text-gray-900 mb-3">
+              出動中チャットログ ({record.chatMessages.length}件)
+            </h2>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {record.chatMessages.map((msg) => (
+                <div key={msg.id} className="text-sm border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-medium text-gray-800">{msg.sender}</span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(msg.timestamp).toLocaleString("ja-JP")}
+                    </span>
+                  </div>
+                  <p className="text-gray-700 whitespace-pre-wrap">{msg.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {(record.siteInfo || record.parkingInfo || record.shootingSpots || record.ipTransmissionInfo || record.fpuInfo || record.hazards) && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
             <h2 className="font-semibold text-gray-900">現場情報</h2>
