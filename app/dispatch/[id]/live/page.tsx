@@ -654,7 +654,7 @@ export default function LiveDispatchPage() {
     <div className="h-screen flex flex-col bg-gray-100">
       <PageHeader
         title={`出動中: ${record.locationName}`}
-        backHref="/dispatch/active"
+        backHref="/dispatch"
         backLabel="出動中一覧に戻る"
         action={
           <div className="flex items-center gap-2">
