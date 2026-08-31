@@ -57,7 +57,7 @@ const HeaderNav = memo(function HeaderNav({
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-3 py-1.5 bg-gray-900 text-white overflow-hidden">
+    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-3 py-1.5 bg-gray-900 text-white overflow-visible">
       <Link href="/" className="flex-shrink-0 min-w-0">
         <Logo className="text-white text-xs" />
       </Link>
@@ -91,10 +91,14 @@ const HeaderNav = memo(function HeaderNav({
         </button>
       </div>
 
-      {/* Desktop Header: Full Menu */}
+      {/* Desktop Header: Full Menu
+          並び順(左→右): GPSステータス → 新規出動 → 出動中 → 過去出動記録 → 報告書
+          → ユーザー名/組織情報+管理メニュー → ログアウト */}
       <div className="hidden md:flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0 relative">
+        {/* 1. GPSステータス */}
         <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} />
 
+        {/* 2. 新規出動 */}
         {onNewDispatch && (
           <button
             onClick={onNewDispatch}
@@ -104,6 +108,33 @@ const HeaderNav = memo(function HeaderNav({
           </button>
         )}
 
+        {/* 3. 出動中 */}
+        <Link
+          href="/dispatch/active"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2 py-0.5 sm:py-1 bg-red-600 border border-red-700 hover:bg-red-700 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
+          title="現在対応中の案件を管理"
+        >
+          🚨 <span>出動中</span>
+        </Link>
+
+        {/* 4. 過去出動記録 */}
+        <Link
+          href="/dispatch"
+          title="蓄積された出動記録の一覧を確認する"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
+        >
+          📋 <span>出動記録</span>
+        </Link>
+
+        {/* 5. 報告書 */}
+        <Link
+          href="/dispatch/import"
+          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
+        >
+          📄 <span>報告書</span>
+        </Link>
+
+        {/* 6. ユーザー名/組織情報 + 管理メニュー */}
         {profile && (
           <div className="text-right text-xs text-gray-300 leading-tight mr-0.5">
             <p className="text-[10px] sm:text-xs">{profile.organizationName} / {profile.category}</p>
@@ -114,7 +145,6 @@ const HeaderNav = memo(function HeaderNav({
           </div>
         )}
 
-        {/* 管理者メニュー（ドロップダウン） */}
         {profile?.accessLevel === "admin" && (
           <div className="relative z-[9998]" ref={adminMenuRef}>
             <button
@@ -127,7 +157,7 @@ const HeaderNav = memo(function HeaderNav({
               </span>
             </button>
 
-            {/* ドロップダウンメニュー */}
+            {/* ドロップダウンメニュー - 下のコンテンツより必ず前面に表示されるようz-[9999]を指定 */}
             {adminMenuOpen && (
               <div className="absolute right-0 mt-1 w-56 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-[9999] pointer-events-auto overflow-visible">
                 <Link
@@ -156,31 +186,7 @@ const HeaderNav = memo(function HeaderNav({
           </div>
         )}
 
-        {/* 出動記録関連 */}
-        <Link
-          href="/dispatch/active"
-          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2 py-0.5 sm:py-1 bg-red-600 border border-red-700 hover:bg-red-700 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
-          title="現在対応中の案件を管理"
-        >
-          🚨 <span>出動中</span>
-        </Link>
-
-        <Link
-          href="/dispatch/import"
-          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
-        >
-          📄 <span>報告書</span>
-        </Link>
-
-        <Link
-          href="/dispatch"
-          title="蓄積された出動記録の一覧を確認する"
-          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 border border-gray-600 hover:bg-gray-800 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
-        >
-          📋 <span>出動記録</span>
-        </Link>
-
-        {/* ログアウト */}
+        {/* 7. ログアウト */}
         <button
           onClick={onLogout}
           className="text-gray-300 text-[9px] sm:text-xs rounded-lg px-1 sm:px-2.5 py-0.5 sm:py-1.5 hover:bg-gray-800 hover:text-white transition-all duration-150 whitespace-nowrap flex-shrink-0"
