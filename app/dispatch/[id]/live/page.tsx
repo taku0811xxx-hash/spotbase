@@ -24,6 +24,7 @@ import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
 import { HazardMapToggle } from "@/components/HazardMapLayer";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { useGpsTracking } from "@/lib/hooks/useGpsTracking";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const LiveDispatchMap = dynamic(() => import("@/components/LiveDispatchMap"), { ssr: false });
@@ -197,9 +198,6 @@ export default function LiveDispatchPage() {
 
   const [record, setRecord] = useState<DispatchRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
-  // GPS取得状況: acquiring=測位中 / active=取得中 / denied=権限拒否 / unavailable=測位不可
-  const [gpsStatus, setGpsStatus] = useState<"acquiring" | "active" | "denied" | "unavailable">("acquiring");
   const [showHazardMap, setShowHazardMap] = useState(false);
   // GPS移動履歴(軌跡)。位置情報を取得するたびに蓄積し、対応完了時に出動記録として保存する。
   const [track, setTrack] = useState<TrackPoint[]>([]);
@@ -221,15 +219,6 @@ export default function LiveDispatchPage() {
   // 動作確認用ダミーチャット(技術担当シナリオ)の読み込み状態・確認ダイアログ
   const [loadingDummyChat, setLoadingDummyChat] = useState(false);
   const [showDummyChatConfirm, setShowDummyChatConfirm] = useState(false);
-  // 高精度測位用と、そのフォールバック(標準精度)用のwatchIdを別々に保持する
-  const highAccuracyWatchIdRef = useRef<number | null>(null);
-  const standardAccuracyWatchIdRef = useRef<number | null>(null);
-  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gotFirstFixRef = useRef(false);
-  // 権限拒否と判明した後は標準精度側へのフォールバックも試みない(再試行しても
-  // 無駄なため)。setState(gpsStatus)はクロージャ内で古い値を参照してしまうので
-  // refで即座に確認できるようにする。
-  const permissionDeniedRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // タイトル・概要・住所・出動内容・出動者・現場管理者・関連ニュース(出動中画面での編集用)
@@ -337,111 +326,14 @@ export default function LiveDispatchPage() {
   // 出動中は常時GPSを追跡し、現在地ピンをリアルタイム更新する。画面を離れたら
   // 追跡を止めてバッテリー消費を抑える。
   //
-  // 二段階フォールバック方式:
-  //   1. まず enableHighAccuracy:true (timeout 5000ms) で高精度測位を試みる
-  //   2. タイムアウト・測位不可(POSITION_UNAVAILABLE/TIMEOUT)で失敗した場合は、
-  //      自動的に enableHighAccuracy:false (timeout 8000ms、Wi-Fi/IP測位)へ
-  //      切り替えて追跡を継続する
-  //   3. 権限拒否(PERMISSION_DENIED)の場合は再試行しても無駄なので、その場で
-  //      gpsStatusを"denied"にして通知するに留める(例外は投げずconsole.warnのみ)
-  useEffect(() => {
-    if (authLoading || !user) return;
-
-    // SSR環境やGeolocation非対応端末では即座にフォールバック座標を使う
-    if (
-      typeof window === "undefined" ||
-      typeof navigator === "undefined" ||
-      !navigator.geolocation
-    ) {
-      console.warn("[GPS Error] この端末/環境では位置情報が利用できません");
-      setGpsStatus("unavailable");
-      setCurrentLocation(DEFAULT_LOCATION);
-      return;
-    }
-
-    gotFirstFixRef.current = false;
-    permissionDeniedRef.current = false;
-    setGpsStatus("acquiring");
-
-    function handleFix(position: GeolocationPosition) {
-      gotFirstFixRef.current = true;
-      console.log("[GPS Debug]", position);
-      const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
-      setCurrentLocation(loc);
-      setGpsStatus("active");
-      recordTrackPoint(loc);
-      if (fallbackTimerRef.current) {
-        clearTimeout(fallbackTimerRef.current);
-        fallbackTimerRef.current = null;
-      }
-    }
-
-    // 標準精度(Wi-Fi/IP測位)での追跡。高精度測位のタイムアウト/測位不可時のフォールバック。
-    function startStandardAccuracyWatch() {
-      // 既に権限拒否と判明している場合は再試行しても無駄なので何もしない
-      if (permissionDeniedRef.current) return;
-      if (standardAccuracyWatchIdRef.current !== null) return; // 二重起動を防ぐ
-      console.log("[GPS Debug] 標準精度(Wi-Fi/IP測位)へフォールバックします(timeout 8000ms)");
-      const id = navigator.geolocation.watchPosition(
-        handleFix,
-        (error) => {
-          console.warn("[GPS Error] 現在地の取得に失敗しました(標準精度):", error);
-          if (error.code === error.PERMISSION_DENIED) {
-            permissionDeniedRef.current = true;
-            setGpsStatus("denied");
-          } else if (!gotFirstFixRef.current) {
-            // 両方の試行で一度も測位できていない場合のみ、フォールバック座標を使う
-            setGpsStatus("unavailable");
-            setCurrentLocation((prev) => prev ?? DEFAULT_LOCATION);
-          }
-        },
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 5000 }
-      );
-      standardAccuracyWatchIdRef.current = id;
-    }
-
-    console.log("[GPS Debug] 継続追跡を開始します(高精度, timeout 5000ms)");
-    const highId = navigator.geolocation.watchPosition(
-      handleFix,
-      (error) => {
-        console.warn("[GPS Error] 現在地の取得に失敗しました(高精度):", error);
-        if (error.code === error.PERMISSION_DENIED) {
-          permissionDeniedRef.current = true;
-          setGpsStatus("denied");
-          return;
-        }
-        // タイムアウト・測位不可の場合は標準精度(Wi-Fi/IP測位)へフォールバックする
-        startStandardAccuracyWatch();
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
-    );
-    highAccuracyWatchIdRef.current = highId;
-
-    // 5.5秒経っても高精度側から一度もfixが得られない場合の保険として、
-    // 標準精度の並行追跡を開始する(高精度watchPositionはtimeout到達後もエラー
-    // コールバックが発火しない実装のブラウザがあるため、タイマーで確実に補う)。
-    // ただし権限拒否と判明済みの場合はここでも再試行しない。
-    fallbackTimerRef.current = setTimeout(() => {
-      if (!gotFirstFixRef.current && !permissionDeniedRef.current) {
-        startStandardAccuracyWatch();
-      }
-    }, 5500);
-
-    return () => {
-      if (highAccuracyWatchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(highAccuracyWatchIdRef.current);
-        highAccuracyWatchIdRef.current = null;
-      }
-      if (standardAccuracyWatchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(standardAccuracyWatchIdRef.current);
-        standardAccuracyWatchIdRef.current = null;
-      }
-      if (fallbackTimerRef.current) {
-        clearTimeout(fallbackTimerRef.current);
-        fallbackTimerRef.current = null;
-      }
-    };
-  }, [authLoading, user]);
+  // バックグラウンド切り替え・端末スリープ・一時的な電波障害等で追跡が完全に
+  // 停止してしまわないよう、リトライ・画面復帰検知・Wake Lock・ハートビートを
+  // 組み合わせたロジックはlib/hooks/useGpsTracking.tsに集約している。
+  const { currentLocation, gpsStatus, reportManualFix } = useGpsTracking({
+    enabled: !authLoading && !!user,
+    onFix: recordTrackPoint,
+    defaultLocation: DEFAULT_LOCATION,
+  });
 
   // 新着メッセージが来たら自動で一番下までスクロール
   useEffect(() => {
@@ -964,9 +856,7 @@ export default function LiveDispatchPage() {
               trackPoints={track}
               showHazardMap={showHazardMap}
               onLocated={(loc) => {
-                gotFirstFixRef.current = true;
-                setCurrentLocation(loc);
-                setGpsStatus("active");
+                reportManualFix(loc);
                 recordTrackPoint(loc);
               }}
             />
