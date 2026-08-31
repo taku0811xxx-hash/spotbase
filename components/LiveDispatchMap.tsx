@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
+import { HazardMapTileLayer } from "./HazardMapLayer";
 
 // 出動者(自分)の現在地用アイコン - 青い光暈付きドット
 const currentLocationIcon = L.divIcon({
@@ -66,6 +67,7 @@ interface Props {
   targetLabel: string;
   onLocated?: (loc: LatLng) => void;
   trackPoints?: LatLng[]; // GPS移動履歴(軌跡)。時系列順の座標配列
+  showHazardMap?: boolean; // ハザードマップ表示状態。トグルボタン自体は呼び出し側(page.tsx)でGPSバッジと並べて表示する
 }
 
 // 現在地表示ボタン - 押下時にGPSで現在地を取得し、地図の中心をスムーズに移動させる。
@@ -191,34 +193,6 @@ function LocateControl({ onLocated }: { onLocated?: (loc: LatLng) => void }) {
   );
 }
 
-// ハザードマップ(洪水浸水想定区域)のON/OFF切替ボタン。
-function HazardMapToggle({
-  enabled,
-  onToggle,
-}: {
-  enabled: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={enabled}
-      title="ハザードマップ(洪水浸水想定区域)の表示切替"
-      className={`absolute right-2 top-2 sm:right-4 sm:top-4 z-[2000] flex items-center gap-1.5 rounded-full shadow-lg border px-3 py-2 text-[11px] font-semibold transition-colors pointer-events-auto ${
-        enabled
-          ? "bg-amber-600 border-amber-600 text-white"
-          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-      }`}
-    >
-      <span
-        className={`w-2 h-2 rounded-full flex-shrink-0 ${enabled ? "bg-white animate-pulse" : "bg-gray-400"}`}
-      />
-      ハザードマップ{enabled ? "ON" : "OFF"}
-    </button>
-  );
-}
-
 // カメラ自動追従のON/OFFトグルボタン。ONの間は現在地が更新されるたびに
 // 地図の中心を現在地へ自動的に追従させる(FollowCameraコンポーネント側で実処理)。
 function AutoFollowToggle({
@@ -310,9 +284,8 @@ function AutoFitBounds({
   return null;
 }
 
-export default function LiveDispatchMap({ currentLocation, targetLocation, targetLabel, onLocated, trackPoints }: Props) {
+export default function LiveDispatchMap({ currentLocation, targetLocation, targetLabel, onLocated, trackPoints, showHazardMap = false }: Props) {
   const [autoFollow, setAutoFollow] = useState(true);
-  const [showHazardMap, setShowHazardMap] = useState(false);
 
   const initialCenter: [number, number] = targetLocation
     ? [targetLocation.lat, targetLocation.lng]
@@ -338,21 +311,14 @@ export default function LiveDispatchMap({ currentLocation, targetLocation, targe
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {/* ハザードマップ(国土地理院 洪水浸水想定区域) - 下地の地図が透けて見えるようopacityを抑える */}
-      {showHazardMap && (
-        <TileLayer
-          attribution='<a href="https://disaportal.gsi.go.jp/">ハザードマップポータルサイト</a>(国土地理院)'
-          url="https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png"
-          opacity={0.6}
-          zIndex={10}
-        />
-      )}
+      {/* ハザードマップ(国土地理院 洪水浸水想定区域)。トグルボタンはpage.tsx側でGPSバッジと
+          同じflexコンテナに並べて表示するため、ここではレイヤー描画のみ行う */}
+      {showHazardMap && <HazardMapTileLayer />}
 
       <AutoFitBounds currentLocation={currentLocation} targetLocation={targetLocation} />
       <FollowCamera currentLocation={currentLocation} enabled={autoFollow} />
       <LocateControl onLocated={onLocated} />
       <AutoFollowToggle enabled={autoFollow} onToggle={() => setAutoFollow((v) => !v)} />
-      <HazardMapToggle enabled={showHazardMap} onToggle={() => setShowHazardMap((v) => !v)} />
 
       {/* GPS移動履歴(軌跡) - これまで通過した経路を実線で描画 */}
       {trackPositions && (

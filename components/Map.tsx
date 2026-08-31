@@ -15,6 +15,7 @@ import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
+import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
 const defaultIcon = L.icon({
@@ -580,9 +581,18 @@ export default function Map({
   userLocation = null,
   onLocated,
 }: Props) {
+  const [showHazardMap, setShowHazardMap] = useState(false);
+
   return (
     <>
       <MapStyleInjector />
+
+      {/* ハザードマップON/OFFトグル - 凡例ボックス(右上)と被らないよう地図左上に配置 */}
+      <HazardMapToggle
+        enabled={showHazardMap}
+        onToggle={() => setShowHazardMap((v) => !v)}
+        className="absolute top-1.5 left-1.5 sm:top-4 sm:left-4 z-[2000]"
+      />
 
       {/* 凡例ボックス - 地図右上に配置
           注意: Leaflet内部のレイヤー(タイルペイン z-200、オーバーレイ z-400、
@@ -634,6 +644,14 @@ export default function Map({
         updateWhenIdle={true}
         updateInterval={200}
       />
+
+      {/* ハザードマップ(国土地理院 洪水浸水想定区域)。keepBufferを絞り、
+          updateWhenIdle/updateInterval込みで表示中の範囲周辺のみ描画することで、
+          現場ピンが多い場合でもタイル読み込み負荷を抑える */}
+      {showHazardMap && (
+        <HazardMapTileLayer />
+      )}
+
       {pins
         .filter((pin) => isValidCoordinate(pin.lat, pin.lng))
         .map((pin) => (

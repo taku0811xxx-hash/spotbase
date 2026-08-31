@@ -22,6 +22,7 @@ import {
 } from "@/lib/dispatchRecords";
 import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
+import { HazardMapToggle } from "@/components/HazardMapLayer";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
@@ -199,6 +200,7 @@ export default function LiveDispatchPage() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   // GPS取得状況: acquiring=測位中 / active=取得中 / denied=権限拒否 / unavailable=測位不可
   const [gpsStatus, setGpsStatus] = useState<"acquiring" | "active" | "denied" | "unavailable">("acquiring");
+  const [showHazardMap, setShowHazardMap] = useState(false);
   // GPS移動履歴(軌跡)。位置情報を取得するたびに蓄積し、対応完了時に出動記録として保存する。
   const [track, setTrack] = useState<TrackPoint[]>([]);
   // 直近で記録した軌跡の座標(近すぎる点を連続で積み増ししないための間引き用)
@@ -960,6 +962,7 @@ export default function LiveDispatchPage() {
               targetLocation={targetLocation}
               targetLabel={record.locationName}
               trackPoints={track}
+              showHazardMap={showHazardMap}
               onLocated={(loc) => {
                 gotFirstFixRef.current = true;
                 setCurrentLocation(loc);
@@ -978,27 +981,37 @@ export default function LiveDispatchPage() {
               </div>
             </div>
 
-            {/* GPS取得状況バッジ - 一目で状態がわかるよう地図右上に常時表示 */}
-            <div
-              className={`absolute top-2 right-2 z-[1000] rounded-full shadow px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 ${
-                gpsStatus === "active"
-                  ? "bg-green-600 text-white"
-                  : gpsStatus === "acquiring"
-                    ? "bg-amber-500 text-white"
-                    : "bg-red-600 text-white"
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  gpsStatus === "acquiring" ? "animate-pulse bg-white" : "bg-white"
+            {/* 地図右上のコントロール群 - GPS取得状況バッジとハザードマップトグルを
+                同一のflexコンテナに並べることで、どちらもテキスト長に応じて幅が
+                変わっても重ならないようにする */}
+            <div className="absolute top-2 right-2 z-[1000] flex flex-col items-end gap-2">
+              <div
+                className={`rounded-full shadow px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 ${
+                  gpsStatus === "active"
+                    ? "bg-green-600 text-white"
+                    : gpsStatus === "acquiring"
+                      ? "bg-amber-500 text-white"
+                      : "bg-red-600 text-white"
                 }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    gpsStatus === "acquiring" ? "animate-pulse bg-white" : "bg-white"
+                  }`}
+                />
+                <span>
+                  {gpsStatus === "active" && "GPSアクティブ"}
+                  {gpsStatus === "acquiring" && "GPS測位中..."}
+                  {gpsStatus === "denied" && "位置情報が許可されていません"}
+                  {gpsStatus === "unavailable" && "位置情報無効"}
+                </span>
+              </div>
+
+              <HazardMapToggle
+                enabled={showHazardMap}
+                onToggle={() => setShowHazardMap((v) => !v)}
+                className="pointer-events-auto"
               />
-              <span>
-                {gpsStatus === "active" && "GPSアクティブ"}
-                {gpsStatus === "acquiring" && "GPS測位中..."}
-                {gpsStatus === "denied" && "位置情報が許可されていません"}
-                {gpsStatus === "unavailable" && "位置情報無効"}
-              </span>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useState } from "react";
+import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
 
 // 出動記録詳細画面向けの静止した軌跡表示用マップ。
 // GPS取得は行わず、保存済みのtrack(座標配列)を折れ線として再描画するだけ。
@@ -58,34 +59,6 @@ function FitToTrack({ positions }: { positions: [number, number][] }) {
   return null;
 }
 
-// ハザードマップ(洪水浸水想定区域)のON/OFF切替ボタン。
-function HazardMapToggle({
-  enabled,
-  onToggle,
-}: {
-  enabled: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={enabled}
-      title="ハザードマップ(洪水浸水想定区域)の表示切替"
-      className={`absolute right-2 top-2 sm:right-4 sm:top-4 z-[2000] flex items-center gap-1.5 rounded-full shadow-lg border px-3 py-2 text-[11px] font-semibold transition-colors pointer-events-auto ${
-        enabled
-          ? "bg-amber-600 border-amber-600 text-white"
-          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-      }`}
-    >
-      <span
-        className={`w-2 h-2 rounded-full flex-shrink-0 ${enabled ? "bg-white animate-pulse" : "bg-gray-400"}`}
-      />
-      ハザードマップ{enabled ? "ON" : "OFF"}
-    </button>
-  );
-}
-
 export default function DispatchTrackMap({ track }: Props) {
   const positions: [number, number][] = track.map((p) => [p.lat, p.lng]);
   const initialCenter: [number, number] = positions[0] || [35.681236, 139.767125];
@@ -104,16 +77,13 @@ export default function DispatchTrackMap({ track }: Props) {
       />
 
       {/* ハザードマップ(国土地理院 洪水浸水想定区域) - 下地の地図が透けて見えるようopacityを抑える */}
-      {showHazardMap && (
-        <TileLayer
-          attribution='<a href="https://disaportal.gsi.go.jp/">ハザードマップポータルサイト</a>(国土地理院)'
-          url="https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png"
-          opacity={0.6}
-          zIndex={10}
-        />
-      )}
+      {showHazardMap && <HazardMapTileLayer />}
 
-      <HazardMapToggle enabled={showHazardMap} onToggle={() => setShowHazardMap((v) => !v)} />
+      <HazardMapToggle
+        enabled={showHazardMap}
+        onToggle={() => setShowHazardMap((v) => !v)}
+        className="absolute right-2 top-2 sm:right-4 sm:top-4 z-[2000]"
+      />
 
       <FitToTrack positions={positions} />
 
