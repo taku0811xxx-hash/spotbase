@@ -58,79 +58,127 @@ function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: 
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// 動作確認用: 技術担当シナリオのダミーチャット履歴。
+// 動作確認用: 「局発→現場到着→中継実施→撤収→帰局」を網羅した長尺ダミーチャット履歴
+// (東京駅 丸の内駅前広場付近の火災出動シナリオ)。
 // 「自分」の発言は現在ログイン中のユーザー名(profile.name)を送信者として
 // 割り当てることで、実際の画面と同じく右側・緑背景で表示されるようにする。
 function buildDummyTechChatMessages(selfName: string): ChatMessage[] {
   const now = Date.now();
-  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60 * 1000).toISOString();
+  // 今日の日付でHH:MMを指定してタイムスタンプを組み立てる
+  const at = (hour: number, minute: number) => {
+    const d = new Date();
+    d.setHours(hour, minute, 0, 0);
+    return d.toISOString();
+  };
 
-  return [
+  const raw: Omit<ChatMessage, "id" | "type">[] = [
     {
-      id: `dummy-1-${now}`,
       sender: "佐藤デスク",
-      text: "【出動指示】東京駅 丸の内駅前広場の状況確認に向かってください。位置情報ログの同期を開始しています。",
-      timestamp: at(16),
-      type: "text",
+      text: "【緊急出動指示】10:10頃、東京駅 丸の内駅前広場付近で火災の第一報。現場の状況確認および中継準備のため直ちに出動してください。",
+      timestamp: at(10, 15),
     },
     {
-      id: `dummy-2-${now}`,
       sender: "田中技術",
-      text: "了解です。現在現場付近に到着。中継機材の搬入および回線状況の確認を開始します。",
-      timestamp: at(14),
-      type: "text",
-      reactions: [
-        { emoji: "了解", users: [selfName] },
-        { emoji: "👍", users: [selfName] },
-      ],
+      text: "了解。技術車で中継機材(FPU・モバイル伝送装置・仮設アンテナ)を積み込み、10:20局発します。",
+      timestamp: at(10, 17),
+      reactions: [{ emoji: "了解", users: [selfName] }, { emoji: "👍", users: [selfName] }],
     },
     {
-      id: `dummy-3-${now}`,
       sender: selfName,
-      text: "こちらカメラ準備完了。GPSアクティブで位置情報を送信中。",
-      timestamp: at(12),
-      type: "text",
+      text: "ENGカメラ・音声セット携行で同行します。GPS追跡ONで移動開始します。",
+      timestamp: at(10, 18),
     },
     {
-      id: `dummy-4-${now}`,
       sender: "田中技術",
-      text: "現場の電波状態ですが、モバイル回線・FPUともに良好です。大きな通信遅延は見られません。",
-      timestamp: at(10),
-      type: "text",
+      text: "現場付近(丸の内ビル裏手)に到着。周辺に規制線あり。徒歩で広場東側へ機材搬入開始します。",
+      timestamp: at(10, 35),
     },
     {
-      id: `dummy-5-${now}`,
-      sender: "佐藤デスク",
-      text: "了解。関連のSNS第一報URLを貼ります。",
-      timestamp: at(8),
-      type: "text",
-    },
-    {
-      id: `dummy-6-${now}`,
-      sender: "佐藤デスク",
-      text: "https://news.example.com/article/12345",
-      timestamp: at(7),
-      type: "text",
-    },
-    {
-      id: `dummy-7-${now}`,
       sender: selfName,
-      text: "ニュース概要を確認しました。広場東側の撮影・伝送ポジションへ移動します。",
-      timestamp: at(5),
-      type: "text",
-      reactions: [
-        { emoji: "了解", users: ["佐藤デスク"] },
-        { emoji: "🙏", users: ["佐藤デスク"] },
-      ],
+      text: "広場東側にカメラセッティング完了。黒煙の立ち上がりを確認。1カメポジション確保しました。",
+      timestamp: at(10, 38),
+      reactions: [{ emoji: "了解", users: ["佐藤デスク"] }, { emoji: "👍", users: ["佐藤デスク"] }],
     },
     {
-      id: `dummy-8-${now}`,
+      sender: "佐藤デスク",
+      text: "了解。煙の立ち上がりと規制線の引きを中心に撮影をお願いします。11:00からのニュース枠で1分30秒の生中継を行います。",
+      timestamp: at(10, 40),
+    },
+    {
       sender: "田中技術",
-      text: "現場管理者と合流しました。これより現地での仮設アンテナ設営と合わせてチャットで状況を共有します。",
-      timestamp: at(2),
-      type: "text",
+      text: "FPU回線テスト中……本局受信用アンテナと同期完了。モバイルバックアップ線(5G×4)も通信良好、上り100Mbps確保。伝送準備完了です。",
+      timestamp: at(10, 45),
+    },
+    {
+      sender: "佐藤デスク",
+      text: "消防発表によると火元は飲食店厨房。怪我人情報は現在確認中。関連ニュースURLを共有します。",
+      timestamp: at(10, 48),
+    },
+    {
+      sender: "佐藤デスク",
+      text: "https://news.example.com/article/56789",
+      timestamp: at(10, 49),
+    },
+    {
+      sender: selfName,
+      text: "ニュース概要確認。消火活動の寄りと集まっている野次馬の引き映像を収録完了。伝送ラインに乗せます。",
+      timestamp: at(10, 52),
+      reactions: [{ emoji: "了解", users: ["佐藤デスク"] }, { emoji: "🙏", users: ["佐藤デスク"] }],
+    },
+    {
+      sender: "佐藤デスク",
+      text: "11時枠ニュース始まりました。あと2分で丸の内現場に振ります。映像ライン確定OK。",
+      timestamp: at(10, 58),
+    },
+    {
+      sender: "田中技術",
+      text: "映像・音声本線出力スタート。ノイズなし、伝送状態極めて安定しています。",
+      timestamp: at(11, 0),
+    },
+    {
+      sender: selfName,
+      text: "中継映像送信中。カメラ固定パンで煙と消防車枠を捉えています。",
+      timestamp: at(11, 1),
+    },
+    {
+      sender: "佐藤デスク",
+      text: "11時枠中継無事終了!映像クリアでした。先ほど消防より鎮火の発表あり。現場は安全を確認して撤収に入ってください。",
+      timestamp: at(11, 5),
+    },
+    {
+      sender: "田中技術",
+      text: "了解。仮設アンテナおよび伝送機材の撤去作業に入ります。撤収完了予定11:25。",
+      timestamp: at(11, 10),
+      reactions: [{ emoji: "了解", users: [selfName] }, { emoji: "👍", users: [selfName] }],
+    },
+    {
+      sender: selfName,
+      text: "カメラ撤収完了。予備SDカードのバックアップ完了。技術車に乗り込み帰局移動開始します。",
+      timestamp: at(11, 25),
+    },
+    {
+      sender: "田中技術",
+      text: "技術車、現場出発しました。首都高利用で約20分で局到着予定です。",
+      timestamp: at(11, 28),
+    },
+    {
+      sender: selfName,
+      text: "局に到着しました。機材の返却および撮影素材のサーバーアップロードを開始します。",
+      timestamp: at(11, 50),
+    },
+    {
+      sender: "佐藤デスク",
+      text: "お疲れ様でした!本出動の対応完了処理(ステータス完了)をお願いします。",
+      timestamp: at(11, 52),
+      reactions: [{ emoji: "了解", users: [selfName] }, { emoji: "🙏", users: [selfName] }],
     },
   ];
+
+  return raw.map((m, i) => ({
+    id: `dummy-${i + 1}-${now}`,
+    type: "text",
+    ...m,
+  }));
 }
 
 // チャット履歴のAI要約結果(/api/dispatch/chat-summary のレスポンス)
@@ -980,7 +1028,7 @@ export default function LiveDispatchPage() {
                   type="button"
                   onClick={() => setShowDummyChatConfirm(true)}
                   disabled={loadingDummyChat}
-                  title="動作確認用の技術担当シナリオのダミーチャットを読み込みます(既存のチャットは上書きされます)"
+                  title="動作確認用の火災出動シナリオ(局発〜中継〜撤収)のダミーチャットを読み込みます(既存のチャットは上書きされます)"
                   className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 font-semibold hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                 >
                   {loadingDummyChat ? "読み込み中..." : "ダミーチャットを読み込む"}
@@ -1304,7 +1352,7 @@ export default function LiveDispatchPage() {
         open={showDummyChatConfirm}
         title="動作確認用のダミーチャットを読み込みますか?"
         summary={[
-          { label: "内容", value: "技術担当シナリオ(佐藤デスク・田中技術とのやり取り、8件)" },
+          { label: "内容", value: "火災出動シナリオ(局発→現場中継→撤収→帰局、佐藤デスク・田中技術とのやり取り、19件)" },
           { label: "注意", value: "現在のチャット履歴は上書きされます" },
         ]}
         confirmLabel="読み込む"
