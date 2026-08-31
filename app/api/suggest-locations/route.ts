@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { Timestamp } from "firebase-admin/firestore";
+import { callAnthropicWithHaikuFallback } from "@/lib/anthropicModel";
 
 export type BroadcastLocationSuggestion = {
   recommended: {
@@ -26,114 +27,8 @@ export type BroadcastLocationSuggestion = {
   };
 };
 
-// Anthropic API 呼び出しヘルパー関数（フォールバック処理付き）
-async function callAnthropicAPI(
-  apiKey: string,
-  model: string,
-  prompt: string
-): Promise<{ success: boolean; data?: string; error?: string }> {
-  const models = [model, "claude-3-haiku-20240307"]; // フォールバックモデル
-
-  for (const currentModel of models) {
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: currentModel,
-          max_tokens: 500,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        let errorInfo = { type: "", message: "" };
-
-        try {
-          const errorData = JSON.parse(text);
-          errorInfo.type = errorData.error?.type || "unknown";
-          errorInfo.message = errorData.error?.message || errorData.message || text;
-        } catch {
-          errorInfo.message = text.substring(0, 200);
-        }
-
-        // 404/400 エラーで現在のモデルがテスト用の場合、フォールバック
-        if (
-          (res.status === 404 || res.status === 400) &&
-          currentModel === model &&
-          models.length > 1
-        ) {
-          console.warn(
-            `[suggest-locations] モデル「${currentModel}」が利用不可。フォールバックモデルで再試行します。`,
-            { status: res.status, error: errorInfo }
-          );
-          continue; // 次のモデルで再試行
-        }
-
-        // それ以外のエラーはここで終了
-        console.error("AI Generation Error - API Response Failed:", {
-          status: res.status,
-          statusText: res.statusText,
-          errorType: errorInfo.type,
-          errorMessage: errorInfo.message,
-          model: currentModel,
-          endpoint: "/api/suggest-locations",
-        });
-
-        const userMessage =
-          res.status === 401
-            ? "APIキーが無効です"
-            : res.status === 429
-              ? "リクエスト制限に達しました。しばらく待ってからお試しください"
-              : res.status >= 500
-                ? "Anthropic API サーバーエラーが発生しました。しばらく待ってからお試しください"
-                : "放送位置のスコアリングに失敗しました。しばらく時間を置いてお試しください。";
-
-        return { success: false, error: userMessage };
-      }
-
-      const data = await res.json();
-      const text = data.content
-        ?.map((block: { type: string; text?: string }) =>
-          block.type === "text" ? block.text : ""
-        )
-        .join("") ?? "";
-
-      return { success: true, data: text };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error("AI Generation Error - Exception:", {
-        model: currentModel,
-        error: errorMessage,
-        endpoint: "/api/suggest-locations",
-      });
-
-      // フォールバックがある場合は次を試す
-      if (currentModel !== models[models.length - 1]) {
-        continue;
-      }
-
-      return {
-        success: false,
-        error: "放送位置のスコアリングに失敗しました。サーバーログを確認してください。",
-      };
-    }
-  }
-
-  return {
-    success: false,
-    error: "すべてのモデルで放送位置スコアリングに失敗しました。",
-  };
-}
-
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const model = process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest";
 
   if (!apiKey) {
     console.error("AI Generation Error - Missing API Key:", {
@@ -180,8 +75,13 @@ ${candidatesText}
 }`;
 
   try {
-    // ヘルパー関数でAPI呼び出し（フォールバック処理付き）
-    const result = await callAnthropicAPI(apiKey, model, prompt);
+    // 共通ヘルパーでAPI呼び出し(Haikuシリーズ限定フォールバック付き)
+    const result = await callAnthropicWithHaikuFallback({
+      apiKey,
+      prompt,
+      maxTokens: 500,
+      endpoint: "/api/suggest-locations",
+    });
 
     if (!result.success) {
       console.error("API Suggestion Failed:", {
@@ -194,7 +94,7 @@ ${candidatesText}
       );
     }
 
-    const text = result.data || "";
+    const text = result.data;
 
     // JSON パース前に応答をログ出力
     console.log("API Response (raw):", {
