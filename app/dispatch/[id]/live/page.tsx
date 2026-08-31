@@ -982,9 +982,9 @@ export default function LiveDispatchPage() {
             </div>
 
             {/* 地図右上のコントロール群 - GPS取得状況バッジとハザードマップトグルを
-                同一のflexコンテナに並べることで、どちらもテキスト長に応じて幅が
-                変わっても重ならないようにする */}
-            <div className="absolute top-2 right-2 z-[1000] flex flex-col items-end gap-2">
+                同一のflexコンテナに横並びで配置することで、絶対配置の座標重複による
+                被りを防止する。画面幅が狭くテキストが長い場合はflex-wrapで折り返す */}
+            <div className="absolute top-3 right-3 z-[1000] flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100%-1.5rem)]">
               <div
                 className={`rounded-full shadow px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 ${
                   gpsStatus === "active"

@@ -587,11 +587,12 @@ export default function Map({
     <>
       <MapStyleInjector />
 
-      {/* ハザードマップON/OFFトグル - 凡例ボックス(右上)と被らないよう地図左上に配置 */}
+      {/* ハザードマップON/OFFトグル - 左上のLeaflet標準ズームコントロール(+/-)や
+          右上の凡例ボックスと被らないよう、ズームコントロールの下側に独立配置する */}
       <HazardMapToggle
         enabled={showHazardMap}
         onToggle={() => setShowHazardMap((v) => !v)}
-        className="absolute top-1.5 left-1.5 sm:top-4 sm:left-4 z-[2000]"
+        className="absolute top-20 left-1.5 sm:top-24 sm:left-4 z-[1000]"
       />
 
       {/* 凡例ボックス - 地図右上に配置
