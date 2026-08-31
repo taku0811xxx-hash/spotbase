@@ -183,10 +183,9 @@ function buildDummyTechChatMessages(selfName: string): ChatMessage[] {
 
 // チャット履歴のAI要約結果(/api/dispatch/chat-summary のレスポンス)
 type ChatSummary = {
-  overview: string;
-  crewActions: string[];
-  instructions: string[];
-  pendingItems: string[];
+  crewStatus: string; // ■ 現場の状況とクルーの動き
+  instructions: string; // ■ 主な指示と対応
+  currentPhase: string; // ■ 現在のステータス
 };
 
 export default function LiveDispatchPage() {
@@ -605,10 +604,9 @@ export default function LiveDispatchPage() {
         return;
       }
       setChatSummary({
-        overview: data.overview || "",
-        crewActions: data.crewActions || [],
-        instructions: data.instructions || [],
-        pendingItems: data.pendingItems || [],
+        crewStatus: data.crewStatus || "",
+        instructions: data.instructions || "",
+        currentPhase: data.currentPhase || "",
       });
     } catch (error) {
       console.error("チャット要約の生成に失敗しました:", error);
@@ -1058,37 +1056,22 @@ export default function LiveDispatchPage() {
                 )}
                 {!summarizing && !summaryError && chatSummary && (
                   <div className="mt-1.5 space-y-2 max-h-56 overflow-y-auto">
-                    {chatSummary.overview && (
-                      <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{chatSummary.overview}</p>
-                    )}
-                    {chatSummary.crewActions.length > 0 && (
+                    {chatSummary.crewStatus && (
                       <div>
-                        <p className="text-[11px] font-semibold text-gray-900">現場クルーの動き</p>
-                        <ul className="list-disc list-inside text-[11px] text-gray-800 space-y-0.5">
-                          {chatSummary.crewActions.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
+                        <p className="text-[11px] font-semibold text-gray-900">■ 現場の状況とクルーの動き</p>
+                        <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{chatSummary.crewStatus}</p>
                       </div>
                     )}
-                    {chatSummary.instructions.length > 0 && (
+                    {chatSummary.instructions && (
                       <div>
-                        <p className="text-[11px] font-semibold text-gray-900">出された指示内容</p>
-                        <ul className="list-disc list-inside text-[11px] text-gray-800 space-y-0.5">
-                          {chatSummary.instructions.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
+                        <p className="text-[11px] font-semibold text-gray-900">■ 主な指示と対応</p>
+                        <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{chatSummary.instructions}</p>
                       </div>
                     )}
-                    {chatSummary.pendingItems.length > 0 && (
+                    {chatSummary.currentPhase && (
                       <div>
-                        <p className="text-[11px] font-semibold text-gray-900">未確認・未解決の事項</p>
-                        <ul className="list-disc list-inside text-[11px] text-gray-800 space-y-0.5">
-                          {chatSummary.pendingItems.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
+                        <p className="text-[11px] font-semibold text-gray-900">■ 現在のステータス</p>
+                        <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{chatSummary.currentPhase}</p>
                       </div>
                     )}
                   </div>

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// 出動中(リアルタイム)画面の現場チャット履歴を、AI(Claude Haiku)で
-// 「現場クルーの動き(行動状況)」と「出された指示内容」に整理して返す。
-// APIキー未設定・外部API呼び出し失敗時は画面をエラーで止めず、
-// チャット履歴から機械的に抽出した疑似要約(フォールバック)を返す。
+// 出動中(リアルタイム)画面の現場チャット履歴を、Anthropic API(Claude)で
+// 「現場の状況とクルーの動き」「主な指示と対応」「現在のステータス」の3項目に
+// 要約する。ANTHROPIC_API_KEYが未設定、または外部API呼び出しに失敗した場合は
+// 疑似要約でごまかさず、その旨を明確なエラーとして返す。
+
+const MODEL = "claude-3-5-haiku-20241022";
 
 type IncomingMessage = {
   sender?: string;
@@ -12,62 +14,37 @@ type IncomingMessage = {
 };
 
 type ChatSummaryResult = {
-  overview: string;
-  crewActions: string[];
-  instructions: string[];
-  pendingItems: string[];
+  crewStatus: string;
+  instructions: string;
+  currentPhase: string;
 };
 
-// 「デスク」を含む送信者名、またはURLを含む発言は「指示・共有事項」側に、
-// それ以外は「現場の動き」側に分類する簡易ルールベースの疑似要約。
-// AI要約が使えない場合でも、画面が空にならず最低限の状況把握ができるようにする。
-function buildFallbackSummary(messages: IncomingMessage[]): ChatSummaryResult {
-  const bySender = new Map<string, string[]>();
-  for (const m of messages) {
-    const sender = (m.sender || "不明").trim();
-    const text = (m.text || "").trim();
-    if (!text) continue;
-    const list = bySender.get(sender) || [];
-    list.push(text);
-    bySender.set(sender, list);
-  }
-
-  const crewActions: string[] = [];
-  const instructions: string[] = [];
-  const urlPattern = /https?:\/\/\S+/;
-
-  for (const [sender, texts] of bySender) {
-    const isDesk = sender.includes("デスク");
-    const hasUrl = texts.some((t) => urlPattern.test(t));
-    const bodyText = texts
-      .map((t) => t.replace(urlPattern, "").trim())
-      .filter(Boolean)
-      .join("。");
-
-    if (isDesk || hasUrl) {
-      if (bodyText) {
-        instructions.push(`${sender}：${bodyText}`);
-      }
-      if (hasUrl) {
-        instructions.push(`${sender}より関連ニュースURLの共有あり`);
-      }
-    } else if (bodyText) {
-      crewActions.push(`${sender}：${bodyText}`);
+// Claudeの応答テキスト(■見出し区切りのプレーンテキスト)を3セクションへ分割する
+function parseSummaryText(rawText: string): ChatSummaryResult {
+  const extract = (label: string, nextLabels: string[]): string => {
+    const startIdx = rawText.indexOf(label);
+    if (startIdx === -1) return "";
+    let endIdx = rawText.length;
+    for (const next of nextLabels) {
+      const idx = rawText.indexOf(next, startIdx + label.length);
+      if (idx !== -1 && idx < endIdx) endIdx = idx;
     }
-  }
+    return rawText.slice(startIdx + label.length, endIdx).trim();
+  };
+
+  const LABEL_STATUS = "■ 現場の状況とクルーの動き";
+  const LABEL_INSTRUCTIONS = "■ 主な指示と対応";
+  const LABEL_PHASE = "■ 現在のステータス";
 
   return {
-    overview:
-      "AIによる要約が利用できなかったため、チャット履歴から自動抽出した簡易まとめを表示しています。",
-    crewActions,
-    instructions,
-    pendingItems: [],
+    crewStatus: extract(LABEL_STATUS, [LABEL_INSTRUCTIONS, LABEL_PHASE]),
+    instructions: extract(LABEL_INSTRUCTIONS, [LABEL_PHASE, LABEL_STATUS]),
+    currentPhase: extract(LABEL_PHASE, [LABEL_STATUS, LABEL_INSTRUCTIONS]),
   };
 }
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
 
   const { messages, locationName, incidentType } = (await req.json()) as {
     messages?: IncomingMessage[];
@@ -82,9 +59,12 @@ export async function POST(req: NextRequest) {
   if (!apiKey) {
     console.error("[Summary API Error]", {
       endpoint: "/api/dispatch/chat-summary",
-      reason: "ANTHROPIC_API_KEY が未設定です。フォールバック要約を返します。",
+      reason: "ANTHROPIC_API_KEY が未設定です",
     });
-    return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
+    return NextResponse.json(
+      { error: "ANTHROPIC_API_KEY が設定されていません" },
+      { status: 500 }
+    );
   }
 
   // AIへの入力量を抑えるため、直近200件・各発言500文字までに制限する
@@ -106,23 +86,20 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join("\n");
 
-  const prompt = `以下は、放送・報道クルーが出動中の現場でやり取りしたチャットの履歴です。
-${contextLines}
+  const prompt = `あなたは報道・現場対応チームをサポートするAIアシスタントです。
+提供された現場チャットログを解析し、以下のフォーマットで簡潔かつ正確に要約を作成してください。
 
----
-${transcript}
----
+■ 現場の状況とクルーの動き
+（誰がどこで何をしているか、回線・機材・現場の最新状況）
 
-この履歴から、後から現場の経緯を把握できるように整理してください。
-推測で補わず、履歴に書かれている内容だけを根拠にしてください。
+■ 主な指示と対応
+（デスクや管理者からの指示内容と、それに対する現場の対応状況）
 
-以下のJSON形式のみで出力してください。前置きや説明文は一切不要です。
-{
-  "overview": "全体の流れを2〜3行でまとめた概要",
-  "crewActions": ["現場クルーの動き(行動状況)を時系列で簡潔に。該当がなければ空配列"],
-  "instructions": ["出された指示内容を簡潔に。誰から誰へかが分かる場合は含める。該当がなければ空配列"],
-  "pendingItems": ["未解決・未確認のまま残っている事項。なければ空配列"]
-}`;
+■ 現在のステータス
+（「局発・移動中」「現場到着・準備中」「中継・対応中」「撤収・帰局中」などの現在のフェーズ）
+
+${contextLines ? `【現場情報】\n${contextLines}\n\n` : ""}【チャット履歴】
+${transcript}`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -133,7 +110,7 @@ ${transcript}
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model,
+        model: MODEL,
         max_tokens: 1500,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -147,43 +124,35 @@ ${transcript}
         statusText: res.statusText,
         body: text.substring(0, 200),
       });
-      // 外部APIエラー時も画面を止めず、フォールバック要約を返す
-      return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
+      const errorMessage =
+        res.status === 401
+          ? "APIキーが無効です"
+          : res.status === 429
+            ? "リクエスト制限に達しました。しばらく待ってからお試しください"
+            : "要約の生成に失敗しました。しばらく時間を置いてお試しください。";
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
     const data = await res.json();
     const rawText: string = data.content?.[0]?.text || "";
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    if (!rawText.trim()) {
       console.error("[Summary API Error]", {
         endpoint: "/api/dispatch/chat-summary",
-        reason: "AI応答からJSONを抽出できませんでした",
-        rawText: rawText.slice(0, 300),
+        reason: "AIの応答が空でした",
       });
-      return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
+      return NextResponse.json({ error: "要約の生成結果を取得できませんでした" }, { status: 500 });
     }
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      overview?: string;
-      crewActions?: string[];
-      instructions?: string[];
-      pendingItems?: string[];
-    };
 
-    const toStringArray = (value: unknown): string[] =>
-      Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && !!v.trim()) : [];
-
-    return NextResponse.json({
-      overview: parsed.overview || "",
-      crewActions: toStringArray(parsed.crewActions),
-      instructions: toStringArray(parsed.instructions),
-      pendingItems: toStringArray(parsed.pendingItems),
-    });
+    const summary = parseSummaryText(rawText);
+    return NextResponse.json(summary);
   } catch (error) {
     console.error("[Summary API Error]", {
       endpoint: "/api/dispatch/chat-summary",
       error,
     });
-    // 予期しない例外(ネットワークエラー等)でも画面を止めず、フォールバック要約を返す
-    return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
+    return NextResponse.json(
+      { error: "要約の生成中に予期しないエラーが発生しました" },
+      { status: 500 }
+    );
   }
 }
