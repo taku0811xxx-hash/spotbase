@@ -2,12 +2,68 @@ import { NextRequest, NextResponse } from "next/server";
 
 // 出動中(リアルタイム)画面の現場チャット履歴を、AI(Claude Haiku)で
 // 「現場クルーの動き(行動状況)」と「出された指示内容」に整理して返す。
+// APIキー未設定・外部API呼び出し失敗時は画面をエラーで止めず、
+// チャット履歴から機械的に抽出した疑似要約(フォールバック)を返す。
 
 type IncomingMessage = {
   sender?: string;
   text?: string;
   timestamp?: string;
 };
+
+type ChatSummaryResult = {
+  overview: string;
+  crewActions: string[];
+  instructions: string[];
+  pendingItems: string[];
+};
+
+// 「デスク」を含む送信者名、またはURLを含む発言は「指示・共有事項」側に、
+// それ以外は「現場の動き」側に分類する簡易ルールベースの疑似要約。
+// AI要約が使えない場合でも、画面が空にならず最低限の状況把握ができるようにする。
+function buildFallbackSummary(messages: IncomingMessage[]): ChatSummaryResult {
+  const bySender = new Map<string, string[]>();
+  for (const m of messages) {
+    const sender = (m.sender || "不明").trim();
+    const text = (m.text || "").trim();
+    if (!text) continue;
+    const list = bySender.get(sender) || [];
+    list.push(text);
+    bySender.set(sender, list);
+  }
+
+  const crewActions: string[] = [];
+  const instructions: string[] = [];
+  const urlPattern = /https?:\/\/\S+/;
+
+  for (const [sender, texts] of bySender) {
+    const isDesk = sender.includes("デスク");
+    const hasUrl = texts.some((t) => urlPattern.test(t));
+    const bodyText = texts
+      .map((t) => t.replace(urlPattern, "").trim())
+      .filter(Boolean)
+      .join("。");
+
+    if (isDesk || hasUrl) {
+      if (bodyText) {
+        instructions.push(`${sender}：${bodyText}`);
+      }
+      if (hasUrl) {
+        instructions.push(`${sender}より関連ニュースURLの共有あり`);
+      }
+    } else if (bodyText) {
+      crewActions.push(`${sender}：${bodyText}`);
+    }
+  }
+
+  return {
+    overview:
+      "AIによる要約が利用できなかったため、チャット履歴から自動抽出した簡易まとめを表示しています。",
+    crewActions,
+    instructions,
+    pendingItems: [],
+  };
+}
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -24,14 +80,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (!apiKey) {
-    console.error("AI Generation Error - Missing API Key:", {
+    console.error("[Summary API Error]", {
       endpoint: "/api/dispatch/chat-summary",
-      missingKey: "ANTHROPIC_API_KEY",
+      reason: "ANTHROPIC_API_KEY が未設定です。フォールバック要約を返します。",
     });
-    return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY が .env.local に設定されていません。管理者にご連絡ください。" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
   }
 
   // AIへの入力量を抑えるため、直近200件・各発言500文字までに制限する
@@ -88,24 +141,26 @@ ${transcript}
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("AI Generation Error - API Response Failed:", {
+      console.error("[Summary API Error]", {
+        endpoint: "/api/dispatch/chat-summary",
         status: res.status,
         statusText: res.statusText,
         body: text.substring(0, 200),
-        endpoint: "/api/dispatch/chat-summary",
       });
-      const errorMessage =
-        res.status === 401 ? "APIキーが無効です" :
-        res.status === 429 ? "リクエスト制限に達しました。しばらく待ってからお試しください" :
-        "要約の生成に失敗しました。しばらく時間を置いてお試しください。";
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      // 外部APIエラー時も画面を止めず、フォールバック要約を返す
+      return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
     }
 
     const data = await res.json();
     const rawText: string = data.content?.[0]?.text || "";
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return NextResponse.json({ error: "要約の生成結果を解析できませんでした" }, { status: 500 });
+      console.error("[Summary API Error]", {
+        endpoint: "/api/dispatch/chat-summary",
+        reason: "AI応答からJSONを抽出できませんでした",
+        rawText: rawText.slice(0, 300),
+      });
+      return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
     }
     const parsed = JSON.parse(jsonMatch[0]) as {
       overview?: string;
@@ -124,13 +179,11 @@ ${transcript}
       pendingItems: toStringArray(parsed.pendingItems),
     });
   } catch (error) {
-    console.error("AI Generation Error - Unexpected:", {
+    console.error("[Summary API Error]", {
       endpoint: "/api/dispatch/chat-summary",
       error,
     });
-    return NextResponse.json(
-      { error: "要約の生成中に予期しないエラーが発生しました" },
-      { status: 500 }
-    );
+    // 予期しない例外(ネットワークエラー等)でも画面を止めず、フォールバック要約を返す
+    return NextResponse.json({ ...buildFallbackSummary(messages), fallback: true });
   }
 }
