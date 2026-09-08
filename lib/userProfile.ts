@@ -14,6 +14,7 @@ export type UserProfile = {
   organizationName: string;
   category: UserCategory;
   accessLevel: AccessLevel;
+  phone?: string; // 連絡先電話番号(任意。未設定の場合はUI側でフォールバック表示)
 };
 
 const COLLECTION = "users";

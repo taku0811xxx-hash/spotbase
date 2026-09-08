@@ -910,6 +910,8 @@ export default function Home() {
               showPins={isDispatchListOpen}
               showLegend={showDetailPanel && !!selectedPin}
               dispatchListOpen={isDispatchListOpen}
+              myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
+              myStatus={myStatus}
             />
           </main>
         </div>
@@ -987,6 +989,8 @@ export default function Home() {
             lastKnownLocation={userLocation}
             crewMembers={dummyCrewMembers}
             onLocated={handleLocated}
+            myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
+            myStatus={myStatus}
           />
         </main>
 

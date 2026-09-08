@@ -17,7 +17,7 @@ import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
-import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
+import type { CrewMember, CrewStatus, StayPoint } from "@/lib/dummyCrew";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
 import {
   RainRadarTileLayer,
@@ -323,7 +323,12 @@ type Props = {
   showLegend?: boolean; // 駐車・駐停車の凡例ボックスを表示するか(詳細パネル表示時のみ等。省略時は常時表示)
   dispatchListOpen?: boolean; // 現場一覧メニューの開閉状態(地図幅が変わるためinvalidateSizeのトリガーに使う)
   onLocated?: (loc: { lat: number; lng: number }) => void; // 現在地表示ボタン押下時のコールバック
+  myProfile?: { name: string; category: string; phone?: string } | null; // 自分の現在地マーカーのポップアップに表示するログインユーザー情報
+  myStatus?: CrewStatus; // 自分の現在のステータス(ユーザーステータスパネルと連動)
 };
+
+// 自分の移動経路を表す特別なID。crewMembersのidと衝突しない専用の値として扱う。
+const SELF_ROUTE_ID = "__self__";
 
 // CSS for Leaflet controls positioning
 const mapStyles = `
@@ -573,26 +578,38 @@ function LocateControl({
 
     const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     console.log("[GPS Debug]", pos);
+    // 位置情報の取得自体には成功しているので、直前の(あるいはキャッシュflyTo後に
+    // 表示されたままの)エラー表示は確実にクリアする。地図移動処理(flyTo)側の
+    // 例外は下のtry/catchで完全に切り離し、位置情報取得エラーとは混同しない。
+    setErrorMessage(null);
     try {
       map.flyTo([loc.lat, loc.lng], 15, { animate: true, duration: 1.2 });
     } catch (error) {
-      console.warn("[GPS] 現在地へのflyToに失敗しました:", error);
+      // flyTo自体の失敗(_leaflet_pos等の描画系エラー)はGPS取得エラーではないため、
+      // ユーザー向けの「現在地取得エラー」表示は出さずコンソール警告のみに留める。
+      console.warn("[GPS] 現在地へのflyToに失敗しました(位置情報取得自体は成功):", error);
     }
     onLocated?.(loc);
     setLoading(false);
   }
 
   // 標準精度(Wi-Fi/IP測位)での再試行。高精度測位のタイムアウト・測位不能時のフォールバック。
-  function tryStandardAccuracy() {
+  // flewToCache: この操作の冒頭で既にlastKnownLocationへのflyToに成功しているかどうか。
+  // 成功している場合、地図上はユーザーから見て既に「現在地に移動済み」なので、裏側の
+  // 最新測位がここで失敗してもエラーバナーは出さず、コンソール警告のみに留める
+  // (「地図は動いたのにエラーが出る」という誤解を防ぐため)。
+  function tryStandardAccuracy(flewToCache: boolean) {
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (error) => {
         if (!mountedRef.current) return;
         console.warn("[GPS Error] 現在地の取得に失敗しました(標準精度):", error);
         setLoading(false);
-        setErrorMessage(describeError(error));
+        if (!flewToCache) {
+          setErrorMessage(describeError(error));
+        }
       },
-      { enableHighAccuracy: false, timeout: 8000 }
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
     );
   }
 
@@ -607,15 +624,17 @@ function LocateControl({
     // 直近の現在地が既に分かっていれば、GPSの再取得を待たずに即座にそこへ
     // flyToして体感速度を上げる(裏側では以下の通り最新の位置情報取得を継続し、
     // 取得でき次第もう一度flyToして精度を追従させる)。
+    let flewToCache = false;
     if (lastKnownLocation && isMapReady(map)) {
       try {
         map.flyTo([lastKnownLocation.lat, lastKnownLocation.lng], 15, { animate: true, duration: 1.2 });
+        flewToCache = true;
       } catch (error) {
         console.warn("[GPS] 既知の現在地へのflyToに失敗しました:", error);
       }
     }
 
-    console.log("[GPS Debug] 位置情報の取得を開始します(高精度, timeout 5000ms)");
+    console.log("[GPS Debug] 位置情報の取得を開始します(高精度, timeout 10000ms)");
 
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
@@ -629,9 +648,13 @@ function LocateControl({
           return;
         }
         // タイムアウト・測位不能の場合は標準精度(Wi-Fi/IP測位)で再試行する
-        tryStandardAccuracy();
+        tryStandardAccuracy(flewToCache);
       },
-      { enableHighAccuracy: true, timeout: 5000 }
+      // enableHighAccuracy: 可能な限りGPSの高精度測位を使う。
+      // timeout: 屋外での初回測位(コールドスタート)は5秒では不足しがちなため10秒に緩和。
+      // maximumAge: 30秒以内に取得済みの位置情報があればキャッシュを許容し、
+      //   タイムアウトの誤発火(=誤ったエラー表示)を抑える。
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
   }
 
@@ -780,15 +803,39 @@ export default function Map({
   showPins = true,
   showLegend = true,
   dispatchListOpen,
+  myProfile = null,
+  myStatus = "待機中",
 }: Props) {
   const [showHazardMap, setShowHazardMap] = useState(false);
   const [showRainRadar, setShowRainRadar] = useState(false);
   const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
 
-  // 「経路を見る」で選択中のクルーID。nullの間は経路非表示。
+  // 「経路を見る」で選択中のクルーID。nullの間は経路非表示。SELF_ROUTE_IDの場合は
+  // 自分自身の移動経路(selfPath)を表示する。
   const [activeRouteCrewId, setActiveRouteCrewId] = useState<string | null>(null);
   const activeRouteCrew = crewMembers.find((c) => c.id === activeRouteCrewId) ?? null;
-  const activeRouteHistory = activeRouteCrew?.locationHistory ?? null;
+
+  // 自分自身の移動経路。userLocationが更新されるたびに座標を蓄積していく
+  // (このセッション中に実際に辿った軌跡のみを対象とし、直前の座標とほぼ同じ場合は追加しない)。
+  const [selfPath, setSelfPath] = useState<[number, number][]>([]);
+  useEffect(() => {
+    if (!userLocation || !isValidCoordinate(userLocation.lat, userLocation.lng)) return;
+    setSelfPath((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && Math.abs(last[0] - userLocation.lat) < 1e-5 && Math.abs(last[1] - userLocation.lng) < 1e-5) {
+        return prev;
+      }
+      return [...prev, [userLocation.lat, userLocation.lng]];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation?.lat, userLocation?.lng]);
+
+  const activeRouteHistory =
+    activeRouteCrewId === SELF_ROUTE_ID
+      ? selfPath.length > 1
+        ? { path: selfPath, stayPoints: [] as StayPoint[] }
+        : null
+      : activeRouteCrew?.locationHistory ?? null;
 
   // 雨雲レーダーのタイムライン(過去〜最新〜未来予測)。選択中フレームのインデックスは
   // 初回ロード時に「最新の実測フレーム」で初期化し、以後はユーザーのスライダー操作/
@@ -831,14 +878,14 @@ export default function Map({
           配置は地図右上(ズームコントロール/半径プリセット/凡例と被らない位置)。
           凡例ボックス(showLegend時に同じ右上へ表示)と重なる場合のみ、その下へ
           ずらして表示する。 */}
-      {activeRouteCrew && (
+      {(activeRouteCrew || activeRouteCrewId === SELF_ROUTE_ID) && (
         <div
           className={`absolute right-1.5 sm:right-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg pl-2.5 pr-1.5 sm:pl-3 sm:pr-2 py-1.5 flex items-center gap-1.5 sm:gap-2 pointer-events-auto max-w-[calc(100%-0.75rem)] sm:max-w-xs ${
             showLegend ? "top-24 sm:top-32" : "top-1.5 sm:top-4"
           }`}
         >
           <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap truncate min-w-0">
-            📍 {activeRouteCrew.name} の経路を表示中
+            📍 {activeRouteCrewId === SELF_ROUTE_ID ? "自分" : activeRouteCrew?.name} の経路を表示中
           </span>
           <button
             onClick={() => setActiveRouteCrewId(null)}
@@ -973,14 +1020,66 @@ export default function Map({
           </Marker>
         ))}
 
-      {userLocation && isValidCoordinate(userLocation.lat, userLocation.lng) && (
-        <Marker
-          position={[userLocation.lat, userLocation.lng]}
-          icon={userLocationIcon}
-        >
-          <Popup>現在地</Popup>
-        </Marker>
-      )}
+      {userLocation && isValidCoordinate(userLocation.lat, userLocation.lng) && (() => {
+        const { main: myStatusColor } = CREW_STATUS_COLOR[myStatus] ?? CREW_STATUS_COLOR["待機中"];
+        return (
+          <Marker
+            position={[userLocation.lat, userLocation.lng]}
+            icon={userLocationIcon}
+          >
+            <Popup>
+              <div className="space-y-2 w-52">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-bold text-gray-900">
+                    (自分) {myProfile?.name ?? "未設定"}
+                    {myProfile?.category ? ` / ${myProfile.category}` : ""}
+                  </p>
+                  <span
+                    className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 whitespace-nowrap"
+                    style={{ backgroundColor: myStatusColor }}
+                  >
+                    {myStatus}
+                  </span>
+                </div>
+                {/* 電話番号リンク: crewポップアップと同様、Leafletのデフォルトの
+                    リンク色(青)がTailwindクラスより詳細度で勝ってしまうため、
+                    style属性で明示的に黒文字(#1a1a1a)を指定して確実に上書きする。 */}
+                {myProfile?.phone ? (
+                  <a
+                    href={`tel:${myProfile.phone}`}
+                    style={{ color: "#1a1a1a" }}
+                    className="block text-center text-sm bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded px-2 py-1.5 transition-colors font-semibold"
+                  >
+                    📞 {myProfile.phone}
+                  </a>
+                ) : (
+                  <p className="text-center text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
+                    連絡先未登録
+                  </p>
+                )}
+                {selfPath.length > 1 ? (
+                  activeRouteCrewId === SELF_ROUTE_ID ? (
+                    <p className="text-center text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1.5 font-medium">
+                      📍 経路表示中(右上のバーから閉じられます)
+                    </p>
+                  ) : (
+                    <button
+                      onClick={() => setActiveRouteCrewId(SELF_ROUTE_ID)}
+                      className="block w-full text-center text-sm bg-orange-100 text-orange-800 hover:bg-orange-200 rounded px-2 py-1.5 transition-colors font-medium"
+                    >
+                      📍 自分の移動経路を見る
+                    </button>
+                  )
+                ) : (
+                  <p className="text-center text-xs text-gray-400">
+                    移動経路を記録中です
+                  </p>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })()}
 
       {/* 報道クルー/スタッフの位置ピン(ダミーデータ)。ステータスに応じて色分けし、
           クリック時にPopupで詳細(氏名・職種・ステータス・車両・連絡先等)を表示する。 */}
