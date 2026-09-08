@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Marker, Polygon, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { GeoJSON, Marker, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
 // ============================================================
@@ -229,8 +229,24 @@ export function RainRadarTimeControl({
 }
 
 // ============================================================
-// 気象警報・注意報 (気象庁 防災情報JSON) - ポリゴン塗り + テキストラベル
+// 気象警報・注意報 (気象庁 防災情報JSON + 実境界GeoJSON)
 // ============================================================
+//
+// 従来は都県を単純な矩形(バウンディングボックス)で塗りつぶしていたため、
+// 「伊豆諸島(離島・海上)の波浪注意報が内陸の多摩地域にも表示される」といった
+// 不整合が生じていた。これは、都道府県コード(例:130000)配下の全エリア
+// (東京地方・伊豆諸島北部・伊豆諸島南部・小笠原諸島 等)の警報を単純に
+// 合算し、都県全体の1つの矩形へ描画していたことが原因。
+//
+// 対策として、気象庁の警報JSONが実際に警報・注意報を発表する単位である
+// 「一次細分区域(class10)」ごとに個別集計し、区域コード(例:130010=東京地方,
+// 130020=伊豆諸島北部)ごとに対応する実境界ポリゴンを取得して描画する方式に
+// 変更した。境界データは気象庁が公開する「予報区等GISデータ」を国立情報学
+// 研究所(NII)がGeoJSON/TopoJSON化して再配布している「気象庁防災情報発表
+// 区域データセット」(CC BY 4.0)を利用し、area.code(気象庁エリアコード)と
+// GeoJSON側のproperties.codeが1:1で対応するため、警報データとの紐付けを
+// 厳密に行える。
+// 参考: https://geoshape.ex.nii.ac.jp/jma/resource/
 
 type WarningSeverity = "special" | "warning" | "advisory";
 
@@ -290,98 +306,240 @@ function classifyWarningCode(code: string): { name: string; severity: WarningSev
 
 const SEVERITY_RANK: Record<WarningSeverity, number> = { advisory: 1, warning: 2, special: 3 };
 
-// 表示対象の都県(簡易実装のため放送クルーの主な活動エリアである関東主要4都県に限定)。
-// polygonは行政区域の正確な形状ではなく、可視化用に簡略化した概形の矩形(簡易GeoJSON代替)。
-const WARNING_REGIONS: {
-  name: string;
-  jmaAreaCode: string; // 気象庁 防災情報JSONのエリアコード
-  polygon: [number, number][]; // [lat, lng] の概形ポリゴン
-}[] = [
-  {
-    name: "東京都",
-    jmaAreaCode: "130000",
-    polygon: [
-      [35.9, 138.95],
-      [35.9, 139.95],
-      [35.5, 139.95],
-      [35.5, 138.95],
-    ],
-  },
-  {
-    name: "神奈川県",
-    jmaAreaCode: "140000",
-    polygon: [
-      [35.65, 138.9],
-      [35.65, 139.8],
-      [35.1, 139.8],
-      [35.1, 138.9],
-    ],
-  },
-  {
-    name: "埼玉県",
-    jmaAreaCode: "110000",
-    polygon: [
-      [36.3, 138.7],
-      [36.3, 139.95],
-      [35.75, 139.95],
-      [35.75, 138.7],
-    ],
-  },
-  {
-    name: "千葉県",
-    jmaAreaCode: "120000",
-    polygon: [
-      [35.85, 139.7],
-      [35.85, 140.95],
-      [34.9, 140.95],
-      [34.9, 139.7],
-    ],
-  },
+// 対象都県(放送クルーの主な活動エリアである関東主要4都県に限定)。
+// ここで持つのは都道府県コードのみで、実際に警報が発表される単位である
+// 一次細分区域(class10)のコード・名称・境界は気象庁の警報JSON/境界データから
+// 動的に取得する(ハードコードしない)。
+const TARGET_PREFECTURES: { name: string; jmaPrefCode: string }[] = [
+  { name: "東京都", jmaPrefCode: "130000" },
+  { name: "神奈川県", jmaPrefCode: "140000" },
+  { name: "埼玉県", jmaPrefCode: "110000" },
+  { name: "千葉県", jmaPrefCode: "120000" },
 ];
-
-// 単純多角形(頂点の単純平均)による代表座標の算出。行政区域の正確な重心ではないが、
-// ラベル配置用の近似座標としては十分。
-function polygonCentroid(polygon: [number, number][]): [number, number] {
-  const [latSum, lngSum] = polygon.reduce(
-    ([lat, lng], [pLat, pLng]) => [lat + pLat, lng + pLng],
-    [0, 0]
-  );
-  return [latSum / polygon.length, lngSum / polygon.length];
-}
 
 const WARNING_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
-type AreaWarningResult = { severity: WarningSeverity; names: string[] } | null;
+// 一次細分区域(class10)単位で発表中の警報・注意報を集計した結果
+type Class10Warning = {
+  code: string; // 一次細分区域コード(例: "130010")。GeoJSON側のproperties.codeと1:1対応
+  name: string; // 区域名(例: "東京地方")
+  severity: WarningSeverity;
+  names: string[]; // 発令中の警報・注意報の具体名一覧
+};
 
-// 指定した気象庁エリアコードの防災情報JSONを取得し、発表中(発表/継続)の
-// 警報・注意報の名称一覧と、そのうち最も深刻なティアを返す。
-async function fetchAreaWarnings(jmaAreaCode: string): Promise<AreaWarningResult> {
-  const res = await fetch(`https://www.jma.go.jp/bosai/warning/data/warning/${jmaAreaCode}.json`);
+// 指定した都道府県の警報JSONを取得し、一次細分区域(areaTypes[0] = class10)
+// ごとに発表中(発表/継続)の警報・注意報を集計する。
+// 注意: areaTypes[1]以降(市区町村等のより細かい区域)は集計対象に含めない。
+// これは、区域ごとの塗りつぶし単位を「実境界ポリゴンを個別取得できる
+// class10レベル」に統一するためであり、結果として「伊豆諸島の波浪注意報が
+// 東京地方(内陸含む)全体に誤って適用される」といった不整合を防げる
+// (例: 130010=東京地方 と 130020=伊豆諸島北部 は別区域として個別に集計される)。
+async function fetchPrefectureClass10Warnings(jmaPrefCode: string): Promise<Class10Warning[]> {
+  const res = await fetch(`https://www.jma.go.jp/bosai/warning/data/warning/${jmaPrefCode}.json`);
   if (!res.ok) throw new Error(`JMA API error: ${res.status}`);
   const data = await res.json();
 
-  let maxSeverity: WarningSeverity | null = null;
-  const names = new Set<string>();
+  const class10Areas = data?.areaTypes?.[0]?.areas ?? [];
+  const results: Class10Warning[] = [];
 
-  for (const areaType of data?.areaTypes ?? []) {
-    for (const area of areaType?.areas ?? []) {
-      for (const w of area?.warnings ?? []) {
-        // "発表"(新規発表)・"継続"(発表中)のみを有効な警報として扱う
-        // ("解除"や空文字ステータスは非表示対象)
-        if (w?.status !== "発表" && w?.status !== "継続") continue;
-        const info = classifyWarningCode(w?.code);
-        if (!info) continue;
-        names.add(info.name);
-        if (!maxSeverity || SEVERITY_RANK[info.severity] > SEVERITY_RANK[maxSeverity]) {
-          maxSeverity = info.severity;
-        }
+  for (const area of class10Areas) {
+    if (!area?.code) continue;
+    let maxSeverity: WarningSeverity | null = null;
+    const names = new Set<string>();
+
+    for (const w of area?.warnings ?? []) {
+      // "発表"(新規発表)・"継続"(発表中)のみを有効な警報として扱う
+      // ("解除"や「発表警報・注意報はなし」等のステータスは非表示対象)
+      if (w?.status !== "発表" && w?.status !== "継続") continue;
+      const info = classifyWarningCode(w?.code);
+      if (!info) continue;
+      names.add(info.name);
+      if (!maxSeverity || SEVERITY_RANK[info.severity] > SEVERITY_RANK[maxSeverity]) {
+        maxSeverity = info.severity;
       }
+    }
+
+    if (maxSeverity) {
+      results.push({ code: area.code, name: area.name ?? area.code, severity: maxSeverity, names: Array.from(names) });
     }
   }
 
-  if (!maxSeverity) return null;
-  return { severity: maxSeverity, names: Array.from(names) };
+  return results;
 }
+
+// ============================================================
+// 実境界ポリゴン取得 (NII Geoshapeリポジトリ「気象庁防災情報発表区域データセット」)
+// ============================================================
+
+// 一次細分区域(class10)の境界GeoJSON配布元。ファイル名が気象庁のエリアコードと
+// 完全一致するため、"{code}.geojson"で該当区域のポリゴンを直接取得できる。
+const AREA_BOUNDARY_BASE_URL =
+  "https://geoshape.ex.nii.ac.jp/jma/resource/AreaForecastLocalM_1saibun/20190125";
+
+type LngLat = [number, number]; // GeoJSON座標順 [lng, lat]
+
+type AreaBoundary = {
+  code: string;
+  name: string; // 区域名(境界GeoJSONのproperties.nameから取得。気象庁の警報JSON自体にはname項目がないため)
+  geoJson: GeoJSON.Feature; // 簡略化済みのPolygon/MultiPolygon
+  centroid: [number, number]; // ラベル配置用の代表座標 [lat, lng]
+};
+
+// --- Douglas-Peucker簡略化(海岸線の点数を減らし描画負荷を抑える。外部ライブラリ不使用) ---
+
+function perpendicularDistance(point: LngLat, lineStart: LngLat, lineEnd: LngLat): number {
+  const [x, y] = point;
+  const [x1, y1] = lineStart;
+  const [x2, y2] = lineEnd;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(x - x1, y - y1);
+  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
+  return Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy));
+}
+
+function douglasPeucker(points: LngLat[], tolerance: number): LngLat[] {
+  if (points.length < 3) return points;
+  let maxDist = 0;
+  let maxIndex = 0;
+  const start = points[0];
+  const end = points[points.length - 1];
+  for (let i = 1; i < points.length - 1; i++) {
+    const dist = perpendicularDistance(points[i], start, end);
+    if (dist > maxDist) {
+      maxDist = dist;
+      maxIndex = i;
+    }
+  }
+  if (maxDist > tolerance) {
+    const left = douglasPeucker(points.slice(0, maxIndex + 1), tolerance);
+    const right = douglasPeucker(points.slice(maxIndex), tolerance);
+    return [...left.slice(0, -1), ...right];
+  }
+  return [start, end];
+}
+
+function simplifyRing(ring: LngLat[], tolerance: number): LngLat[] {
+  if (ring.length <= 4) return ring; // 三角形+閉包点程度は簡略化しない
+  const simplified = douglasPeucker(ring, tolerance);
+  return simplified.length >= 4 ? simplified : ring; // 潰れすぎた場合は元の形状を維持
+}
+
+// ズームレベルの低い(広域)地図での描画負荷を抑えるための座標簡略化許容誤差(度)。
+// 約0.0015度 ≈ 150m程度の誤差を許容する。
+const BOUNDARY_SIMPLIFY_TOLERANCE = 0.0015;
+
+function simplifyGeoJsonFeature(feature: GeoJSON.Feature, tolerance: number): GeoJSON.Feature {
+  const geometry = feature.geometry;
+  if (!geometry) return feature;
+
+  if (geometry.type === "Polygon") {
+    const rings = (geometry.coordinates as unknown as LngLat[][]).map((ring) => simplifyRing(ring, tolerance));
+    return { ...feature, geometry: { ...geometry, coordinates: rings as any } };
+  }
+  if (geometry.type === "MultiPolygon") {
+    const polygons = (geometry.coordinates as unknown as LngLat[][][]).map((poly) =>
+      poly.map((ring) => simplifyRing(ring, tolerance))
+    );
+    return { ...feature, geometry: { ...geometry, coordinates: polygons as any } };
+  }
+  return feature;
+}
+
+// --- 重心(Centroid)計算 ---
+// シューレース公式による符号付き面積・重心の計算。MultiPolygonの場合は
+// 最大面積の陸地(外環)を代表座標として採用する(離島などで複数の陸地に
+// 分かれる区域でも、ラベルが海上に浮かばないようにするため)。
+
+function ringSignedArea(ring: LngLat[]): number {
+  let area = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[i + 1];
+    area += x1 * y2 - x2 * y1;
+  }
+  return area / 2;
+}
+
+function ringCentroid(ring: LngLat[]): { lat: number; lng: number; area: number } {
+  const area = ringSignedArea(ring);
+  if (Math.abs(area) < 1e-12) {
+    const [lngSum, latSum] = ring.reduce(([lng, lat], [x, y]) => [lng + x, lat + y], [0, 0]);
+    return { lat: latSum / ring.length, lng: lngSum / ring.length, area: 0 };
+  }
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[i + 1];
+    const cross = x1 * y2 - x2 * y1;
+    cx += (x1 + x2) * cross;
+    cy += (y1 + y2) * cross;
+  }
+  return { lat: cy / (6 * area), lng: cx / (6 * area), area: Math.abs(area) };
+}
+
+function computeFeatureCentroid(feature: GeoJSON.Feature): [number, number] {
+  const geometry = feature.geometry;
+  const exteriorRings: LngLat[][] =
+    geometry?.type === "Polygon"
+      ? [geometry.coordinates[0] as unknown as LngLat[]]
+      : geometry?.type === "MultiPolygon"
+        ? (geometry.coordinates as unknown as LngLat[][][]).map((poly) => poly[0])
+        : [];
+
+  let best: { lat: number; lng: number; area: number } | null = null;
+  for (const ring of exteriorRings) {
+    const c = ringCentroid(ring);
+    if (!best || c.area > best.area) best = c;
+  }
+  return best ? [best.lat, best.lng] : [35.681236, 139.767125]; // フォールバック(東京駅付近)
+}
+
+// 取得済み境界ポリゴンをモジュールスコープでキャッシュする(境界データ自体は
+// ほぼ不変のため、セッション中はトグルON/OFFを繰り返しても再取得しない)。
+const areaBoundaryCache = new globalThis.Map<string, AreaBoundary>();
+const areaBoundaryInFlight = new globalThis.Map<string, Promise<AreaBoundary | null>>();
+
+// 指定した区域コードの実境界ポリゴンを取得する。発令中の区域についてのみ
+// 呼び出すことで、無関係な区域(例: 警報の出ていない離島)の大きなGeoJSON
+// ファイルまで無条件にダウンロードしてしまう帯域の無駄を避けている。
+async function fetchAreaBoundary(code: string): Promise<AreaBoundary | null> {
+  const cached = areaBoundaryCache.get(code);
+  if (cached) return cached;
+  const inFlight = areaBoundaryInFlight.get(code);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(`${AREA_BOUNDARY_BASE_URL}/${code}.geojson`);
+      if (!res.ok) throw new Error(`Area boundary fetch error: ${res.status}`);
+      const raw = await res.json();
+      const feature: GeoJSON.Feature | undefined = raw?.features?.[0];
+      if (!feature?.geometry) return null;
+
+      const simplified = simplifyGeoJsonFeature(feature, BOUNDARY_SIMPLIFY_TOLERANCE);
+      const centroid = computeFeatureCentroid(simplified);
+      const name = (simplified.properties as { name?: string } | null)?.name ?? code;
+      const boundary: AreaBoundary = { code, name, geoJson: simplified, centroid };
+      areaBoundaryCache.set(code, boundary);
+      return boundary;
+    } catch (error) {
+      console.warn(`[JMA境界] エリアコード${code}の境界データ取得に失敗しました:`, error);
+      return null;
+    } finally {
+      areaBoundaryInFlight.delete(code);
+    }
+  })();
+
+  areaBoundaryInFlight.set(code, promise);
+  return promise;
+}
+
+// ============================================================
+// 警報テキストの省略表示ロジック
+// ============================================================
 
 // 名称末尾の警報種別サフィックス。判定順が重要("特別警報"は"警報"でも終わるため先に判定する)
 const WARNING_NAME_SUFFIXES = ["特別警報", "警報", "注意報"] as const;
@@ -417,12 +575,11 @@ function summarizeWarningNames(names: string[], severity: WarningSeverity): stri
 }
 
 // 表示テキストを決定する。3件以上、または広域ズーム(zoom<=8)の場合は要約表示にする。
-function resolveWarningLabelText(names: string[], severity: WarningSeverity, zoom: number): { text: string; isSummary: boolean } {
+function resolveWarningLabelText(names: string[], severity: WarningSeverity, zoom: number): { text: string } {
   const shouldSummarize = names.length >= 3 || zoom <= 8;
-  if (!shouldSummarize) {
-    return { text: names.join(" / "), isSummary: false };
-  }
-  return { text: summarizeWarningNames(names, severity), isSummary: true };
+  return shouldSummarize
+    ? { text: summarizeWarningNames(names, severity) }
+    : { text: names.join(" / ") };
 }
 
 // 警報ラベル用divIconをキャッシュしつつ生成する(同一内容の再生成を避けるため)
@@ -470,34 +627,49 @@ function getWarningLabelIcon(text: string, severity: WarningSeverity): L.DivIcon
   return icon;
 }
 
-// 都県ごとの気象庁警報データを取得・定期更新する共有フック。
-// ポリゴン塗り(WarningPolygonLayer)とテキストラベル(WarningLabelLayer)の
-// 両方から参照される(ラベルは重なり順の都合でハザードマップ/雨雲レーダーより
-// 上位の別Paneに描画する必要があるため、取得ロジックを1箇所にまとめて共有する)。
-function useWarningResults() {
-  const [results, setResults] = useState<Record<string, AreaWarningResult>>({});
+// ============================================================
+// 共有フック: 発令中の一次細分区域一覧 + 対応する実境界ポリゴン
+// ============================================================
+
+function useActiveWarningAreas() {
+  const [areas, setAreas] = useState<Class10Warning[]>([]);
+  const [boundaries, setBoundaries] = useState<Record<string, AreaBoundary>>({});
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      const fetched = await Promise.allSettled(
-        WARNING_REGIONS.map((region) => fetchAreaWarnings(region.jmaAreaCode))
+      const perPrefecture = await Promise.allSettled(
+        TARGET_PREFECTURES.map((p) => fetchPrefectureClass10Warnings(p.jmaPrefCode))
       );
       if (cancelled) return;
-      const next: Record<string, AreaWarningResult> = {};
-      fetched.forEach((result, i) => {
+
+      const activeAreas: Class10Warning[] = [];
+      perPrefecture.forEach((result, i) => {
         if (result.status === "fulfilled") {
-          next[WARNING_REGIONS[i].jmaAreaCode] = result.value;
+          activeAreas.push(...result.value);
         } else {
           console.warn(
-            `[JMA] ${WARNING_REGIONS[i].name}の警報情報取得に失敗しました:`,
+            `[JMA] ${TARGET_PREFECTURES[i].name}の警報情報取得に失敗しました:`,
             result.reason
           );
-          next[WARNING_REGIONS[i].jmaAreaCode] = null;
         }
       });
-      setResults(next);
+      setAreas(activeAreas);
+
+      // 発令中の区域についてのみ実境界ポリゴンを取得する(未発令の区域は
+      // ポリゴン自体不要なため、無駄なデータ転送を避ける)
+      const fetched = await Promise.allSettled(activeAreas.map((a) => fetchAreaBoundary(a.code)));
+      if (cancelled) return;
+      setBoundaries((prev) => {
+        const next = { ...prev };
+        fetched.forEach((result) => {
+          if (result.status === "fulfilled" && result.value) {
+            next[result.value.code] = result.value;
+          }
+        });
+        return next;
+      });
     }
 
     load();
@@ -508,25 +680,25 @@ function useWarningResults() {
     };
   }, []);
 
-  return results;
+  return { areas, boundaries };
 }
 
-// 警報・注意報の半透明塗りつぶしポリゴン。
+// 警報・注意報の実境界ポリゴン塗りつぶし。
 export function WarningPolygonLayer() {
-  const results = useWarningResults();
+  const { areas, boundaries } = useActiveWarningAreas();
 
   return (
     <>
-      {WARNING_REGIONS.map((region) => {
-        const result = results[region.jmaAreaCode];
-        if (!result) return null;
-        const fillStyle = WARNING_SEVERITY_FILL[result.severity];
+      {areas.map((area) => {
+        const boundary = boundaries[area.code];
+        if (!boundary) return null; // 境界データ取得中/失敗時はまだ描画しない
+        const fillStyle = WARNING_SEVERITY_FILL[area.severity];
         return (
-          <Polygon
-            key={region.jmaAreaCode}
-            positions={region.polygon}
+          <GeoJSON
+            key={area.code}
+            data={boundary.geoJson as any}
             interactive={false}
-            pathOptions={{
+            style={{
               fillColor: fillStyle.fillColor,
               fillOpacity: fillStyle.fillOpacity,
               color: "transparent",
@@ -539,13 +711,20 @@ export function WarningPolygonLayer() {
   );
 }
 
-// 隣接する地域同士のラベルが重ならないよう、現在のズーム/表示範囲における
+// ============================================================
+// ラベルの重なり防止(クラスタリング)
+// ============================================================
+
+// 隣接する区域同士のラベルが重ならないよう、現在のズーム/表示範囲における
 // 画面ピクセル距離が近いラベル同士を1つの代表ラベルへ統合するためのしきい値(px)。
 const LABEL_CLUSTER_DISTANCE_PX = 70;
 
-type ActiveRegion = {
-  region: (typeof WARNING_REGIONS)[number];
-  result: NonNullable<AreaWarningResult>;
+type ActiveAreaForLabel = {
+  code: string;
+  name: string;
+  severity: WarningSeverity;
+  names: string[];
+  centroid: [number, number];
 };
 
 type LabelCluster = {
@@ -555,17 +734,14 @@ type LabelCluster = {
   members: { regionName: string; names: string[] }[]; // ポップアップでの内訳表示用
 };
 
-// 現在の地図表示状態(中心・ズーム)で各地域ラベルの画面座標を計算し、
-// 一定距離内にあるものを1クラスタにまとめる(表示範囲外でもラベル自体は
-// 表示対象のため、投影計算にはmap.project()を使い画面外座標も許容する)。
-function clusterActiveRegions(map: L.Map, activeRegions: ActiveRegion[]): LabelCluster[] {
-  const n = activeRegions.length;
+// 現在の地図表示状態(ズーム)で各区域ラベルの画面座標を計算し、
+// 一定距離内にあるものを1クラスタにまとめる。
+function clusterActiveAreas(map: L.Map, activeAreas: ActiveAreaForLabel[]): LabelCluster[] {
+  const n = activeAreas.length;
   if (n === 0) return [];
 
   const zoom = map.getZoom();
-  const points = activeRegions.map(({ region }) =>
-    map.project(L.latLng(polygonCentroid(region.polygon)), zoom)
-  );
+  const points = activeAreas.map((a) => map.project(L.latLng(a.centroid), zoom));
 
   const parent = Array.from({ length: n }, (_, i) => i);
   function find(x: number): number {
@@ -591,27 +767,26 @@ function clusterActiveRegions(map: L.Map, activeRegions: ActiveRegion[]): LabelC
   }
 
   return Array.from(groups.values()).map((idxs) => {
-    const items = idxs.map((i) => activeRegions[i]);
-    const centroids = items.map(({ region }) => polygonCentroid(region.polygon));
-    const avgLat = centroids.reduce((sum, c) => sum + c[0], 0) / centroids.length;
-    const avgLng = centroids.reduce((sum, c) => sum + c[1], 0) / centroids.length;
+    const items = idxs.map((i) => activeAreas[i]);
+    const avgLat = items.reduce((sum, it) => sum + it.centroid[0], 0) / items.length;
+    const avgLng = items.reduce((sum, it) => sum + it.centroid[1], 0) / items.length;
 
-    const names = Array.from(new Set(items.flatMap(({ result }) => result.names)));
+    const names = Array.from(new Set(items.flatMap((it) => it.names)));
     const severity = items.reduce<WarningSeverity>(
-      (max, { result }) => (SEVERITY_RANK[result.severity] > SEVERITY_RANK[max] ? result.severity : max),
-      items[0].result.severity
+      (max, it) => (SEVERITY_RANK[it.severity] > SEVERITY_RANK[max] ? it.severity : max),
+      items[0].severity
     );
 
     return {
       position: [avgLat, avgLng],
       names,
       severity,
-      members: items.map(({ region, result }) => ({ regionName: region.name, names: result.names })),
+      members: items.map((it) => ({ regionName: it.name, names: it.names })),
     };
   });
 }
 
-// ポップアップの内訳表示。地域ごとに発令中の警報・注意報名を列挙する。
+// ポップアップの内訳表示。区域ごとに発令中の警報・注意報名を列挙する。
 function WarningPopupDetail({ members }: { members: LabelCluster["members"] }) {
   return (
     <div className="text-xs space-y-1.5 max-w-[220px]">
@@ -629,10 +804,11 @@ function WarningPopupDetail({ members }: { members: LabelCluster["members"] }) {
 // ハザードマップ/雨雲レーダーのタイルより確実に前面へ出す必要があるため、
 // ポリゴン塗り(WarningPolygonLayer)とは別の高いzIndexのPaneで描画する想定
 // (呼び出し側でPane配置を行う)。
+// - 各区域の実境界ポリゴンの重心(最大陸地の面積重心)にラベルを配置する
 // - 3件以上発令中/広域ズーム時は要約表示にし、クリックで内訳ポップアップを開ける
-// - 近接する地域のラベルは1つに統合し、重なりを防ぐ
+// - 近接する区域のラベルは1つに統合し、重なりを防ぐ
 export function WarningLabelLayer() {
-  const results = useWarningResults();
+  const { areas, boundaries } = useActiveWarningAreas();
   const map = useMap();
   const [viewTick, setViewTick] = useState(0);
 
@@ -645,17 +821,22 @@ export function WarningLabelLayer() {
     },
   });
 
-  const activeRegions = useMemo<ActiveRegion[]>(
+  const activeAreas = useMemo<ActiveAreaForLabel[]>(
     () =>
-      WARNING_REGIONS.map((region) => {
-        const result = results[region.jmaAreaCode];
-        return result ? { region, result } : null;
-      }).filter((v): v is ActiveRegion => v !== null),
-    [results]
+      areas
+        .map((a) => {
+          const boundary = boundaries[a.code];
+          if (!boundary) return null;
+          // 気象庁の警報JSON自体には区域名が含まれないため、境界GeoJSON側の
+          // properties.name(実際の区域名)を優先して使う
+          return { code: a.code, name: boundary.name, severity: a.severity, names: a.names, centroid: boundary.centroid };
+        })
+        .filter((v): v is ActiveAreaForLabel => v !== null),
+    [areas, boundaries]
   );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- viewTickは再計算トリガー用
-  const clusters = useMemo(() => clusterActiveRegions(map, activeRegions), [map, activeRegions, viewTick]);
+  const clusters = useMemo(() => clusterActiveAreas(map, activeAreas), [map, activeAreas, viewTick]);
 
   const zoom = map.getZoom();
 
