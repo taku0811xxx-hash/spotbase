@@ -1,6 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import type {
+  BackgroundGeolocationPlugin,
+  CallbackError,
+  Location as NativeLocation,
+} from "@capacitor-community/background-geolocation";
+
+// このプラグインはコンパイル済みJSを持たず、registerPluginで自前登録する形式
+// (READMEの使用例に準拠)。Webでは呼ばれないため、Web版ビルドには影響しない。
+const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
+  "BackgroundGeolocation",
+);
 
 export type GpsStatus = "acquiring" | "active" | "denied" | "unavailable";
 
@@ -74,6 +86,67 @@ export function useGpsTracking({
 
   useEffect(() => {
     if (!enabled) return;
+
+    // ネイティブアプリ(Capacitor/iOS)実行時は @capacitor-community/background-geolocation
+    // を使い、アプリがバックグラウンド・端末スリープ中でも10m移動ごとに位置を取得し続ける。
+    // (Web版のwatchPositionはブラウザ/OSの制約でバックグラウンド追跡ができないため)
+    if (Capacitor.isNativePlatform()) {
+      let watcherId: string | null = null;
+      let cancelled = false;
+      activeRef.current = true;
+      setGpsStatus("acquiring");
+
+      BackgroundGeolocation.addWatcher(
+        {
+          backgroundMessage: "出動中の移動経路を記録しています",
+          backgroundTitle: "SpotBase 位置情報追跡中",
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 10, // 10m移動ごとに更新
+        },
+        (position?: NativeLocation, error?: CallbackError) => {
+          if (cancelled || !activeRef.current) return;
+          if (error) {
+            console.warn("[GPS Error][Native] 位置情報の取得に失敗しました:", error);
+            if (error.code === "NOT_AUTHORIZED") {
+              setGpsStatus("denied");
+            } else if (!gotFirstFixRef.current) {
+              setGpsStatus("unavailable");
+              if (defaultLocation) setCurrentLocation((prev) => prev ?? defaultLocation);
+            }
+            return;
+          }
+          if (!position) return;
+          gotFirstFixRef.current = true;
+          lastFixAtRef.current = Date.now();
+          const loc = { lat: position.latitude, lng: position.longitude };
+          console.log("[GPS Debug][Native] fix取得", loc);
+          setCurrentLocation(loc);
+          setGpsStatus("active");
+          onFixRef.current?.(loc);
+        },
+      )
+        .then((id: string) => {
+          if (cancelled) {
+            BackgroundGeolocation.removeWatcher({ id }).catch(() => {});
+            return;
+          }
+          watcherId = id;
+        })
+        .catch((err: unknown) => {
+          console.warn("[GPS Error][Native] watcherの登録に失敗しました:", err);
+          setGpsStatus("unavailable");
+          if (defaultLocation) setCurrentLocation((prev) => prev ?? defaultLocation);
+        });
+
+      return () => {
+        cancelled = true;
+        activeRef.current = false;
+        if (watcherId) {
+          BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => {});
+        }
+      };
+    }
 
     if (
       typeof window === "undefined" ||

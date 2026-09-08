@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
     "@turf/nearest-point-on-line": "^7.4.0",
     "@turf/turf": "^7.4.0",
     "firebase": "^12.17.1",
