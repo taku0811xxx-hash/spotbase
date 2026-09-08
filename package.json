@@ -17,6 +17,7 @@
     "@capacitor/ios": "^8.5.1",
     "@turf/nearest-point-on-line": "^7.4.0",
     "@turf/turf": "^7.4.0",
+    "capacitor-native-settings": "^8.2.0",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
     "leaflet": "^1.9.4",

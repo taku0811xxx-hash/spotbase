@@ -12,7 +12,7 @@ const config: CapacitorConfig = {
   server: {
     // 開発中は下のURLをローカル開発サーバ(例: 'http://<PCのLAN IP>:3000')に
     // 差し替えて実機確認できる。cleartext: true はhttpのローカル開発時のみ有効化する。
-    url: 'https://spotbase.vercel.app',
+    url: 'https://spotbase-theta.vercel.app',
     cleartext: false,
   },
 };

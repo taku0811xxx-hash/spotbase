@@ -32,6 +32,12 @@ interface UseGpsTrackingResult {
   gpsStatus: GpsStatus;
   // 「現在地を表示」ボタン等、hook外から明示的に取得した位置を追跡状態に反映させる
   reportManualFix: (loc: LatLng) => void;
+  // ネイティブ(iOS)で「常に許可」が必要な旨を案内するモーダルを表示すべきか。
+  // バックグラウンド追跡の開始時、および位置情報が未許可(NOT_AUTHORIZED)と
+  // わかった時にtrueになる。表示側はこれを見てAlwaysLocationPermissionModal等を出す。
+  showAlwaysPermissionPrompt: boolean;
+  // 案内モーダルを閉じる(「あとで設定する」・背景タップなど)
+  dismissAlwaysPermissionPrompt: () => void;
 }
 
 const WATCH_OPTIONS: PositionOptions = {
@@ -69,6 +75,7 @@ export function useGpsTracking({
 }: UseGpsTrackingOptions): UseGpsTrackingResult {
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>("acquiring");
+  const [showAlwaysPermissionPrompt, setShowAlwaysPermissionPrompt] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
   const backoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,13 +103,24 @@ export function useGpsTracking({
       activeRef.current = true;
       setGpsStatus("acquiring");
 
+      // バックグラウンド追跡を開始するタイミングで、「常に許可」への誘導モーダルを
+      // 一度案内する。このプラグインはCLLocationManagerの現在の認可状態を直接
+      // 取得する手段を提供していないため、「開始時に必ず一度案内」+「NOT_AUTHORIZED
+      // エラー時に再度案内」の2段構えにしている(既に「常に許可」済みのユーザーは
+      // 「あとで設定する」で閉じれば以降のトラッキング中は再表示されない)。
+      setShowAlwaysPermissionPrompt(true);
+
       BackgroundGeolocation.addWatcher(
         {
-          backgroundMessage: "出動中の移動経路を記録しています",
+          backgroundMessage: "取材クルーの移動経路を記録中...",
           backgroundTitle: "SpotBase 位置情報追跡中",
           requestPermissions: true,
           stale: false,
-          distanceFilter: 10, // 10m移動ごとに更新
+          // 省電力優先: 一定間隔でのポーリングではなく「10m以上の移動」を
+          // 検知したときだけ位置を取得・保存することでバッテリー消費を抑える。
+          // (このプラグインはdesiredAccuracy=位置精度そのものの指定には未対応で、
+          // 内部でバッテリー残量に応じてiOSのCLLocationAccuracyを自動選択している)
+          distanceFilter: 10,
         },
         (position?: NativeLocation, error?: CallbackError) => {
           if (cancelled || !activeRef.current) return;
@@ -110,6 +128,8 @@ export function useGpsTracking({
             console.warn("[GPS Error][Native] 位置情報の取得に失敗しました:", error);
             if (error.code === "NOT_AUTHORIZED") {
               setGpsStatus("denied");
+              // 未許可が確定した場合は、閉じていても改めて「常に許可」を案内する
+              setShowAlwaysPermissionPrompt(true);
             } else if (!gotFirstFixRef.current) {
               setGpsStatus("unavailable");
               if (defaultLocation) setCurrentLocation((prev) => prev ?? defaultLocation);
@@ -142,6 +162,7 @@ export function useGpsTracking({
       return () => {
         cancelled = true;
         activeRef.current = false;
+        setShowAlwaysPermissionPrompt(false);
         if (watcherId) {
           BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => {});
         }
@@ -311,5 +332,15 @@ export function useGpsTracking({
     setGpsStatus("active");
   }
 
-  return { currentLocation, gpsStatus, reportManualFix };
+  function dismissAlwaysPermissionPrompt() {
+    setShowAlwaysPermissionPrompt(false);
+  }
+
+  return {
+    currentLocation,
+    gpsStatus,
+    reportManualFix,
+    showAlwaysPermissionPrompt,
+    dismissAlwaysPermissionPrompt,
+  };
 }

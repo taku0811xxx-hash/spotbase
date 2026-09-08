@@ -24,6 +24,7 @@ import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import PageHeader from "@/components/PageHeader";
 import { HazardMapToggle } from "@/components/HazardMapLayer";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import AlwaysLocationPermissionModal from "@/components/AlwaysLocationPermissionModal";
 import { useGpsTracking } from "@/lib/hooks/useGpsTracking";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
@@ -329,7 +330,13 @@ export default function LiveDispatchPage() {
   // バックグラウンド切り替え・端末スリープ・一時的な電波障害等で追跡が完全に
   // 停止してしまわないよう、リトライ・画面復帰検知・Wake Lock・ハートビートを
   // 組み合わせたロジックはlib/hooks/useGpsTracking.tsに集約している。
-  const { currentLocation, gpsStatus, reportManualFix } = useGpsTracking({
+  const {
+    currentLocation,
+    gpsStatus,
+    reportManualFix,
+    showAlwaysPermissionPrompt,
+    dismissAlwaysPermissionPrompt,
+  } = useGpsTracking({
     enabled: !authLoading && !!user,
     onFix: recordTrackPoint,
     defaultLocation: DEFAULT_LOCATION,
@@ -1217,6 +1224,12 @@ export default function LiveDispatchPage() {
           </div>
         </div>
       )}
+
+      {/* 「常に許可」への誘導モーダル(ネイティブ/iOSでバックグラウンド追跡開始時・未許可検知時) */}
+      <AlwaysLocationPermissionModal
+        open={showAlwaysPermissionPrompt}
+        onClose={dismissAlwaysPermissionPrompt}
+      />
 
       {/* 削除確認ダイアログ - 地図等より確実に前面に表示するためPortalでbody直下に描画(z-[9999]) */}
       <ConfirmDialog
