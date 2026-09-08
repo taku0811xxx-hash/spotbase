@@ -188,6 +188,22 @@ function getCrewIcon(status: CrewStatus): L.DivIcon {
   return icon;
 }
 
+// クルー移動経路の「滞在ポイント」用アイコン(時計マーク付きの丸ピン)。
+// クルー本体のピン(涙型)とは形を変えて区別できるようにする。
+const stayPointIcon = L.divIcon({
+  className: "",
+  html: `
+    <svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="13" cy="13" r="11" fill="#ea580c" stroke="#7c2d12" stroke-width="2"/>
+      <circle cx="13" cy="13" r="6.5" fill="white"/>
+      <path d="M13 8.5v4.8l3.2 1.9" stroke="#ea580c" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  `,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+  popupAnchor: [0, -13],
+});
+
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
 /**
@@ -482,6 +498,31 @@ function FlyToSelectedPin({ selectedPin }: { selectedPin: any | null | undefined
   return null;
 }
 
+// クルーの移動経路(path)全体が収まるよう地図の表示範囲を自動調整するコンポーネント。
+// 「経路を見る」がクリックされた際に一度だけfitBoundsする。
+function RouteFitBounds({ path }: { path: [number, number][] | null | undefined }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!path || path.length === 0) return;
+
+    const validPoints = path.filter(([lat, lng]) => isValidCoordinate(lat, lng));
+    if (validPoints.length === 0) return;
+
+    const timeoutId = setTimeout(() => {
+      if (!isMapReady(map)) return;
+      try {
+        const bounds = L.latLngBounds(validPoints.map(([lat, lng]) => L.latLng(lat, lng)));
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, animate: true });
+      } catch (error) {
+        console.error("RouteFitBounds: 地図移動エラー", error);
+      }
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [path, map]);
+  return null;
+}
+
 // 現在地表示ボタン - 押下時にGPSで現在地を取得し、地図の中心をスムーズに移動させる。
 // 高精度測位が失敗(タイムアウト/測位不能)した場合は、自動的に標準精度(Wi-Fi/IP測位)で
 // 再試行する二段階フォールバックを行う。権限拒否や両方失敗時も例外を投げず、
@@ -718,6 +759,11 @@ export default function Map({
   const [showRainRadar, setShowRainRadar] = useState(false);
   const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
 
+  // 「経路を見る」で選択中のクルーID。nullの間は経路非表示。
+  const [activeRouteCrewId, setActiveRouteCrewId] = useState<string | null>(null);
+  const activeRouteCrew = crewMembers.find((c) => c.id === activeRouteCrewId) ?? null;
+  const activeRouteHistory = activeRouteCrew?.locationHistory ?? null;
+
   // 雨雲レーダーのタイムライン(過去〜最新〜未来予測)。選択中フレームのインデックスは
   // 初回ロード時に「最新の実測フレーム」で初期化し、以後はユーザーのスライダー操作/
   // 再生を優先する(タイムライン再取得のたびに選択位置が飛ばないようクランプのみ行う)。
@@ -752,6 +798,21 @@ export default function Map({
           onToggle={() => setShowWeatherWarnings((v) => !v)}
         />
       </div>
+
+      {/* クルー移動経路 表示中バナー + 非表示ボタン - 地図上部中央に配置 */}
+      {activeRouteCrew && (
+        <div className="absolute top-1.5 left-1/2 -translate-x-1/2 sm:top-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg px-2.5 sm:px-3 py-1.5 flex items-center gap-2 pointer-events-auto">
+          <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap">
+            📍 {activeRouteCrew.name} の移動経路を表示中
+          </span>
+          <button
+            onClick={() => setActiveRouteCrewId(null)}
+            className="text-[10px] sm:text-xs font-semibold bg-white/10 hover:bg-white/20 rounded px-1.5 py-0.5 whitespace-nowrap transition-colors"
+          >
+            ✕ 経路を非表示
+          </button>
+        </div>
+      )}
 
       {/* 雨雲レーダーのタイムスライダー・再生コントロール - 地図下部中央に配置 */}
       {showRainRadar && rainRadarFrames.length > 0 && radarFrameIndex !== null && (
@@ -806,6 +867,8 @@ export default function Map({
       <FlyToSelectedPin selectedPin={selectedPin} />
       {/* 詳細パネル開閉時のリサイズ処理 */}
       <PanelResizeHandler showDetailPanel={showDetailPanel} selectedPin={selectedPin} dispatchListOpen={dispatchListOpen} />
+      {/* クルー移動経路表示時、経路全体が収まるよう地図の表示範囲を自動調整 */}
+      <RouteFitBounds path={activeRouteHistory?.path ?? null} />
       {/* 現在地表示ボタン */}
       <LocateControl onLocated={onLocated} />
       {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
@@ -916,11 +979,54 @@ export default function Map({
                   >
                     📞 {crew.phone}
                   </a>
+                  {crew.locationHistory && crew.locationHistory.path.length > 0 && (
+                    activeRouteCrewId === crew.id ? (
+                      <button
+                        onClick={() => setActiveRouteCrewId(null)}
+                        className="block w-full text-center text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded px-2 py-1.5 transition-colors font-medium"
+                      >
+                        ✕ 経路を非表示
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setActiveRouteCrewId(crew.id)}
+                        className="block w-full text-center text-sm bg-orange-100 text-orange-800 hover:bg-orange-200 rounded px-2 py-1.5 transition-colors font-medium"
+                      >
+                        📍 経路を見る
+                      </button>
+                    )
+                  )}
                 </div>
               </Popup>
             </Marker>
           );
         })}
+
+      {/* クルー移動経路(選択中のクルーのみ) - 目立つオレンジの破線で描画 */}
+      {activeRouteHistory && activeRouteHistory.path.filter(([lat, lng]) => isValidCoordinate(lat, lng)).length > 1 && (
+        <Polyline
+          positions={activeRouteHistory.path.filter(([lat, lng]) => isValidCoordinate(lat, lng))}
+          pathOptions={{ color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" }}
+        />
+      )}
+
+      {/* クルー移動経路の滞在ポイント */}
+      {activeRouteHistory &&
+        activeRouteHistory.stayPoints
+          .filter((sp) => isValidCoordinate(sp.lat, sp.lng))
+          .map((sp, idx) => (
+            <Marker key={`stay-${activeRouteCrewId}-${idx}`} position={[sp.lat, sp.lng]} icon={stayPointIcon}>
+              <Popup>
+                <div className="space-y-1 w-48">
+                  <p className="font-bold text-gray-900">{sp.name}</p>
+                  <p className="text-sm text-gray-700">
+                    {sp.arrivedAt}〜{sp.departedAt}
+                  </p>
+                  <p className="text-xs text-gray-500">{sp.duration}滞在</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
 
       {searchMarker && isValidCoordinate(searchMarker.lat, searchMarker.lng) && (
         <Marker

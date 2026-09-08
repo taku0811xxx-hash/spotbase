@@ -79,17 +79,17 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
     <>
       {/* Backdrop - z-[99998] */}
       <div
-        className={`fixed inset-0 bg-black/80 z-[99998] md:hidden pointer-events-auto transition-opacity duration-300 ease-in-out ${
+        className={`fixed inset-0 bg-black/80 z-[99998] pointer-events-auto transition-opacity duration-300 ease-in-out ${
           visible ? "opacity-100" : "opacity-0"
         }`}
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Menu Panel - z-[99999] (最前面) - 右側配置 - 画面外からスライドイン/アウト */}
+      {/* Menu Panel - z-[99999] (最前面) - 左側配置(ハンバーガーが左端のため) - 画面外からスライドイン/アウト */}
       <div
-        className={`fixed inset-y-0 right-0 w-72 bg-slate-900 text-white z-[99999] md:hidden shadow-2xl overflow-y-auto pointer-events-auto transition-transform duration-300 ease-in-out ${
-          visible ? "translate-x-0" : "translate-x-full"
+        className={`fixed inset-y-0 left-0 w-72 bg-slate-900 text-white z-[99999] shadow-2xl overflow-y-auto pointer-events-auto transition-transform duration-300 ease-in-out ${
+          visible ? "translate-x-0" : "-translate-x-full"
         }`}
         role="navigation"
         aria-label="メニュー"
@@ -116,15 +116,7 @@ export default function MobileMenuPortal({ isOpen, onClose, profile, onLogout }:
 
         {/* Menu Items */}
         <nav className="space-y-1 px-2 py-4">
-          {/* 出動記録 */}
-          <Link
-            href="/dispatch/active"
-            className="block px-4 py-3 text-sm text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-colors"
-            onClick={onClose}
-          >
-            🚨 現在出動中
-          </Link>
-
+          {/* 出動記録一覧(「出動中」「新規出動」はヘッダーに常設のためここには含めない) */}
           <Link
             href="/dispatch"
             className="block px-4 py-3 text-sm text-gray-300 hover:bg-slate-700 hover:text-white rounded-lg transition-colors"

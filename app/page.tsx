@@ -23,7 +23,7 @@ import MobileMenuPortal from "@/components/MobileMenuPortal";
 import QuickLocationFilter from "@/components/QuickLocationFilter";
 import GroupedPinList from "@/components/GroupedPinList";
 import NewDispatchModal from "@/components/NewDispatchModal";
-import { dummyCrewMembers } from "@/lib/dummyCrew";
+import { dummyCrewMembers, type CrewStatus } from "@/lib/dummyCrew";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -71,8 +71,11 @@ export default function Home() {
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
-  // メニュー開閉状態管理
+  // メニュー開閉状態管理(ハンバーガーメニュー。PC/モバイル共通)
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // ユーザーステータスパネルで切り替える自分自身のステータス
+  const [myStatus, setMyStatus] = useState<CrewStatus>("待機中");
 
   // 現場一覧メニュー(PC画面)の開閉状態。初期状態は閉じた状態にし、
   // 地図はデフォルトで「検索窓＋全面地図」のシンプルな構成にする。
@@ -745,10 +748,13 @@ export default function Home() {
             profile={profile}
             onLogout={handleLogout}
             activeDispatchCount={activeDispatchCount}
+            onToggleMenu={() => setMenuOpen(!menuOpen)}
             gpsTracking={gpsTracking}
             gpsAcquiring={gpsAcquiring}
             onToggleGpsTracking={handleToggleGpsTracking}
             onNewDispatch={() => setShowNewDispatchModal(true)}
+            myStatus={myStatus}
+            onChangeStatus={setMyStatus}
           />
           <div className="border-t border-gray-100 relative z-40">
             <SearchBar
@@ -880,6 +886,8 @@ export default function Home() {
             gpsAcquiring={gpsAcquiring}
             onToggleGpsTracking={handleToggleGpsTracking}
             onNewDispatch={() => setShowNewDispatchModal(true)}
+            myStatus={myStatus}
+            onChangeStatus={setMyStatus}
           />
         </header>
 
