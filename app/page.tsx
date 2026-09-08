@@ -74,6 +74,10 @@ export default function Home() {
   // メニュー開閉状態管理
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // 現場一覧メニュー(PC画面)の開閉状態。初期状態は閉じた状態にし、
+  // 地図はデフォルトで「検索窓＋全面地図」のシンプルな構成にする。
+  const [isDispatchListOpen, setIsDispatchListOpen] = useState(false);
+
   // 「新規出動」クイックフロー用の状態
   const [showNewDispatchModal, setShowNewDispatchModal] = useState(false);
   const [creatingDispatch, setCreatingDispatch] = useState(false);
@@ -683,17 +687,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Quick Location Filter - Below search bar */}
-        <QuickLocationFilter
-          pins={filtered}
-          selectedFilter={selectedLocationFilter}
-          onFilterChange={(location) => {
-            setSelectedLocationFilter(location);
-            setSelectedPin(null);
-            setSearchMarker(null);
-          }}
-        />
-
         {/* 速報アラートパネル - 常時表示（データ有無問わず） */}
         <IncidentAlert
           incidents={incidents}
@@ -706,6 +699,24 @@ export default function Home() {
 
         {/* Desktop Layout */}
         <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 h-full min-h-[600px] sm:min-h-[650px]">
+          {/* 現場一覧メニュー 開閉トグルボタン。詳細パネル/検索結果パネルが
+              表示されている間は現場一覧自体を出さないため非表示にする。 */}
+          {!showDetailPanel && !searchMarker && (
+            <button
+              type="button"
+              onClick={() => setIsDispatchListOpen((prev) => !prev)}
+              className="flex-shrink-0 w-8 h-full flex flex-col items-center justify-center gap-1 bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm hover:bg-gray-50 transition-colors"
+              aria-expanded={isDispatchListOpen}
+              aria-label={isDispatchListOpen ? "現場一覧を閉じる" : "現場一覧を開く"}
+              title={isDispatchListOpen ? "現場一覧を閉じる" : "現場一覧を開く"}
+            >
+              <span className="text-lg leading-none text-gray-600">
+                {isDispatchListOpen ? "−" : "＋"}
+              </span>
+              <span className="text-[9px] text-gray-500 [writing-mode:vertical-rl]">現場一覧</span>
+            </button>
+          )}
+
           {showDetailPanel && selectedPin && (
             <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
               <div className="w-full">
@@ -743,7 +754,7 @@ export default function Home() {
             </div>
           )}
 
-          {!showDetailPanel && !searchMarker && (
+          {!showDetailPanel && !searchMarker && isDispatchListOpen && (
             <aside className="w-1/4 md:w-72 h-full overflow-y-auto bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm min-h-[600px] sm:min-h-[650px] flex-shrink-0">
               <div className="sticky top-0 bg-white border-b border-gray-100 px-2 md:px-3 py-2 md:py-2.5 z-10">
                 <h2 className="text-[10px] md:text-xs font-semibold text-gray-900 flex items-center gap-1 truncate">
@@ -775,6 +786,9 @@ export default function Home() {
               breakingAlerts={breakingAlerts}
               userLocation={userLocation}
               onLocated={setUserLocation}
+              showPins={isDispatchListOpen}
+              showLegend={showDetailPanel && !!selectedPin}
+              dispatchListOpen={isDispatchListOpen}
             />
           </main>
         </div>
