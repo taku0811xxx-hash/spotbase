@@ -95,6 +95,9 @@ export default function Home() {
   // 初期値はfalse固定(SSR/クライアントのハイドレーション不一致を避けるため)にし、
   // マウント後のuseEffectでlocalStorageの値を反映する。
   const [gpsTracking, setGpsTracking] = useState(false);
+  // 「待機中→出動中」切り替え時、位置情報取得が完了するまでの間trueにし、
+  // ボタンを「GPS測位中...」表示・連打防止(disabled)にするためのフラグ
+  const [gpsAcquiring, setGpsAcquiring] = useState(false);
   const watchIdRef = useRef<number | null>(null);
   // GPS追跡をONにした直後の1回目の位置取得でのみ地図を現在地へ移動させるためのフラグ
   // (以降の継続更新のたびに地図が動いてしまうと操作の邪魔になるため)
@@ -118,17 +121,85 @@ export default function Home() {
     }
   }, []);
 
-  // ステータスボタンから呼ばれるON/OFF切り替えハンドラ。状態をlocalStorageへ即時保存する。
-  function handleToggleGpsTracking() {
-    setGpsTracking((prev) => {
-      const next = !prev;
+  // 現在地を1回だけ取得するヘルパー。第1試行(高精度)がタイムアウト/エラーの場合、
+  // 即座に第2試行(低精度: Wi-Fi/基地局測位)にフォールバックする2段階方式。
+  // 両方失敗した場合は例外を投げる。
+  function getCurrentPositionWithFallback(): Promise<{ lat: number; lng: number }> {
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        reject(new Error("この端末/環境では位置情報が利用できません"));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        (error) => {
+          console.warn("[GPS Error] 第1試行(高精度)失敗。低精度で即再試行します:", error);
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            },
+            (error2) => {
+              console.warn("[GPS Error] 第2試行(低精度)も失敗:", error2);
+              reject(error2);
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    });
+  }
+
+  // ステータスボタンから呼ばれるON/OFF切り替えハンドラ。
+  // 「待機中→出動中」への切り替え時のみ、現在地を強制的に取得してから
+  // ステータスを更新する(取得できなければ待機中のまま維持しキャンセルする)。
+  // 「出動中→待機中」への切り替えはGPS取得不要のため即座に反映する。
+  async function handleToggleGpsTracking() {
+    if (gpsAcquiring) return; // 連打防止
+
+    if (gpsTracking) {
+      // 出動中 → 待機中: 即座に切り替え
+      setGpsTracking(false);
       try {
-        window.localStorage.setItem(GPS_TRACKING_STORAGE_KEY, String(next));
+        window.localStorage.setItem(GPS_TRACKING_STORAGE_KEY, "false");
       } catch (error) {
         console.warn("GPS追跡状態の保存に失敗しました:", error);
       }
-      return next;
-    });
+      return;
+    }
+
+    // 待機中 → 出動中: 現在地を確実に取得してから切り替える
+    setGpsAcquiring(true);
+    try {
+      const loc = await getCurrentPositionWithFallback();
+      setUserLocation(loc);
+      setFlyTo(loc);
+      // 取得済みなので、continuousなwatchPosition側の初回自動センタリングは不要
+      hasCenteredOnGpsRef.current = true;
+
+      // 既存のwatchPositionが残っていれば完全に削除してから、
+      // 下のuseEffect(gpsTracking)がフレッシュなwatchPositionを開始する
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+
+      setGpsTracking(true);
+      try {
+        window.localStorage.setItem(GPS_TRACKING_STORAGE_KEY, "true");
+      } catch (error) {
+        console.warn("GPS追跡状態の保存に失敗しました:", error);
+      }
+    } catch (error) {
+      console.error("[GPS Error] 出動中への切り替えに失敗しました:", error);
+      window.alert("位置情報を取得できませんでした。端末の位置情報設定を確認してください");
+      // 待機中のまま維持(状態変更をキャンセル)
+    } finally {
+      setGpsAcquiring(false);
+    }
   }
 
   // 初回位置取得: GPS追跡(継続監視)がOFFのままだと現在地が一切表示されないため、
@@ -192,8 +263,16 @@ export default function Home() {
       return;
     }
 
-    // 出動中(ON): 現在地の継続追跡を開始
-    hasCenteredOnGpsRef.current = false;
+    // 出動中(ON): 現在地の継続追跡を開始。
+    // (handleToggleGpsTrackingで既に一度取得・中心移動済みの場合はhasCenteredOnGpsRef.currentが
+    //  trueになっているため、ここでは意図的にリセットしない。localStorage復元等で
+    //  直接ONになったケースのみ、refの初期値falseのまま初回の継続取得時に中心移動する)
+
+    // 既存のwatchPositionが残っていれば完全に削除してからフレッシュに開始する
+    if (watchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       console.warn("[GPS Error] この端末/環境では位置情報が利用できません");
@@ -665,6 +744,7 @@ export default function Home() {
             onLogout={handleLogout}
             activeDispatchCount={activeDispatchCount}
             gpsTracking={gpsTracking}
+            gpsAcquiring={gpsAcquiring}
             onToggleGpsTracking={handleToggleGpsTracking}
             onNewDispatch={() => setShowNewDispatchModal(true)}
           />
@@ -795,6 +875,7 @@ export default function Home() {
             activeDispatchCount={activeDispatchCount}
             onToggleMenu={() => setMenuOpen(!menuOpen)}
             gpsTracking={gpsTracking}
+            gpsAcquiring={gpsAcquiring}
             onToggleGpsTracking={handleToggleGpsTracking}
             onNewDispatch={() => setShowNewDispatchModal(true)}
           />

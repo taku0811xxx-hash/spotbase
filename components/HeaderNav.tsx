@@ -11,6 +11,7 @@ interface Props {
   activeDispatchCount?: number;
   onToggleMenu?: () => void;
   gpsTracking?: boolean; // 出動中(true)/待機中(false)のGPS追跡状態
+  gpsAcquiring?: boolean; // 待機中→出動中切り替え時のGPS測位中フラグ(ボタンをローディング表示・disabledにする)
   onToggleGpsTracking?: () => void;
   onNewDispatch?: () => void; // 「新規出動」クイックフロー(現場選択モーダル)を開く
 }
@@ -19,27 +20,33 @@ interface Props {
 // 絵文字は使わず、テキストとカラーリングのみで状態を表現する。
 function GpsStatusToggle({
   gpsTracking,
+  gpsAcquiring = false,
   onToggleGpsTracking,
   compact = false,
 }: {
   gpsTracking: boolean;
+  gpsAcquiring?: boolean;
   onToggleGpsTracking?: () => void;
   compact?: boolean;
 }) {
   return (
     <button
       onClick={onToggleGpsTracking}
-      title="位置情報の自動取得(GPS追跡)を切り替え"
+      disabled={gpsAcquiring}
+      title={gpsAcquiring ? "GPS測位中です..." : "位置情報の自動取得(GPS追跡)を切り替え"}
       aria-pressed={gpsTracking}
+      aria-busy={gpsAcquiring}
       className={`font-semibold rounded-lg border whitespace-nowrap flex-shrink-0 transition-all duration-150 ${
         compact ? "text-[9px] px-1.5 py-0.5" : "text-[9px] sm:text-xs px-1.5 sm:px-2.5 py-0.5 sm:py-1.5"
       } ${
-        gpsTracking
-          ? "bg-green-600 border-green-700 text-white hover:bg-green-700"
-          : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600"
+        gpsAcquiring
+          ? "bg-amber-600 border-amber-700 text-white cursor-wait opacity-90"
+          : gpsTracking
+            ? "bg-green-600 border-green-700 text-white hover:bg-green-700"
+            : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600"
       }`}
     >
-      {gpsTracking ? "出動中 [GPS ON]" : "待機中 [GPS OFF]"}
+      {gpsAcquiring ? "GPS測位中..." : gpsTracking ? "出動中 [GPS ON]" : "待機中 [GPS OFF]"}
     </button>
   );
 }
@@ -50,6 +57,7 @@ const HeaderNav = memo(function HeaderNav({
   activeDispatchCount = 0,
   onToggleMenu,
   gpsTracking = false,
+  gpsAcquiring = false,
   onToggleGpsTracking,
   onNewDispatch,
 }: Props) {
@@ -69,7 +77,7 @@ const HeaderNav = memo(function HeaderNav({
             🚨 {activeDispatchCount}件
           </span>
         )}
-        <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} compact />
+        <GpsStatusToggle gpsTracking={gpsTracking} gpsAcquiring={gpsAcquiring} onToggleGpsTracking={onToggleGpsTracking} compact />
         {onNewDispatch && (
           <button
             onClick={onNewDispatch}
@@ -96,7 +104,7 @@ const HeaderNav = memo(function HeaderNav({
           → ユーザー名/組織情報+管理メニュー → ログアウト */}
       <div className="hidden md:flex flex-row items-center gap-1 sm:gap-2 flex-shrink-0 relative">
         {/* 1. GPSステータス */}
-        <GpsStatusToggle gpsTracking={gpsTracking} onToggleGpsTracking={onToggleGpsTracking} />
+        <GpsStatusToggle gpsTracking={gpsTracking} gpsAcquiring={gpsAcquiring} onToggleGpsTracking={onToggleGpsTracking} />
 
         {/* 2. 新規出動 */}
         {onNewDispatch && (
