@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Marker, Polygon, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Marker, Polygon, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
 // ============================================================
@@ -383,36 +383,85 @@ async function fetchAreaWarnings(jmaAreaCode: string): Promise<AreaWarningResult
   return { severity: maxSeverity, names: Array.from(names) };
 }
 
+// 名称末尾の警報種別サフィックス。判定順が重要("特別警報"は"警報"でも終わるため先に判定する)
+const WARNING_NAME_SUFFIXES = ["特別警報", "警報", "注意報"] as const;
+
+function splitWarningNameSuffix(name: string): { root: string; suffix: string } {
+  for (const suffix of WARNING_NAME_SUFFIXES) {
+    if (name.endsWith(suffix)) {
+      return { root: name.slice(0, name.length - suffix.length), suffix };
+    }
+  }
+  return { root: name, suffix: "" };
+}
+
+// 3件以上発令されている場合や広域ズーム時に文字あふれ・重なりを防ぐための要約表示。
+// 例: 「雷注意報 / 濃霧注意報 / 強風注意報」→「⚡雷・濃霧・強風注意報」
+// 種別(警報/注意報等)が混在していて綺麗にまとめられない場合は件数表示にフォールバックする。
+function summarizeWarningNames(names: string[], severity: WarningSeverity): string {
+  const groupsBySuffix = new globalThis.Map<string, string[]>();
+  for (const name of names) {
+    const { root, suffix } = splitWarningNameSuffix(name);
+    if (!groupsBySuffix.has(suffix)) groupsBySuffix.set(suffix, []);
+    groupsBySuffix.get(suffix)!.push(root);
+  }
+
+  if (groupsBySuffix.size === 1) {
+    const [suffix, roots] = Array.from(groupsBySuffix.entries())[0];
+    return `⚡${roots.join("・")}${suffix}`;
+  }
+
+  // 警報と注意報が混在する等、単純に繋げると分かりにくい場合は件数表示にする
+  const severityLabel = severity === "special" ? "特別警報等" : severity === "warning" ? "警報等" : "注意報等";
+  return `${severityLabel} (${names.length}件)`;
+}
+
+// 表示テキストを決定する。3件以上、または広域ズーム(zoom<=8)の場合は要約表示にする。
+function resolveWarningLabelText(names: string[], severity: WarningSeverity, zoom: number): { text: string; isSummary: boolean } {
+  const shouldSummarize = names.length >= 3 || zoom <= 8;
+  if (!shouldSummarize) {
+    return { text: names.join(" / "), isSummary: false };
+  }
+  return { text: summarizeWarningNames(names, severity), isSummary: true };
+}
+
 // 警報ラベル用divIconをキャッシュしつつ生成する(同一内容の再生成を避けるため)
 const warningLabelIconCache = new globalThis.Map<string, L.DivIcon>();
 
-function getWarningLabelIcon(names: string[], severity: WarningSeverity, compact: boolean): L.DivIcon {
-  const cacheKey = `${severity}:${compact ? "s" : "l"}:${names.join(",")}`;
+function getWarningLabelIcon(text: string, severity: WarningSeverity): L.DivIcon {
+  const cacheKey = `${severity}:${text}`;
   const cached = warningLabelIconCache.get(cacheKey);
   if (cached) return cached;
 
   const style = WARNING_LABEL_STYLE[severity];
-  const text = names.join(" / ");
-  const fontSize = compact ? 10 : 13;
-  const padding = compact ? "2px 6px" : "4px 10px";
 
   const icon = L.divIcon({
     className: "",
+    // 注意: Leafletのdivicon親要素はiconSize:[0,0]によりwidth:0のままなので、
+    // 子要素のwidth:autoによるshrink-to-fit計算(利用可能幅=containing blockの幅)が
+    // 常に0とみなされ、white-space:normal指定時に1文字ごとに折り返されてしまう
+    // (position:absolute/relativeのどちらでも起こる)。width:max-contentを明示することで
+    // shrink-to-fitの利用可能幅計算を経由せず内容ベースの幅になり、max-widthで
+    // 正しく140pxにクランプされるようになる。
     html: `<div style="
-      position: relative;
+      position: absolute;
       left: -50%;
       top: -50%;
+      width: max-content;
+      max-width: 140px;
       background: ${style.bg};
       color: ${style.text};
       font-weight: 700;
-      font-size: ${fontSize}px;
+      font-size: 10.5px;
       line-height: 1.3;
-      padding: ${padding};
-      border-radius: 6px;
+      padding: 3px 6px;
+      white-space: normal;
+      word-break: break-all;
+      text-align: center;
+      border-radius: 4px;
       border: 1px solid ${style.border};
-      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
-      white-space: nowrap;
-      pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      cursor: pointer;
     ">${text.replace(/</g, "&lt;")}</div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
@@ -490,38 +539,141 @@ export function WarningPolygonLayer() {
   );
 }
 
+// 隣接する地域同士のラベルが重ならないよう、現在のズーム/表示範囲における
+// 画面ピクセル距離が近いラベル同士を1つの代表ラベルへ統合するためのしきい値(px)。
+const LABEL_CLUSTER_DISTANCE_PX = 70;
+
+type ActiveRegion = {
+  region: (typeof WARNING_REGIONS)[number];
+  result: NonNullable<AreaWarningResult>;
+};
+
+type LabelCluster = {
+  position: [number, number];
+  names: string[]; // 統合後の重複除去済み名称一覧(要約表示の判定に使う)
+  severity: WarningSeverity;
+  members: { regionName: string; names: string[] }[]; // ポップアップでの内訳表示用
+};
+
+// 現在の地図表示状態(中心・ズーム)で各地域ラベルの画面座標を計算し、
+// 一定距離内にあるものを1クラスタにまとめる(表示範囲外でもラベル自体は
+// 表示対象のため、投影計算にはmap.project()を使い画面外座標も許容する)。
+function clusterActiveRegions(map: L.Map, activeRegions: ActiveRegion[]): LabelCluster[] {
+  const n = activeRegions.length;
+  if (n === 0) return [];
+
+  const zoom = map.getZoom();
+  const points = activeRegions.map(({ region }) =>
+    map.project(L.latLng(polygonCentroid(region.polygon)), zoom)
+  );
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(x: number): number {
+    if (parent[x] !== x) parent[x] = find(parent[x]);
+    return parent[x];
+  }
+  function union(a: number, b: number) {
+    parent[find(a)] = find(b);
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (points[i].distanceTo(points[j]) < LABEL_CLUSTER_DISTANCE_PX) {
+        union(i, j);
+      }
+    }
+  }
+
+  const groups = new globalThis.Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root)!.push(i);
+  }
+
+  return Array.from(groups.values()).map((idxs) => {
+    const items = idxs.map((i) => activeRegions[i]);
+    const centroids = items.map(({ region }) => polygonCentroid(region.polygon));
+    const avgLat = centroids.reduce((sum, c) => sum + c[0], 0) / centroids.length;
+    const avgLng = centroids.reduce((sum, c) => sum + c[1], 0) / centroids.length;
+
+    const names = Array.from(new Set(items.flatMap(({ result }) => result.names)));
+    const severity = items.reduce<WarningSeverity>(
+      (max, { result }) => (SEVERITY_RANK[result.severity] > SEVERITY_RANK[max] ? result.severity : max),
+      items[0].result.severity
+    );
+
+    return {
+      position: [avgLat, avgLng],
+      names,
+      severity,
+      members: items.map(({ region, result }) => ({ regionName: region.name, names: result.names })),
+    };
+  });
+}
+
+// ポップアップの内訳表示。地域ごとに発令中の警報・注意報名を列挙する。
+function WarningPopupDetail({ members }: { members: LabelCluster["members"] }) {
+  return (
+    <div className="text-xs space-y-1.5 max-w-[220px]">
+      {members.map((m) => (
+        <div key={m.regionName}>
+          <p className="font-bold text-gray-900">{m.regionName}</p>
+          <p className="text-gray-700">{m.names.join("、")}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // 警報・注意報の具体名テキストラベル(「大雨警報 / 洪水注意報」等)。
 // ハザードマップ/雨雲レーダーのタイルより確実に前面へ出す必要があるため、
 // ポリゴン塗り(WarningPolygonLayer)とは別の高いzIndexのPaneで描画する想定
 // (呼び出し側でPane配置を行う)。
+// - 3件以上発令中/広域ズーム時は要約表示にし、クリックで内訳ポップアップを開ける
+// - 近接する地域のラベルは1つに統合し、重なりを防ぐ
 export function WarningLabelLayer() {
   const results = useWarningResults();
-  const [zoom, setZoom] = useState(12);
+  const map = useMap();
+  const [viewTick, setViewTick] = useState(0);
 
   useMapEvents({
-    zoomend(e) {
-      setZoom(e.target.getZoom());
+    zoomend() {
+      setViewTick((t) => t + 1);
+    },
+    moveend() {
+      setViewTick((t) => t + 1);
     },
   });
 
-  // ズームレベルが引かれた(広域)状態ほどラベルの相対的な視認性が下がるため、
-  // 一定より広域(zoom<=9)ではフォント/パディングを大きめにして見やすくする
-  const compact = zoom > 9;
+  const activeRegions = useMemo<ActiveRegion[]>(
+    () =>
+      WARNING_REGIONS.map((region) => {
+        const result = results[region.jmaAreaCode];
+        return result ? { region, result } : null;
+      }).filter((v): v is ActiveRegion => v !== null),
+    [results]
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- viewTickは再計算トリガー用
+  const clusters = useMemo(() => clusterActiveRegions(map, activeRegions), [map, activeRegions, viewTick]);
+
+  const zoom = map.getZoom();
 
   return (
     <>
-      {WARNING_REGIONS.map((region) => {
-        const result = results[region.jmaAreaCode];
-        if (!result) return null;
-        const centroid = polygonCentroid(region.polygon);
+      {clusters.map((cluster, i) => {
+        const { text } = resolveWarningLabelText(cluster.names, cluster.severity, zoom);
         return (
           <Marker
-            key={region.jmaAreaCode}
-            position={centroid}
-            icon={getWarningLabelIcon(result.names, result.severity, compact)}
-            interactive={false}
+            key={i}
+            position={cluster.position}
+            icon={getWarningLabelIcon(text, cluster.severity)}
             keyboard={false}
-          />
+          >
+            <Popup>
+              <WarningPopupDetail members={cluster.members} />
+            </Popup>
+          </Marker>
         );
       })}
     </>

@@ -847,8 +847,9 @@ export default function Map({
 
       {/* 警報・注意報の具体名テキストラベル - ハザードマップ/雨雲レーダーのタイルに
           隠れないよう、標準markerPane(z:600)よりさらに上位の専用Paneに配置する
-          (ポリゴン塗り自体はwarningsPaneのまま。ラベルのみ視認性を優先して最前面へ) */}
-      <Pane name="warningLabelPane" style={{ zIndex: 620, pointerEvents: "none" }}>
+          (ポリゴン塗り自体はwarningsPaneのまま。ラベルのみ視認性を優先して最前面へ)。
+          要約表示クリック時のポップアップ操作を受け付けるため pointerEvents は auto */}
+      <Pane name="warningLabelPane" style={{ zIndex: 620, pointerEvents: "auto" }}>
         {showWeatherWarnings && <WarningLabelLayer />}
       </Pane>
 
