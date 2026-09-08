@@ -146,7 +146,8 @@ export function RainRadarTileLayer({
   );
 }
 
-// フレームのUNIXタイムスタンプ(秒)を「HH:MM(n分前/最新/n分後・予測)」形式に整形する
+// フレームのUNIXタイムスタンプ(秒)を「HH:MM(n分前/最新・現在/n分後・予測)」形式に整形する。
+// 例: 過去「14:30(30分前)」/ 現在「15:00(最新・現在)」/ 未来「15:30(30分後・予測)」
 function formatFrameLabel(frame: RadarFrame, nowFrameTime: number): string {
   const date = new Date(frame.time * 1000);
   const hh = String(date.getHours()).padStart(2, "0");
@@ -155,7 +156,7 @@ function formatFrameLabel(frame: RadarFrame, nowFrameTime: number): string {
 
   let relative: string;
   if (diffMin === 0) {
-    relative = "最新";
+    relative = "最新・現在";
   } else if (diffMin > 0) {
     relative = `${diffMin}分後・予測`;
   } else {
@@ -204,6 +205,12 @@ export function RainRadarTimeControl({
   const currentFrame = frames[selectedIndex];
   const nowFrameTime = frames[nowIndex]?.time ?? currentFrame.time;
   const label = formatFrameLabel(currentFrame, nowFrameTime);
+  // RainViewer APIの無料(Personal Use)枠は過去データのみが対象で、予測(nowcast)は
+  // 提供されない(公式ドキュメント・サンプルにも明記されている仕様上の制約)。
+  // frames配列自体はpast+nowcastを結合する実装になっており、将来nowcastが
+  // 提供されるようになれば自動的にスライダー末尾へ反映される。現状は「壊れている」
+  // わけではなく未来データが存在しないだけ、と分かるようにここで明示する。
+  const hasForecast = frames.some((f) => f.isForecast);
 
   return (
     <div
@@ -241,6 +248,15 @@ export function RainRadarTimeControl({
           {label}
         </span>
       </div>
+
+      {/* 予測(nowcast)データが1件も無い場合の注記。RainViewer無料APIの仕様上の
+          制約であり不具合ではないことをユーザーに明示する(nowcastが提供され
+          次第、frames配列に自動的に統合されこの注記も消える)。 */}
+      {!hasForecast && (
+        <p className="mt-1 pl-9 sm:pl-10 text-[8px] sm:text-[10px] text-gray-400 leading-tight">
+          ⚠ 予測データは現在提供されていないため、過去〜現在のみ表示しています
+        </p>
+      )}
     </div>
   );
 }
