@@ -6,6 +6,7 @@ import {
   Marker,
   Popup,
   Polyline,
+  Pane,
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
@@ -17,6 +18,7 @@ import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
+import { RainRadarTileLayer, RainRadarToggle, WarningPolygonLayer, WeatherWarningToggle } from "./WeatherLayers";
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
 const defaultIcon = L.icon({
@@ -627,18 +629,30 @@ export default function Map({
   dispatchListOpen,
 }: Props) {
   const [showHazardMap, setShowHazardMap] = useState(false);
+  const [showRainRadar, setShowRainRadar] = useState(false);
+  const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
 
   return (
     <>
       <MapStyleInjector />
 
-      {/* ハザードマップON/OFFトグル - 左上のLeaflet標準ズームコントロール(+/-)や
-          右上の凡例ボックスと被らないよう、ズームコントロールの下側に独立配置する */}
-      <HazardMapToggle
-        enabled={showHazardMap}
-        onToggle={() => setShowHazardMap((v) => !v)}
-        className="absolute top-20 left-1.5 sm:top-24 sm:left-4 z-[1000]"
-      />
+      {/* 気象レイヤー(ハザードマップ/雨雲レーダー/警報注意報)のON/OFFトグル群 - 左上の
+          Leaflet標準ズームコントロール(+/-)や右上の凡例ボックスと被らないよう、
+          ズームコントロールの下側に縦に並べて独立配置する */}
+      <div className="absolute top-20 left-1.5 sm:top-24 sm:left-4 z-[1000] flex flex-col gap-1.5 items-start">
+        <HazardMapToggle
+          enabled={showHazardMap}
+          onToggle={() => setShowHazardMap((v) => !v)}
+        />
+        <RainRadarToggle
+          enabled={showRainRadar}
+          onToggle={() => setShowRainRadar((v) => !v)}
+        />
+        <WeatherWarningToggle
+          enabled={showWeatherWarnings}
+          onToggle={() => setShowWeatherWarnings((v) => !v)}
+        />
+      </div>
 
       {/* 凡例ボックス - 地図右上に配置
           注意: Leaflet内部のレイヤー(タイルペイン z-200、オーバーレイ z-400、
@@ -693,12 +707,25 @@ export default function Map({
         updateInterval={200}
       />
 
+      {/* 気象レイヤー群。重なり順を要件通り
+          「ベース地図 < 警報・注意報ポリゴン < ハザードマップ < 雨雲レーダー < ピンマーカー」
+          にするため、それぞれ専用のPane(zIndex)に配置する。
+          (ピンはLeaflet標準のmarkerPane[zIndex:600]のまま最前面に残る) */}
+      <Pane name="warningsPane" style={{ zIndex: 350, pointerEvents: "none" }}>
+        {showWeatherWarnings && <WarningPolygonLayer />}
+      </Pane>
+
       {/* ハザードマップ(国土地理院 洪水浸水想定区域)。keepBufferを絞り、
           updateWhenIdle/updateInterval込みで表示中の範囲周辺のみ描画することで、
           現場ピンが多い場合でもタイル読み込み負荷を抑える */}
-      {showHazardMap && (
-        <HazardMapTileLayer />
-      )}
+      <Pane name="hazardPane" style={{ zIndex: 450, pointerEvents: "none" }}>
+        {showHazardMap && <HazardMapTileLayer />}
+      </Pane>
+
+      {/* 雨雲レーダー(RainViewer) */}
+      <Pane name="rainRadarPane" style={{ zIndex: 550, pointerEvents: "none" }}>
+        {showRainRadar && <RainRadarTileLayer />}
+      </Pane>
 
       {showPins && pins
         .filter((pin) => isValidCoordinate(pin.lat, pin.lng))
