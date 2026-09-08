@@ -254,12 +254,14 @@ export default function Home() {
     // ログイン(認証完了)前は何もしない
     if (authLoading || !user || !profile) return;
 
-    // 待機中(OFF): 実行中の追跡があれば停止してバッテリー消費を抑える
+    // 待機中(OFF): 実行中の追跡があれば安全に停止してバッテリー消費を抑え、
+    // メモリ上に保持している現在地座標もクリアする(地図上のGPSピンを非表示にするため)
     if (!gpsTracking) {
       if (watchIdRef.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
+      setUserLocation(null);
       return;
     }
 
@@ -854,7 +856,7 @@ export default function Home() {
               hoveredRoadKey={hoveredRoadKey}
               incidents={incidents}
               breakingAlerts={breakingAlerts}
-              userLocation={userLocation}
+              userLocation={gpsTracking ? userLocation : null}
               crewMembers={dummyCrewMembers}
               onLocated={setUserLocation}
               showPins={isDispatchListOpen}
