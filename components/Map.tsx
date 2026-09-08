@@ -799,17 +799,28 @@ export default function Map({
         />
       </div>
 
-      {/* クルー移動経路 表示中バナー + 非表示ボタン - 地図上部中央に配置 */}
+      {/* クルー移動経路の表示状態インフォメーションバー。
+          「表示中」の告知と「非表示」操作を1つのコンパクトなバーに集約し、
+          クルーポップアップ側には同じ操作の重複ボタンを置かない(二重表示防止)。
+          配置は地図右上(ズームコントロール/半径プリセット/凡例と被らない位置)。
+          凡例ボックス(showLegend時に同じ右上へ表示)と重なる場合のみ、その下へ
+          ずらして表示する。 */}
       {activeRouteCrew && (
-        <div className="absolute top-1.5 left-1/2 -translate-x-1/2 sm:top-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg px-2.5 sm:px-3 py-1.5 flex items-center gap-2 pointer-events-auto">
-          <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap">
-            📍 {activeRouteCrew.name} の移動経路を表示中
+        <div
+          className={`absolute right-1.5 sm:right-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg pl-2.5 pr-1.5 sm:pl-3 sm:pr-2 py-1.5 flex items-center gap-1.5 sm:gap-2 pointer-events-auto max-w-[calc(100%-0.75rem)] sm:max-w-xs ${
+            showLegend ? "top-24 sm:top-32" : "top-1.5 sm:top-4"
+          }`}
+        >
+          <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap truncate min-w-0">
+            📍 {activeRouteCrew.name} の経路を表示中
           </span>
           <button
             onClick={() => setActiveRouteCrewId(null)}
-            className="text-[10px] sm:text-xs font-semibold bg-white/10 hover:bg-white/20 rounded px-1.5 py-0.5 whitespace-nowrap transition-colors"
+            title="経路を非表示にする"
+            aria-label="経路を非表示にする"
+            className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-[11px] sm:text-xs transition-colors"
           >
-            ✕ 経路を非表示
+            ✕
           </button>
         </div>
       )}
@@ -973,20 +984,25 @@ export default function Map({
                     <p>🚐 {crew.vehicle}</p>
                     <p>🕒 最終更新: {crew.updatedAt}</p>
                   </div>
+                  {/* 電話番号リンク: Leafletのデフォルトスタイル(.leaflet-container a{color:#0078A8})が
+                      Tailwindのtext-*クラスより詳細度で勝ってしまい、指定した文字色が
+                      無視され視認できなくなる問題があったため、style属性で明示的に
+                      黒文字(#1a1a1a)を指定して確実に上書きする。背景も薄い色に変更し
+                      黒文字とのコントラストを確保している。 */}
                   <a
                     href={`tel:${crew.phone}`}
-                    className="block text-center text-sm bg-blue-600 text-white hover:bg-blue-700 rounded px-2 py-1.5 transition-colors font-medium"
+                    style={{ color: "#1a1a1a" }}
+                    className="block text-center text-sm bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded px-2 py-1.5 transition-colors font-semibold"
                   >
                     📞 {crew.phone}
                   </a>
                   {crew.locationHistory && crew.locationHistory.path.length > 0 && (
                     activeRouteCrewId === crew.id ? (
-                      <button
-                        onClick={() => setActiveRouteCrewId(null)}
-                        className="block w-full text-center text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded px-2 py-1.5 transition-colors font-medium"
-                      >
-                        ✕ 経路を非表示
-                      </button>
+                      // 非表示操作は地図右上のインフォメーションバーに集約しているため、
+                      // ここには重複するボタンを置かず、状態を示すラベルのみ表示する。
+                      <p className="text-center text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1.5 font-medium">
+                        📍 経路表示中(右上のバーから閉じられます)
+                      </p>
                     ) : (
                       <button
                         onClick={() => setActiveRouteCrewId(crew.id)}
@@ -1079,6 +1095,7 @@ export default function Map({
               <div className="flex gap-2">
                 <a
                   href={`/dispatch/new?incidentId=${incident.id}`}
+                  style={{ color: "#ffffff" }}
                   className="flex-1 text-center text-sm bg-red-600 text-white hover:bg-red-700 rounded px-2 py-1.5 transition-colors font-medium"
                 >
                   🎥 出動作成
@@ -1127,6 +1144,7 @@ export default function Map({
                   href={`/dispatch/new?lat=${alert.lat}&lng=${alert.lng}&locationName=${encodeURIComponent(
                     alert.locationName
                   )}`}
+                  style={{ color: "#ffffff" }}
                   className="flex-1 text-center text-sm bg-yellow-600 text-white hover:bg-yellow-700 rounded px-2 py-1.5 transition-colors font-medium"
                 >
                   🎥 出動作成
