@@ -8,6 +8,7 @@ import {
   Polyline,
   Pane,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -595,6 +596,82 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
   );
 }
 
+// 半径プリセットボタン(1km/5km/10km/30km)。地図の中心座標から指定半径の
+// 正方形バウンディングボックス(円が内接するサイズ)を計算し、そこへスムーズに
+// ズーム移動する。緯度1度あたり約111kmとして簡易換算しているため、
+// 高緯度ほど厳密な精度は落ちるが、プリセットズームの用途としては十分。
+const RADIUS_PRESETS_KM = [1, 5, 10, 30] as const;
+const KM_PER_DEGREE_LAT = 111;
+
+function computeRadiusBounds(lat: number, lng: number, radiusKm: number): L.LatLngBounds {
+  const latDelta = radiusKm / KM_PER_DEGREE_LAT;
+  const lngDenominator = KM_PER_DEGREE_LAT * Math.cos((lat * Math.PI) / 180);
+  const lngDelta = radiusKm / (Math.abs(lngDenominator) > 1e-6 ? lngDenominator : 1);
+  return L.latLngBounds(
+    [lat - latDelta, lng - Math.abs(lngDelta)],
+    [lat + latDelta, lng + Math.abs(lngDelta)]
+  );
+}
+
+// プリセットボタンによるflyToBoundsのアニメーション時間(秒)。
+// 手動ズーム判定の許容ウィンドウ算出にも使う。
+const RADIUS_FLY_DURATION_SEC = 1;
+
+function RadiusPresetControl() {
+  const map = useMap();
+  const [activeRadiusKm, setActiveRadiusKm] = useState<number | null>(null);
+  // プリセットボタン押下によるプログラム的なズーム移動(flyToBounds)は、
+  // アニメーション中に'zoomstart'が複数回発火することがあるため、
+  // 一回限りのフラグで「無視すべき1回」を消費する方式だと、2回目以降の
+  // zoomstartを誤って「手動ズーム」と判定してしまう。そのため、押下時刻を
+  // 記録しておき、アニメーション想定時間内に発生したzoomstartは
+  // すべてプログラム起因とみなして無視する時間窓方式にする。
+  const programmaticZoomUntilRef = useRef(0);
+
+  useMapEvents({
+    zoomstart() {
+      if (Date.now() < programmaticZoomUntilRef.current) {
+        return;
+      }
+      // ホイール/ピンチ/ダブルクリック/ズームボタン等、ユーザーによる
+      // 手動ズーム操作とみなし、プリセットのアクティブ表示を解除する
+      setActiveRadiusKm(null);
+    },
+  });
+
+  function handleSelect(radiusKm: number) {
+    if (!isMapReady(map)) return;
+    const center = map.getCenter();
+    const bounds = computeRadiusBounds(center.lat, center.lng, radiusKm);
+    // アニメーション時間+余裕(500ms)の間に発生するzoomstartは
+    // すべて今回のflyToBoundsに起因するものとして無視する
+    programmaticZoomUntilRef.current = Date.now() + RADIUS_FLY_DURATION_SEC * 1000 + 500;
+    map.flyToBounds(bounds, { animate: true, duration: RADIUS_FLY_DURATION_SEC });
+    setActiveRadiusKm(radiusKm);
+  }
+
+  return (
+    <div className="absolute top-1.5 sm:top-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-0.5 sm:gap-1 bg-white rounded-full shadow-lg border border-gray-200 p-0.5 sm:p-1 pointer-events-auto">
+      {RADIUS_PRESETS_KM.map((km) => (
+        <button
+          key={km}
+          type="button"
+          onClick={() => handleSelect(km)}
+          aria-pressed={activeRadiusKm === km}
+          title={`地図の中心から半径${km}kmが収まるズームへ移動`}
+          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-semibold whitespace-nowrap transition-colors ${
+            activeRadiusKm === km
+              ? "bg-blue-600 text-white"
+              : "text-gray-600 hover:bg-gray-100"
+          }`}
+        >
+          {km}km
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Inject Leaflet control styles
 function MapStyleInjector() {
   useEffect(() => {
@@ -699,6 +776,8 @@ export default function Map({
       <PanelResizeHandler showDetailPanel={showDetailPanel} selectedPin={selectedPin} dispatchListOpen={dispatchListOpen} />
       {/* 現在地表示ボタン */}
       <LocateControl onLocated={onLocated} />
+      {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
+      <RadiusPresetControl />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
