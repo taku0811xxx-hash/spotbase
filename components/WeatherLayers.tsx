@@ -33,16 +33,33 @@ export function useRainRadarFrames() {
         const data = await res.json();
         if (cancelled) return;
         const past = Array.isArray(data?.radar?.past) ? data.radar.past : [];
+        // 未来予測(ナウキャスト): 現在時刻から最大30分後まで、10分間隔で数フレーム
+        // 提供される(RainViewer側の運用状況により空配列の場合もある)。
         const nowcast = Array.isArray(data?.radar?.nowcast) ? data.radar.nowcast : [];
         if (!data?.host || past.length === 0) return;
 
-        const nextFrames: RadarFrame[] = [
-          ...past.map((f: any) => ({ path: f.path, time: f.time, isForecast: false })),
-          ...nowcast.map((f: any) => ({ path: f.path, time: f.time, isForecast: true })),
-        ];
+        // past/nowcastを時刻(time, UNIX秒)昇順に統合し、万一タイムスタンプが
+        // 重複するフレームがあっても1本のタイムラインとして扱えるよう重複除去する。
+        const merged = new Map<number, RadarFrame>();
+        for (const f of past) {
+          if (f?.path && typeof f.time === "number") merged.set(f.time, { path: f.path, time: f.time, isForecast: false });
+        }
+        for (const f of nowcast) {
+          if (f?.path && typeof f.time === "number") merged.set(f.time, { path: f.path, time: f.time, isForecast: true });
+        }
+        const nextFrames = Array.from(merged.values()).sort((a, b) => a.time - b.time);
+
+        // 「最新の実測フレーム」= 統合後の配列内で isForecast=false の最後のインデックス
+        // (=過去/未来予測の境目)。ナウキャスト側でtimeが重複していた場合に備え、
+        // past.length-1をそのまま使わずここで再計算する。
+        let latestPastIndex = 0;
+        for (let i = 0; i < nextFrames.length; i++) {
+          if (!nextFrames[i].isForecast) latestPastIndex = i;
+        }
+
         setHost(data.host);
         setFrames(nextFrames);
-        setNowIndex(past.length - 1); // pastの末尾が「最新の実測」フレーム
+        setNowIndex(latestPastIndex);
       } catch (error) {
         console.warn("[RainViewer] タイムラインの取得に失敗しました:", error);
       }

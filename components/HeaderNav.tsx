@@ -21,9 +21,17 @@ interface Props {
 }
 
 // ヘッダーUI(PC/モバイル共通)。
-// 左: ハンバーガーメニュー(既存メニュー項目はすべてここに格納) + ロゴ
-// 中央/主要アクション: 「＋新規出動」「🚨出動中」のみ
+// 左: ハンバーガーメニュー(既存メニュー項目はすべてここに格納) + ロゴ + 「＋新規出動」「🚨出動中」(左詰め)
 // 右: ユーザーステータスパネル(ユーザー情報 / GPS ON-OFF / ステータス切替 / ログアウト)
+//
+// 注意(z-index): このヘッダーは Leaflet地図(コントロール z-index:1000、Map.tsx内の
+// 独自オーバーレイは最大 z-[2000])と兄弟要素として並ぶため、ヘッダー自身の
+// z-indexが低いと「中の要素(ユーザーステータスのドロップダウン等)にどれだけ
+// 高いz-indexを与えても地図の裏に隠れる」問題が起きる。これは、position+z-index
+// を持つ要素がその時点で新しいスタッキングコンテキストを作り、子要素の
+// z-indexが「そのコンテキスト内でのみ」意味を持つため(=子のz-9999は親のz-50を
+// 追い越せない)。そのため、ヘッダー全体の外側コンテナ自体を地図より
+// 十分高いz-[9999]にしておく必要がある。
 const HeaderNav = memo(function HeaderNav({
   profile,
   onLogout,
@@ -37,12 +45,12 @@ const HeaderNav = memo(function HeaderNav({
   onChangeStatus,
 }: Props) {
   return (
-    <div className="relative z-50 w-full max-w-full box-border flex flex-row items-center justify-between px-3 py-1.5 bg-gray-900 text-white overflow-visible gap-1">
-      {/* 左: ハンバーガーメニュー + ロゴ */}
-      <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
+    <div className="relative z-[9999] w-full max-w-full box-border flex flex-row items-center justify-between px-3 py-1.5 bg-gray-900 text-white overflow-visible gap-1">
+      {/* 左: ハンバーガーメニュー + ロゴ + 新規出動 + 出動中(すべて左詰め) */}
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink min-w-0 overflow-x-auto">
         <button
           onClick={onToggleMenu}
-          className="relative z-50 flex flex-col gap-1 p-1 -ml-1 flex-shrink-0"
+          className="relative flex flex-col gap-1 p-1 -ml-1 flex-shrink-0"
           title="メニュー"
           aria-label="メニューを開く"
         >
@@ -50,18 +58,9 @@ const HeaderNav = memo(function HeaderNav({
           <span className="w-5 h-0.5 bg-white transition-all duration-300" />
           <span className="w-5 h-0.5 bg-white transition-all duration-300" />
         </button>
-        <Link href="/" className="flex-shrink-0 min-w-0">
+        <Link href="/" className="flex-shrink-0">
           <Logo className="text-white text-xs" />
         </Link>
-      </div>
-
-      {/* 中央: 新規出動 + 出動中(主要アクションのみ) */}
-      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-        {activeDispatchCount > 0 && (
-          <span className="hidden sm:inline px-1.5 py-0.5 text-[10px] bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0">
-            {activeDispatchCount}件対応中
-          </span>
-        )}
 
         {onNewDispatch && (
           <button
@@ -79,6 +78,12 @@ const HeaderNav = memo(function HeaderNav({
         >
           🚨 <span>出動中</span>
         </Link>
+
+        {activeDispatchCount > 0 && (
+          <span className="hidden sm:inline px-1.5 py-0.5 text-[10px] bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0">
+            {activeDispatchCount}件対応中
+          </span>
+        )}
       </div>
 
       {/* 右: ユーザーステータスパネル */}

@@ -49,7 +49,9 @@ export default function Logo({ className = "", iconOnly = false, size = "sm" }: 
         </span>
       </span>
       {!iconOnly && (
-        <span className="font-bold text-lg tracking-tight">SpotBase</span>
+        // 狭い画面(スマホ幅)ではヘッダーの他要素(ハンバーガー/新規出動/出動中等)と
+        // 詰まってしまうため、ワードマーク文字は sm(640px)以上でのみ表示する
+        <span className="hidden sm:inline-block font-bold text-lg tracking-tight">SpotBase</span>
       )}
     </div>
   );

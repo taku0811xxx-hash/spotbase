@@ -743,7 +743,7 @@ export default function Home() {
     <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:min-h-screen md:h-screen">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
       <div className="hidden md:flex md:flex-col w-full h-full mx-auto p-4 sm:p-6 gap-2 sm:gap-3">
-        <div className="bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
+        <div className="relative z-[9999] bg-white border border-gray-200 rounded-lg sm:rounded-xl shadow-sm flex-shrink-0">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
@@ -876,7 +876,13 @@ export default function Home() {
       {/* ========== MOBILE LAYOUT (<md) ========== */}
       <div className="md:hidden flex flex-col h-[100dvh] w-full max-w-[100vw] fixed inset-0">
         {/* Header - Fixed height at top */}
-        <header className="w-full max-w-full shrink-0 h-14 px-3 box-border flex items-center justify-between overflow-hidden bg-slate-900 text-white border-b border-slate-700 z-50">
+        {/* overflow指定はあえて付けない: overflow-x-hidden + overflow-y-visible の
+            ように片方だけvisibleと組み合わせると、CSS仕様上visibleが自動的に
+            autoへ格上げされ、結局h-14の高さでユーザーステータスパネルの
+            ドロップダウンが縦方向にクリップされてしまう(要修正バグの原因)。
+            横方向の折り返し対策はHeaderNav側の内側コンテナで完結させているため、
+            ここではoverflowを完全にデフォルト(visible)のままにする。 */}
+        <header className="relative w-full max-w-full shrink-0 h-14 px-3 box-border flex items-center justify-between bg-slate-900 text-white border-b border-slate-700 z-[9999]">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
