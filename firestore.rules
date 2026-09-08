@@ -57,5 +57,14 @@ service cloud.firestore {
       allow read: if true;
       allow write: if false;
     }
+
+    match /user_locations/{uid} {
+      // 自分の実機GPS移動経路: 本人のみ書き込み可能。閲覧は本人または同組織のみ
+      // (他クルーの移動経路参照機能を将来追加する際の下地として同組織読み取りも許可)
+      allow read: if isSignedIn() &&
+        (request.auth.uid == uid || requesterProfile().organizationId == resource.data.organizationId);
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
   }
 }

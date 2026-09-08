@@ -24,6 +24,14 @@ import QuickLocationFilter from "@/components/QuickLocationFilter";
 import GroupedPinList from "@/components/GroupedPinList";
 import NewDispatchModal from "@/components/NewDispatchModal";
 import { dummyCrewMembers, type CrewStatus } from "@/lib/dummyCrew";
+import {
+  type PathPoint,
+  loadPathFromStorage,
+  savePathToStorage,
+  shouldAppendPoint,
+  appendPoint,
+  syncPathToFirestore,
+} from "@/lib/userPathHistory";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -106,6 +114,14 @@ export default function Home() {
   // (以降の継続更新のたびに地図が動いてしまうと操作の邪魔になるため)
   const hasCenteredOnGpsRef = useRef(false);
 
+  // 自分自身の実機GPS移動経路(watchPositionで継続取得した座標を、一定距離
+  // 以上移動した場合のみ蓄積)。リロード後も消えないようlocalStorageに永続化し、
+  // (可能であれば)Firestoreへも非同期で同期する。詳細は lib/userPathHistory.ts 参照
+  const [myPathHistory, setMyPathHistory] = useState<PathPoint[]>([]);
+  // Firestoreへの同期頻度を抑えるための直近同期時刻(書き込み過多の防止)
+  const lastFirestoreSyncAtRef = useRef(0);
+  const FIRESTORE_SYNC_INTERVAL_MS = 15000; // 15秒に1回まで
+
   // 「待機中」の状態で地図の「現在地を表示」ボタンを押した際、現在地ピンを
   // 常時表示するのではなく一時的にのみ表示するためのフラグとタイマー。
   // (「出動中」ステータスとの整合性を保つため、待機中は自動的に消える)
@@ -130,6 +146,9 @@ export default function Home() {
       console.warn("GPS追跡状態の読み込みに失敗しました:", error);
     }
 
+    // 自分の移動経路をlocalStorageから復元(リロード後も経路が消えないようにする)
+    setMyPathHistory(loadPathFromStorage());
+
     return () => {
       if (tempLocationTimerRef.current) {
         clearTimeout(tempLocationTimerRef.current);
@@ -147,6 +166,24 @@ export default function Home() {
       setTempLocationVisible(false);
     }
   }, [gpsTracking]);
+
+  // 自分の移動経路が更新されるたびにlocalStorageへ保存する
+  // (DB未接続時のフォールバック。リロード後も経路が消えないようにする)。
+  useEffect(() => {
+    if (!mounted) return; // マウント前(localStorageから復元する前)に空配列で上書きしてしまうのを防ぐ
+    savePathToStorage(myPathHistory);
+  }, [myPathHistory, mounted]);
+
+  // 自分の移動経路をFirestoreへも非同期で同期する(ベストエフォート。
+  // 書き込み頻度を抑えるため、前回同期からFIRESTORE_SYNC_INTERVAL_MS以上
+  // 経過している場合のみ実行する)。失敗してもlocalStorage側には影響しない。
+  useEffect(() => {
+    if (!mounted || !profile || myPathHistory.length === 0) return;
+    const now = Date.now();
+    if (now - lastFirestoreSyncAtRef.current < FIRESTORE_SYNC_INTERVAL_MS) return;
+    lastFirestoreSyncAtRef.current = now;
+    syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistory);
+  }, [myPathHistory, mounted, profile]);
 
   // 地図の「現在地を表示」ボタン(LocateControl)が現在地取得に成功した際のコールバック。
   // 「待機中」の場合でも一時的に現在地ピンを表示できるようにしつつ、「出動中」表示との
@@ -340,6 +377,15 @@ export default function Home() {
         setFlyTo(loc);
         hasCenteredOnGpsRef.current = true;
       }
+
+      // 実機の移動経路として蓄積する。GPS誤差によるブレを防ぐため、直前の記録点から
+      // 一定距離(既定10m)以上移動した場合のみ追加する(lib/userPathHistory.ts参照)。
+      const point: PathPoint = {
+        lat: loc.lat,
+        lng: loc.lng,
+        timestamp: position.timestamp || Date.now(),
+      };
+      setMyPathHistory((prev) => (shouldAppendPoint(prev, point) ? appendPoint(prev, point) : prev));
     }
 
     console.log("[GPS Debug] 継続追跡を開始します(高精度, timeout 5000ms)");
@@ -912,6 +958,7 @@ export default function Home() {
               dispatchListOpen={isDispatchListOpen}
               myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
               myStatus={myStatus}
+              selfLocationHistory={myPathHistory.map((p) => [p.lat, p.lng] as [number, number])}
             />
           </main>
         </div>
@@ -991,6 +1038,7 @@ export default function Home() {
             onLocated={handleLocated}
             myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
             myStatus={myStatus}
+            selfLocationHistory={myPathHistory.map((p) => [p.lat, p.lng] as [number, number])}
           />
         </main>
 

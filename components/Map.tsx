@@ -325,6 +325,7 @@ type Props = {
   onLocated?: (loc: { lat: number; lng: number }) => void; // 現在地表示ボタン押下時のコールバック
   myProfile?: { name: string; category: string; phone?: string } | null; // 自分の現在地マーカーのポップアップに表示するログインユーザー情報
   myStatus?: CrewStatus; // 自分の現在のステータス(ユーザーステータスパネルと連動)
+  selfLocationHistory?: [number, number][]; // 実機watchPositionから蓄積された自分の移動経路(呼び出し側で距離フィルタリング・永続化済み)
 };
 
 // 自分の移動経路を表す特別なID。crewMembersのidと衝突しない専用の値として扱う。
@@ -805,30 +806,19 @@ export default function Map({
   dispatchListOpen,
   myProfile = null,
   myStatus = "待機中",
+  selfLocationHistory = [],
 }: Props) {
   const [showHazardMap, setShowHazardMap] = useState(false);
   const [showRainRadar, setShowRainRadar] = useState(false);
   const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
 
   // 「経路を見る」で選択中のクルーID。nullの間は経路非表示。SELF_ROUTE_IDの場合は
-  // 自分自身の移動経路(selfPath)を表示する。
+  // 自分自身の移動経路(呼び出し側で実機watchPositionから蓄積・距離フィルタリング・
+  // localStorage/Firestoreへ永続化済みのselfLocationHistory)を表示する。
   const [activeRouteCrewId, setActiveRouteCrewId] = useState<string | null>(null);
   const activeRouteCrew = crewMembers.find((c) => c.id === activeRouteCrewId) ?? null;
 
-  // 自分自身の移動経路。userLocationが更新されるたびに座標を蓄積していく
-  // (このセッション中に実際に辿った軌跡のみを対象とし、直前の座標とほぼ同じ場合は追加しない)。
-  const [selfPath, setSelfPath] = useState<[number, number][]>([]);
-  useEffect(() => {
-    if (!userLocation || !isValidCoordinate(userLocation.lat, userLocation.lng)) return;
-    setSelfPath((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && Math.abs(last[0] - userLocation.lat) < 1e-5 && Math.abs(last[1] - userLocation.lng) < 1e-5) {
-        return prev;
-      }
-      return [...prev, [userLocation.lat, userLocation.lng]];
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userLocation?.lat, userLocation?.lng]);
+  const selfPath = selfLocationHistory.filter(([lat, lng]) => isValidCoordinate(lat, lng));
 
   const activeRouteHistory =
     activeRouteCrewId === SELF_ROUTE_ID
@@ -1144,10 +1134,15 @@ export default function Map({
         })}
 
       {/* クルー移動経路(選択中のクルーのみ) - 目立つオレンジの破線で描画 */}
+      {/* 移動経路のライン: 自分の経路(実機GPS)は青、他クルーの経路はオレンジの破線で区別する */}
       {activeRouteHistory && activeRouteHistory.path.filter(([lat, lng]) => isValidCoordinate(lat, lng)).length > 1 && (
         <Polyline
           positions={activeRouteHistory.path.filter(([lat, lng]) => isValidCoordinate(lat, lng))}
-          pathOptions={{ color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" }}
+          pathOptions={
+            activeRouteCrewId === SELF_ROUTE_ID
+              ? { color: "#2563eb", weight: 5, opacity: 0.9 }
+              : { color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" }
+          }
         />
       )}
 
