@@ -19,7 +19,16 @@ import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
-import { RainRadarTileLayer, RainRadarToggle, WarningPolygonLayer, WeatherWarningToggle } from "./WeatherLayers";
+import {
+  RainRadarTileLayer,
+  RainRadarToggle,
+  RainRadarPreloader,
+  RainRadarTimeControl,
+  useRainRadarFrames,
+  WarningPolygonLayer,
+  WarningLabelLayer,
+  WeatherWarningToggle,
+} from "./WeatherLayers";
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
 const defaultIcon = L.icon({
@@ -709,6 +718,19 @@ export default function Map({
   const [showRainRadar, setShowRainRadar] = useState(false);
   const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
 
+  // 雨雲レーダーのタイムライン(過去〜最新〜未来予測)。選択中フレームのインデックスは
+  // 初回ロード時に「最新の実測フレーム」で初期化し、以後はユーザーのスライダー操作/
+  // 再生を優先する(タイムライン再取得のたびに選択位置が飛ばないようクランプのみ行う)。
+  const { host: rainRadarHost, frames: rainRadarFrames, nowIndex: rainRadarNowIndex } = useRainRadarFrames();
+  const [radarFrameIndex, setRadarFrameIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (rainRadarFrames.length === 0) return;
+    setRadarFrameIndex((prev) => {
+      if (prev === null) return rainRadarNowIndex;
+      return Math.min(prev, rainRadarFrames.length - 1);
+    });
+  }, [rainRadarFrames.length, rainRadarNowIndex]);
+
   return (
     <>
       <MapStyleInjector />
@@ -730,6 +752,16 @@ export default function Map({
           onToggle={() => setShowWeatherWarnings((v) => !v)}
         />
       </div>
+
+      {/* 雨雲レーダーのタイムスライダー・再生コントロール - 地図下部中央に配置 */}
+      {showRainRadar && rainRadarFrames.length > 0 && radarFrameIndex !== null && (
+        <RainRadarTimeControl
+          frames={rainRadarFrames}
+          nowIndex={rainRadarNowIndex}
+          selectedIndex={radarFrameIndex}
+          onSelectIndex={setRadarFrameIndex}
+        />
+      )}
 
       {/* 凡例ボックス - 地図右上に配置
           注意: Leaflet内部のレイヤー(タイルペイン z-200、オーバーレイ z-400、
@@ -789,7 +821,9 @@ export default function Map({
       {/* 気象レイヤー群。重なり順を要件通り
           「ベース地図 < 警報・注意報ポリゴン < ハザードマップ < 雨雲レーダー < ピンマーカー」
           にするため、それぞれ専用のPane(zIndex)に配置する。
-          (ピンはLeaflet標準のmarkerPane[zIndex:600]のまま最前面に残る) */}
+          (ピンはLeaflet標準のmarkerPane[zIndex:600]のまま最前面に残る。
+          ただし警報の具体名テキストラベルのみ、視認性優先でさらに上位の
+          専用Pane[warningLabelPane]に別途配置する。下記参照) */}
       <Pane name="warningsPane" style={{ zIndex: 350, pointerEvents: "none" }}>
         {showWeatherWarnings && <WarningPolygonLayer />}
       </Pane>
@@ -801,9 +835,21 @@ export default function Map({
         {showHazardMap && <HazardMapTileLayer />}
       </Pane>
 
-      {/* 雨雲レーダー(RainViewer) */}
+      {/* 雨雲レーダー(RainViewer) - タイムスライダーで選択中のフレームを表示 */}
       <Pane name="rainRadarPane" style={{ zIndex: 550, pointerEvents: "none" }}>
-        {showRainRadar && <RainRadarTileLayer />}
+        {showRainRadar && rainRadarHost && radarFrameIndex !== null && rainRadarFrames[radarFrameIndex] && (
+          <>
+            <RainRadarTileLayer host={rainRadarHost} frame={rainRadarFrames[radarFrameIndex]} />
+            <RainRadarPreloader host={rainRadarHost} frames={rainRadarFrames} selectedIndex={radarFrameIndex} />
+          </>
+        )}
+      </Pane>
+
+      {/* 警報・注意報の具体名テキストラベル - ハザードマップ/雨雲レーダーのタイルに
+          隠れないよう、標準markerPane(z:600)よりさらに上位の専用Paneに配置する
+          (ポリゴン塗り自体はwarningsPaneのまま。ラベルのみ視認性を優先して最前面へ) */}
+      <Pane name="warningLabelPane" style={{ zIndex: 620, pointerEvents: "none" }}>
+        {showWeatherWarnings && <WarningLabelLayer />}
       </Pane>
 
       {showPins && pins
