@@ -18,12 +18,12 @@ import PinSidePanel from "@/components/PinSidePanel";
 import SearchLocationPanel from "@/components/SearchLocationPanel";
 import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
-import IncidentAlert from "@/components/IncidentAlert";
 import BottomSheet from "@/components/BottomSheet";
 import MobileMenuPortal from "@/components/MobileMenuPortal";
 import QuickLocationFilter from "@/components/QuickLocationFilter";
 import GroupedPinList from "@/components/GroupedPinList";
 import NewDispatchModal from "@/components/NewDispatchModal";
+import { dummyCrewMembers } from "@/lib/dummyCrew";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -687,16 +687,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 速報アラートパネル - 常時表示（データ有無問わず） */}
-        <IncidentAlert
-          incidents={incidents}
-          onMapNavigate={(lat, lng) => {
-            setFlyTo({ lat, lng });
-            setSearchMarker(null);
-            setSelectedPin(null);
-          }}
-        />
-
         {/* Desktop Layout */}
         <div className="flex flex-row gap-2 sm:gap-4 lg:gap-6 flex-1 h-full min-h-[600px] sm:min-h-[650px]">
           {/* 現場一覧メニュー 開閉トグルボタン。詳細パネル/検索結果パネルが
@@ -785,6 +775,7 @@ export default function Home() {
               incidents={incidents}
               breakingAlerts={breakingAlerts}
               userLocation={userLocation}
+              crewMembers={dummyCrewMembers}
               onLocated={setUserLocation}
               showPins={isDispatchListOpen}
               showLegend={showDetailPanel && !!selectedPin}
@@ -808,20 +799,6 @@ export default function Home() {
             onNewDispatch={() => setShowNewDispatchModal(true)}
           />
         </header>
-
-        {/* Speed Banner - Horizontal scrollable banner below header - 常時表示（データ有無問わず） */}
-        <div className="shrink-0 w-full max-w-full overflow-x-auto bg-red-50 border-b border-red-200 z-30 py-1.5 px-2 box-border">
-          <div className="whitespace-nowrap">
-            <IncidentAlert
-              incidents={incidents}
-              onMapNavigate={(lat, lng) => {
-                setFlyTo({ lat, lng });
-                setSearchMarker(null);
-                setSelectedPin(null);
-              }}
-            />
-          </div>
-        </div>
 
         {/* Search Bar - Below speed banner */}
         <div className="shrink-0 w-full bg-white border-b border-gray-100 z-20 box-border">
@@ -867,6 +844,7 @@ export default function Home() {
             hoveredRoadKey={hoveredRoadKey}
             incidents={incidents}
             breakingAlerts={breakingAlerts}
+            crewMembers={dummyCrewMembers}
           />
         </main>
 

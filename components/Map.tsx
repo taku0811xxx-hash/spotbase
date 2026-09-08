@@ -15,6 +15,7 @@ import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
+import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
@@ -139,6 +140,42 @@ const userLocationIcon = L.divIcon({
   popupAnchor: [0, -11],
 });
 
+// クルーピンのステータス別カラー(対応中=オレンジ/赤系、待機中=緑、移動中=青、帰社中=グレー)
+const CREW_STATUS_COLOR: Record<CrewStatus, { main: string; dark: string }> = {
+  現場対応中: { main: "#f97316", dark: "#c2410c" },
+  移動中: { main: "#2563eb", dark: "#1d4ed8" },
+  待機中: { main: "#16a34a", dark: "#15803d" },
+  帰社中: { main: "#6b7280", dark: "#4b5563" },
+};
+
+// クルー用ピンアイコンをキャッシュしつつステータスごとに生成する
+// (このファイルは default export のコンポーネント名が `Map` のため、
+//  組み込みの Map クラスは globalThis 経由で参照する必要がある)
+const crewIconCache = new globalThis.Map<CrewStatus, L.DivIcon>();
+function getCrewIcon(status: CrewStatus): L.DivIcon {
+  const cached = crewIconCache.get(status);
+  if (cached) return cached;
+
+  const { main, dark } = CREW_STATUS_COLOR[status] ?? CREW_STATUS_COLOR["待機中"];
+  const icon = L.divIcon({
+    className: "",
+    html: `
+      <svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="15" cy="38" rx="7" ry="2" fill="rgba(0,0,0,0.3)"/>
+        <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 24 15 24s15-13.5 15-24C30 6.7 23.3 0 15 0z"
+              fill="${main}" stroke="${dark}" stroke-width="1.5"/>
+        <circle cx="15" cy="15" r="9" fill="white"/>
+        <path d="M15 9.5a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4zM9 21.5c0-2.9 2.7-4.8 6-4.8s6 1.9 6 4.8v.6H9v-.6z" fill="${dark}"/>
+      </svg>
+    `,
+    iconSize: [30, 40],
+    iconAnchor: [15, 40],
+    popupAnchor: [0, -36],
+  });
+  crewIconCache.set(status, icon);
+  return icon;
+}
+
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
 /**
@@ -252,6 +289,7 @@ type Props = {
   incidents?: Incident[]; // 速報事案
   breakingAlerts?: BreakingAlert[]; // 未確認速報ピン
   userLocation?: { lat: number; lng: number } | null; // ログイン時に取得した現在地(GPS)
+  crewMembers?: CrewMember[]; // 報道クルー/スタッフの位置情報(ダミーデータ)
   showPins?: boolean; // 現場ピンを地図上に表示するか(現場一覧メニュー開閉と連動。省略時は常時表示)
   showLegend?: boolean; // 駐車・駐停車の凡例ボックスを表示するか(詳細パネル表示時のみ等。省略時は常時表示)
   dispatchListOpen?: boolean; // 現場一覧メニューの開閉状態(地図幅が変わるためinvalidateSizeのトリガーに使う)
@@ -582,6 +620,7 @@ export default function Map({
   incidents = [],
   breakingAlerts = [],
   userLocation = null,
+  crewMembers = [],
   onLocated,
   showPins = true,
   showLegend = true,
@@ -689,6 +728,46 @@ export default function Map({
           <Popup>現在地</Popup>
         </Marker>
       )}
+
+      {/* 報道クルー/スタッフの位置ピン(ダミーデータ)。ステータスに応じて色分けし、
+          クリック時にPopupで詳細(氏名・職種・ステータス・車両・連絡先等)を表示する。 */}
+      {crewMembers
+        .filter((crew) => isValidCoordinate(crew.position[0], crew.position[1]))
+        .map((crew) => {
+          const { main } = CREW_STATUS_COLOR[crew.status] ?? CREW_STATUS_COLOR["待機中"];
+          return (
+            <Marker
+              key={crew.id}
+              position={[crew.position[0], crew.position[1]]}
+              icon={getCrewIcon(crew.status)}
+            >
+              <Popup>
+                <div className="space-y-2 w-52">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-bold text-gray-900">{crew.name}</p>
+                    <span
+                      className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 whitespace-nowrap"
+                      style={{ backgroundColor: main }}
+                    >
+                      {crew.status}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600">{crew.role}</p>
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p>🚐 {crew.vehicle}</p>
+                    <p>🕒 最終更新: {crew.updatedAt}</p>
+                  </div>
+                  <a
+                    href={`tel:${crew.phone}`}
+                    className="block text-center text-sm bg-blue-600 text-white hover:bg-blue-700 rounded px-2 py-1.5 transition-colors font-medium"
+                  >
+                    📞 {crew.phone}
+                  </a>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
 
       {searchMarker && isValidCoordinate(searchMarker.lat, searchMarker.lng) && (
         <Marker
