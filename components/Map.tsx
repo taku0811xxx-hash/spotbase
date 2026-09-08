@@ -316,7 +316,8 @@ type Props = {
   hoveredRoadKey?: string | null; // 一覧でホバー中の道路(park-123 / stop-456 の形式)
   incidents?: Incident[]; // 速報事案
   breakingAlerts?: BreakingAlert[]; // 未確認速報ピン
-  userLocation?: { lat: number; lng: number } | null; // ログイン時に取得した現在地(GPS)
+  userLocation?: { lat: number; lng: number } | null; // ログイン時に取得した現在地(GPS)。出動中/一時表示中のみ渡される想定(表示ON/OFFの制御は呼び出し側で行う)
+  lastKnownLocation?: { lat: number; lng: number } | null; // 直近に取得済みの現在地(表示ON/OFF状態に関わらず常に渡す)。「現在地を表示」ボタン押下時、再取得を待たずに即座にflyToするためのキャッシュとして使う
   crewMembers?: CrewMember[]; // 報道クルー/スタッフの位置情報(ダミーデータ)
   showPins?: boolean; // 現場ピンを地図上に表示するか(現場一覧メニュー開閉と連動。省略時は常時表示)
   showLegend?: boolean; // 駐車・駐停車の凡例ボックスを表示するか(詳細パネル表示時のみ等。省略時は常時表示)
@@ -527,7 +528,15 @@ function RouteFitBounds({ path }: { path: [number, number][] | null | undefined 
 // 高精度測位が失敗(タイムアウト/測位不能)した場合は、自動的に標準精度(Wi-Fi/IP測位)で
 // 再試行する二段階フォールバックを行う。権限拒否や両方失敗時も例外を投げず、
 // console.warnに留めつつ画面上に分かりやすい通知を表示する。
-function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: number }) => void }) {
+// 既に直近の現在地(lastKnownLocation)が分かっている場合は、GPS再取得を待たずに
+// 即座にそこへflyToしてから、裏側で最新の位置情報取得を継続する(体感速度向上)。
+function LocateControl({
+  onLocated,
+  lastKnownLocation,
+}: {
+  onLocated?: (loc: { lat: number; lng: number }) => void;
+  lastKnownLocation?: { lat: number; lng: number } | null;
+}) {
   const map = useMap();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -559,12 +568,16 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
 
   function handleSuccess(pos: GeolocationPosition) {
     // コンポーネントが既にアンマウントされている、またはmapインスタンスが
-    // 既にremove()されている場合はsetView等を呼び出さない(_leaflet_pos対策)
+    // 既にremove()されている場合はflyTo等を呼び出さない(_leaflet_pos対策)
     if (!mountedRef.current || !isMapReady(map)) return;
 
     const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     console.log("[GPS Debug]", pos);
-    map.setView([loc.lat, loc.lng], 16, { animate: true });
+    try {
+      map.flyTo([loc.lat, loc.lng], 15, { animate: true, duration: 1.2 });
+    } catch (error) {
+      console.warn("[GPS] 現在地へのflyToに失敗しました:", error);
+    }
     onLocated?.(loc);
     setLoading(false);
   }
@@ -590,6 +603,18 @@ function LocateControl({ onLocated }: { onLocated?: (loc: { lat: number; lng: nu
     }
     setLoading(true);
     setErrorMessage(null);
+
+    // 直近の現在地が既に分かっていれば、GPSの再取得を待たずに即座にそこへ
+    // flyToして体感速度を上げる(裏側では以下の通り最新の位置情報取得を継続し、
+    // 取得でき次第もう一度flyToして精度を追従させる)。
+    if (lastKnownLocation && isMapReady(map)) {
+      try {
+        map.flyTo([lastKnownLocation.lat, lastKnownLocation.lng], 15, { animate: true, duration: 1.2 });
+      } catch (error) {
+        console.warn("[GPS] 既知の現在地へのflyToに失敗しました:", error);
+      }
+    }
+
     console.log("[GPS Debug] 位置情報の取得を開始します(高精度, timeout 5000ms)");
 
     navigator.geolocation.getCurrentPosition(
@@ -749,6 +774,7 @@ export default function Map({
   incidents = [],
   breakingAlerts = [],
   userLocation = null,
+  lastKnownLocation = null,
   crewMembers = [],
   onLocated,
   showPins = true,
@@ -881,7 +907,7 @@ export default function Map({
       {/* クルー移動経路表示時、経路全体が収まるよう地図の表示範囲を自動調整 */}
       <RouteFitBounds path={activeRouteHistory?.path ?? null} />
       {/* 現在地表示ボタン */}
-      <LocateControl onLocated={onLocated} />
+      <LocateControl onLocated={onLocated} lastKnownLocation={lastKnownLocation} />
       {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
       <RadiusPresetControl />
       <TileLayer

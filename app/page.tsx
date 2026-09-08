@@ -106,6 +106,13 @@ export default function Home() {
   // (以降の継続更新のたびに地図が動いてしまうと操作の邪魔になるため)
   const hasCenteredOnGpsRef = useRef(false);
 
+  // 「待機中」の状態で地図の「現在地を表示」ボタンを押した際、現在地ピンを
+  // 常時表示するのではなく一時的にのみ表示するためのフラグとタイマー。
+  // (「出動中」ステータスとの整合性を保つため、待機中は自動的に消える)
+  const [tempLocationVisible, setTempLocationVisible] = useState(false);
+  const tempLocationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const TEMP_LOCATION_VISIBLE_MS = 20000; // 一時表示を維持する時間(20秒)
+
   const GPS_TRACKING_STORAGE_KEY = "spotbase.gpsTrackingEnabled";
   // 東京駅周辺（位置情報が拒否/取得失敗した場合のフォールバック座標）
   const DEFAULT_LOCATION = { lat: 35.681236, lng: 139.767125 };
@@ -122,7 +129,41 @@ export default function Home() {
     } catch (error) {
       console.warn("GPS追跡状態の読み込みに失敗しました:", error);
     }
+
+    return () => {
+      if (tempLocationTimerRef.current) {
+        clearTimeout(tempLocationTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 「出動中」に切り替わったら、待機中用の一時表示タイマーは不要になるので破棄する
+  // (以後は常時表示のuserLocation側の条件でピンが表示されるため)
+  useEffect(() => {
+    if (gpsTracking && tempLocationTimerRef.current) {
+      clearTimeout(tempLocationTimerRef.current);
+      tempLocationTimerRef.current = null;
+      setTempLocationVisible(false);
+    }
+  }, [gpsTracking]);
+
+  // 地図の「現在地を表示」ボタン(LocateControl)が現在地取得に成功した際のコールバック。
+  // 「待機中」の場合でも一時的に現在地ピンを表示できるようにしつつ、「出動中」表示との
+  // 整合性を保つため、一定時間後(TEMP_LOCATION_VISIBLE_MS)に自動で非表示へ戻す。
+  function handleLocated(loc: { lat: number; lng: number }) {
+    setUserLocation(loc);
+    if (!gpsTracking) {
+      setTempLocationVisible(true);
+      if (tempLocationTimerRef.current) {
+        clearTimeout(tempLocationTimerRef.current);
+      }
+      tempLocationTimerRef.current = setTimeout(() => {
+        setTempLocationVisible(false);
+        tempLocationTimerRef.current = null;
+      }, TEMP_LOCATION_VISIBLE_MS);
+    }
+  }
 
   // 現在地を1回だけ取得するヘルパー。第1試行(高精度)がタイムアウト/エラーの場合、
   // 即座に第2試行(低精度: Wi-Fi/基地局測位)にフォールバックする2段階方式。
@@ -862,9 +903,10 @@ export default function Home() {
               hoveredRoadKey={hoveredRoadKey}
               incidents={incidents}
               breakingAlerts={breakingAlerts}
-              userLocation={gpsTracking ? userLocation : null}
+              userLocation={gpsTracking || tempLocationVisible ? userLocation : null}
+              lastKnownLocation={userLocation}
               crewMembers={dummyCrewMembers}
-              onLocated={setUserLocation}
+              onLocated={handleLocated}
               showPins={isDispatchListOpen}
               showLegend={showDetailPanel && !!selectedPin}
               dispatchListOpen={isDispatchListOpen}
@@ -941,7 +983,10 @@ export default function Home() {
             hoveredRoadKey={hoveredRoadKey}
             incidents={incidents}
             breakingAlerts={breakingAlerts}
+            userLocation={gpsTracking || tempLocationVisible ? userLocation : null}
+            lastKnownLocation={userLocation}
             crewMembers={dummyCrewMembers}
+            onLocated={handleLocated}
           />
         </main>
 
