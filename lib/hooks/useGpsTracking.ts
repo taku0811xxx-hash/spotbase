@@ -95,8 +95,19 @@ export function useGpsTracking({
     if (!enabled) return;
 
     // ネイティブアプリ(Capacitor/iOS)実行時は @capacitor-community/background-geolocation
-    // を使い、アプリがバックグラウンド・端末スリープ中でも10m移動ごとに位置を取得し続ける。
+    // を使い、アプリがバックグラウンド・端末スリープ中でも5m移動ごとに位置を取得し続ける。
     // (Web版のwatchPositionはブラウザ/OSの制約でバックグラウンド追跡ができないため)
+    //
+    // このプラグイン(v1.2.26)がJSから設定できるのはWatcherOptions
+    // (backgroundMessage / backgroundTitle / requestPermissions / stale /
+    //  distanceFilter)のみで、精度(desiredAccuracy)や取得間隔
+    // (interval / fastInterval)を指定するオプションは存在しない
+    // (ios/Plugin/Swift/Plugin.swiftを確認済み)。iOS側は常に
+    // manager.desiredAccuracy = 外部電源時kCLLocationAccuracyBestForNavigation /
+    // それ以外はkCLLocationAccuracyBest を自動選択しており、これは既に
+    // 最高精度相当のため追加設定は不要。取得間隔もCLLocationManagerの
+    // watchPosition的な仕組み(位置が変化するたびにコールバック)であり、
+    // タイマーPollingではないため秒間隔の指定自体になじまない。
     if (Capacitor.isNativePlatform()) {
       let watcherId: string | null = null;
       let cancelled = false;
@@ -116,11 +127,12 @@ export function useGpsTracking({
           backgroundTitle: "SpotBase 位置情報追跡中",
           requestPermissions: true,
           stale: false,
-          // 省電力優先: 一定間隔でのポーリングではなく「10m以上の移動」を
-          // 検知したときだけ位置を取得・保存することでバッテリー消費を抑える。
-          // (このプラグインはdesiredAccuracy=位置精度そのものの指定には未対応で、
-          // 内部でバッテリー残量に応じてiOSのCLLocationAccuracyを自動選択している)
-          distanceFilter: 10,
+          // カーブ・曲がり角を綺麗に記録するため、直線区間を間引く距離フィルタを
+          // 10m→5mに狭め、より細かい移動変化を検知できるようにしている。
+          // (このプラグインが対応する設定項目はdistanceFilterのみ。
+          //  desiredAccuracy・interval/fastIntervalに相当するオプションは
+          //  存在しないため設定していない。詳細は下の注記を参照)
+          distanceFilter: 5,
         },
         (position?: NativeLocation, error?: CallbackError) => {
           if (cancelled || !activeRef.current) return;
