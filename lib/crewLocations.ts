@@ -72,14 +72,49 @@ export function subscribeCrewLocations(
   selfUid: string,
   onChange: (members: CrewMember[]) => void
 ): () => void {
+  // 管理者画面にピンが出ない原因切り分け用のデバッグログ。
+  // organizationId/selfUidが想定通りか(空文字・undefinedになっていないか)、
+  // 取得件数、各ドキュメントの除外理由をここで確認できる。
+  console.log("[クルー位置][Debug] 購読開始", { organizationId, selfUid });
+
   const q = query(collection(db, "user_locations"), where("organizationId", "==", organizationId));
   return onSnapshot(
     q,
     (snap) => {
-      const members = snap.docs
-        .filter((d) => d.id !== selfUid)
-        .map((d) => toCrewMember(d.id, d.data() as UserLocationDoc))
-        .filter((m): m is CrewMember => m !== null);
+      console.log("[クルー位置][Debug] onSnapshot受信: ドキュメント件数 =", snap.docs.length);
+
+      const members: CrewMember[] = [];
+      for (const d of snap.docs) {
+        const uid = d.id;
+        const data = d.data() as UserLocationDoc;
+
+        if (uid === selfUid) {
+          console.log(`[クルー位置][Debug] スキップ(自分自身): uid=${uid}`);
+          continue;
+        }
+
+        const hasPosition = !!data.position;
+        const hasPath = !!(data.path && data.path.length > 0);
+        if (!hasPosition && !hasPath) {
+          console.log(
+            `[クルー位置][Debug] スキップ(position/pathなし): uid=${uid}, name=${data.name ?? "?"}, organizationId=${data.organizationId ?? "?"}`
+          );
+          continue;
+        }
+
+        const member = toCrewMember(uid, data);
+        if (!member) {
+          // toCrewMember内部の判定と上のhasPosition/hasPathチェックが食い違うことは
+          // 基本的に無いはずだが、念のためログを残す
+          console.log(`[クルー位置][Debug] スキップ(変換失敗): uid=${uid}`);
+          continue;
+        }
+
+        console.log("[クルー位置][Debug] CrewMemberへ変換成功:", member);
+        members.push(member);
+      }
+
+      console.log(`[クルー位置][Debug] 最終的な表示対象クルー数 = ${members.length}`);
       onChange(members);
     },
     (error) => {
