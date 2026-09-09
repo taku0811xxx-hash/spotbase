@@ -25,6 +25,16 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* iOS(Capacitor WebView)でのSafe Areaインセット対応。
+   viewport-fit=cover(app/layout.tsxのviewport export)によりWebViewが
+   ノッチ/Dynamic Island裏まで描画されるようになるため、画面最上部の
+   ヘッダー類はステータスバーと重ならないよう上パディングを確保する。
+   env()未対応環境ではフォールバック値の0が使われ、通常の12pxのみになる。 */
+header,
+.app-header {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

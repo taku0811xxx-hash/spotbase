@@ -973,7 +973,11 @@ export default function Home() {
             ドロップダウンが縦方向にクリップされてしまう(要修正バグの原因)。
             横方向の折り返し対策はHeaderNav側の内側コンテナで完結させているため、
             ここではoverflowを完全にデフォルト(visible)のままにする。 */}
-        <header className="relative w-full max-w-full shrink-0 h-14 px-3 box-border flex items-center justify-between bg-slate-900 text-white border-b border-slate-700 z-[9999]">
+        {/* min-h-14(h-14固定ではなく): globals.cssでheader要素全般に
+            safe-area分のpadding-topが加わるため、高さを固定するとその分
+            中身(HeaderNav)が縦方向に圧縮されてしまう。min-heightにすることで
+            padding分だけ外側に高さが伸び、中身の見た目はそのまま保たれる。 */}
+        <header className="relative w-full max-w-full shrink-0 min-h-14 px-3 box-border flex items-center justify-between bg-slate-900 text-white border-b border-slate-700 z-[9999]">
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
