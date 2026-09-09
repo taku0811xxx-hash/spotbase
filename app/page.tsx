@@ -23,7 +23,8 @@ import MobileMenuPortal from "@/components/MobileMenuPortal";
 import QuickLocationFilter from "@/components/QuickLocationFilter";
 import GroupedPinList from "@/components/GroupedPinList";
 import NewDispatchModal from "@/components/NewDispatchModal";
-import { dummyCrewMembers, type CrewStatus } from "@/lib/dummyCrew";
+import { type CrewMember, type CrewStatus } from "@/lib/dummyCrew";
+import { subscribeCrewLocations } from "@/lib/crewLocations";
 import {
   type PathPoint,
   loadPathFromStorage,
@@ -121,6 +122,22 @@ export default function Home() {
   // Firestoreへの同期頻度を抑えるための直近同期時刻(書き込み過多の防止)
   const lastFirestoreSyncAtRef = useRef(0);
   const FIRESTORE_SYNC_INTERVAL_MS = 15000; // 15秒に1回まで
+  // 停止中(移動していない)でもuser_locationsのupdatedAt/positionが古いままに
+  // ならないよう、GPS追跡ONの間は定期的にハートビート同期を行う間隔。
+  const HEARTBEAT_SYNC_INTERVAL_MS = 20000; // 20秒に1回
+
+  // 同組織の他クルーの実機位置(Firestore user_locationsをリアルタイム購読)。
+  // これまでダミーデータ(lib/dummyCrew.ts)を表示していたピンを実データに置き換える。
+  const [crewMembers, setCrewMembers] = useState<CrewMember[]>([]);
+
+  // setIntervalのクロージャが古いstateを参照し続けないよう、最新値をrefにも
+  // 保持しておく(effect自体はgpsTracking/profileが変わるまで張り直したくないため)。
+  const userLocationRef = useRef(userLocation);
+  userLocationRef.current = userLocation;
+  const myStatusRef = useRef(myStatus);
+  myStatusRef.current = myStatus;
+  const myPathHistoryRef = useRef(myPathHistory);
+  myPathHistoryRef.current = myPathHistory;
 
   // 「待機中」の状態で地図の「現在地を表示」ボタンを押した際、現在地ピンを
   // 常時表示するのではなく一時的にのみ表示するためのフラグとタイマー。
@@ -182,8 +199,49 @@ export default function Home() {
     const now = Date.now();
     if (now - lastFirestoreSyncAtRef.current < FIRESTORE_SYNC_INTERVAL_MS) return;
     lastFirestoreSyncAtRef.current = now;
-    syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistory);
-  }, [myPathHistory, mounted, profile]);
+    syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistory, {
+      status: myStatus,
+      phone: profile.phone,
+      position: userLocation ?? undefined,
+    });
+  }, [myPathHistory, mounted, profile, myStatus, userLocation]);
+
+  // 移動していない間もuser_locationsの位置・ステータス・updatedAtが古いままに
+  // ならないよう、GPS追跡ON中は一定間隔でハートビート同期を行う(上のeffectは
+  // myPathHistoryが変化した時=一定距離動いた時にしか発火しないため、停止中は
+  // このタイマーが無いと管理者画面の「最終更新」がどんどん古くなってしまう)。
+  // 依存配列を[gpsTracking, mounted, profile]に絞り、位置更新のたびにタイマーが
+  // 張り直されないようにするため、最新値はref(userLocationRef等)経由で参照する。
+  useEffect(() => {
+    if (!mounted || !profile || !gpsTracking) return;
+    const interval = setInterval(() => {
+      const loc = userLocationRef.current;
+      if (!loc) return;
+      const now = Date.now();
+      lastFirestoreSyncAtRef.current = now;
+      syncPathToFirestore(
+        profile.uid,
+        profile.organizationId,
+        profile.category,
+        profile.name,
+        myPathHistoryRef.current,
+        { status: myStatusRef.current, phone: profile.phone, position: loc }
+      );
+    }, HEARTBEAT_SYNC_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [mounted, profile, gpsTracking]);
+
+  // 同組織の他クルーの実機位置(user_locations)をリアルタイム購読し、地図に渡す。
+  // 自分自身のドキュメントはlib/crewLocations.ts側で除外している
+  // (自分の現在地は別途userLocationとして地図に渡しているため)。
+  useEffect(() => {
+    if (!profile) {
+      setCrewMembers([]);
+      return;
+    }
+    const unsubscribe = subscribeCrewLocations(profile.organizationId, profile.uid, setCrewMembers);
+    return () => unsubscribe();
+  }, [profile]);
 
   // 地図の「現在地を表示」ボタン(LocateControl)が現在地取得に成功した際のコールバック。
   // 「待機中」の場合でも一時的に現在地ピンを表示できるようにしつつ、「出動中」表示との
@@ -951,7 +1009,7 @@ export default function Home() {
               breakingAlerts={breakingAlerts}
               userLocation={gpsTracking || tempLocationVisible ? userLocation : null}
               lastKnownLocation={userLocation}
-              crewMembers={dummyCrewMembers}
+              crewMembers={crewMembers}
               onLocated={handleLocated}
               showPins={isDispatchListOpen}
               showLegend={showDetailPanel && !!selectedPin}
@@ -1038,7 +1096,7 @@ export default function Home() {
             breakingAlerts={breakingAlerts}
             userLocation={gpsTracking || tempLocationVisible ? userLocation : null}
             lastKnownLocation={userLocation}
-            crewMembers={dummyCrewMembers}
+            crewMembers={crewMembers}
             onLocated={handleLocated}
             myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
             myStatus={myStatus}

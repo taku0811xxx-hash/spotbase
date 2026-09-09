@@ -85,6 +85,16 @@ export function savePathToStorage(path: PathPoint[]): void {
   }
 }
 
+// syncPathToFirestoreの追加パラメータ。管理者画面のクルー位置ピン(lib/crewLocations.ts)が
+// 表示に使うため、位置(position)に加えてステータス・連絡先も一緒に書き込めるようにしている。
+export interface SyncPathExtra {
+  // ユーザーステータスパネルで切り替える現在のステータス(待機中/現場対応中 等)
+  status?: string;
+  phone?: string;
+  // 直近の現在地。未指定の場合はpath配列の最終点を使う(pathが空ならposition自体書き込まない)。
+  position?: { lat: number; lng: number };
+}
+
 // Firestoreへの同期(ベストエフォート)。失敗してもthrowせずログのみに留め、
 // 呼び出し側(ローカル保存フロー)に一切影響させない。
 export async function syncPathToFirestore(
@@ -92,8 +102,11 @@ export async function syncPathToFirestore(
   organizationId: string,
   category: string,
   name: string,
-  path: PathPoint[]
+  path: PathPoint[],
+  extra?: SyncPathExtra
 ): Promise<void> {
+  const last = path[path.length - 1];
+  const position = extra?.position ?? (last ? { lat: last.lat, lng: last.lng } : null);
   try {
     await setDoc(
       doc(db, "user_locations", uid),
@@ -101,6 +114,9 @@ export async function syncPathToFirestore(
         organizationId,
         category,
         name,
+        ...(extra?.status !== undefined ? { status: extra.status } : {}),
+        ...(extra?.phone !== undefined ? { phone: extra.phone } : {}),
+        ...(position ? { position } : {}),
         path: path.slice(-MAX_POINTS),
         updatedAt: serverTimestamp(),
       },
