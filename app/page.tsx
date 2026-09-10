@@ -332,6 +332,19 @@ export default function Home() {
       } catch (error) {
         console.warn("GPS追跡状態の保存に失敗しました:", error);
       }
+
+      // GPSトラッキングON操作から実際にFirestoreへ書き込まれるまでの間、
+      // myPathHistoryの変化(10m以上の移動)やハートビート(最大20秒後)を
+      // 待っていると、管理者/他クルー側にピンが反映されるまで遅延してしまう。
+      // ここで取得済みのloc・organizationIdを使って即座に1回同期しておく。
+      if (profile) {
+        lastFirestoreSyncAtRef.current = Date.now();
+        syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistoryRef.current, {
+          status: myStatusRef.current,
+          phone: profile.phone,
+          position: loc,
+        });
+      }
     } catch (error) {
       console.error("[GPS Error] 出動中への切り替えに失敗しました:", error);
       window.alert("位置情報を取得できませんでした。端末の位置情報設定を確認してください");
