@@ -6,7 +6,7 @@
 // 取得して表示する。書き込み側はlib/userPathHistory.ts(syncPathToFirestore)。
 
 import { collection, onSnapshot, query, where, Timestamp } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import type { CrewMember, CrewStatus } from "./dummyCrew";
 
 // user_locations/{uid} ドキュメントの形(書き込み側のsyncPathToFirestoreと対応)
@@ -77,6 +77,21 @@ export function subscribeCrewLocations(
   // 取得件数、各ドキュメントの除外理由をここで確認できる。
   console.log("[クルー位置][Debug] 購読開始", { organizationId, selfUid });
 
+  // Firestoreのfirestore.rulesはrequest.auth(サインイン状態)を前提にしている
+  // (未サインインでのuser_locations読み取りは"Missing or insufficient
+  // permissions"で拒否される)。auth.currentUserが無い状態でonSnapshotを
+  // 張ってしまうと、無意味なpermission-deniedエラーが繰り返し発生するだけなので、
+  // ここで明示的にガードし、呼び出し元にわかるようログを出して処理を中断する。
+  if (!auth.currentUser) {
+    console.error(
+      "[クルー位置] 未ログイン状態(auth.currentUserがnull)のため、user_locationsの購読を中止しました。" +
+        "セッションが切れている可能性があります。再度ログインしてください。",
+      { organizationId, selfUid }
+    );
+    onChange([]);
+    return () => {};
+  }
+
   const q = query(collection(db, "user_locations"), where("organizationId", "==", organizationId));
   return onSnapshot(
     q,
@@ -119,7 +134,19 @@ export function subscribeCrewLocations(
     },
     (error) => {
       // 権限エラー等が起きても地図自体は表示させ続けたいため、空配列にフォールバックする
-      console.warn("[クルー位置] user_locationsの購読に失敗しました:", error);
+      const firestoreError = error as { code?: string; message?: string };
+      if (firestoreError?.code === "permission-denied") {
+        // 購読開始時はauth.currentUserがあっても、その後トークン失効等で
+        // "Missing or insufficient permissions"になるケースがあるため、
+        // ここでも再ログインを促すログを出す(実際の再ログイン導線はUI側)。
+        console.error(
+          "[クルー位置] 権限エラー(permission-denied)によりuser_locationsを購読できません。" +
+            "セッションが切れている可能性があります。再度ログインしてください。",
+          { authCurrentUser: auth.currentUser?.uid ?? null, error }
+        );
+      } else {
+        console.warn("[クルー位置] user_locationsの購読に失敗しました:", error);
+      }
       onChange([]);
     }
   );

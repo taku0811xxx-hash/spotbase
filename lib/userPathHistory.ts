@@ -11,7 +11,7 @@
 //      失敗してもlocalStorage側の履歴には一切影響させない(ベストエフォート)。
 
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 
 export type PathPoint = { lat: number; lng: number; timestamp: number };
 
@@ -125,6 +125,30 @@ export async function syncPathToFirestore(
     console.error("[GPS履歴][Debug] uidが空のためuser_locationsへの書き込みをスキップします");
     return;
   }
+
+  // firestore.rulesはuser_locations/{uid}への書き込みをrequest.auth.uid == uidの
+  // 場合のみ許可している。auth.currentUserが無い(未ログイン/セッション切れ/
+  // トークン失効)状態でsetDocを呼ぶと必ず"Missing or insufficient permissions"に
+  // なるだけなので、事前にチェックして無意味なFirestoreリクエストと紛らわしい
+  // エラーログを避け、原因(未ログイン)が一目でわかるログを出して中断する。
+  if (!auth.currentUser) {
+    console.error(
+      "[GPS履歴] 未ログイン状態(auth.currentUserがnull)のためuser_locationsへの書き込みを中止しました。" +
+        "セッションが切れている可能性があります。再度ログインしてください。",
+      { uid, organizationId }
+    );
+    return;
+  }
+  if (auth.currentUser.uid !== uid) {
+    // firestore.rules上、他人のuidで書き込むことはできない(権限エラーになる)。
+    // 呼び出し元のprofile.uidとauth.currentUser.uidがずれている(ログイン切り替え中
+    // 等)可能性が高いため、書き込まずに警告を出す。
+    console.error(
+      "[GPS履歴] auth.currentUser.uidと書き込み対象uidが一致しないため中止しました(権限エラー回避)",
+      { authUid: auth.currentUser.uid, targetUid: uid }
+    );
+    return;
+  }
   if (!organizationId) {
     console.warn(
       "[GPS履歴][Debug] organizationIdが空のまま書き込もうとしています(管理者/他クルー側で表示されない原因になります):",
@@ -162,5 +186,10 @@ export async function syncPathToFirestore(
         organizationId,
       }
     );
+    if (firestoreError?.code === "permission-denied" || firestoreError?.code === "unauthenticated") {
+      console.error(
+        "[GPS履歴] 権限エラーが発生しました。認証セッションが切れている可能性があります。再度ログインしてください。"
+      );
+    }
   }
 }

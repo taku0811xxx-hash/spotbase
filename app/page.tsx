@@ -195,7 +195,11 @@ export default function Home() {
   // 書き込み頻度を抑えるため、前回同期からFIRESTORE_SYNC_INTERVAL_MS以上
   // 経過している場合のみ実行する)。失敗してもlocalStorage側には影響しない。
   useEffect(() => {
-    if (!mounted || !profile || myPathHistory.length === 0) return;
+    // Firebase Authのセッションが未確立(再ログイン待ち等)の間は、どうせ
+    // permission-deniedになるだけのFirestore書き込みを試みない。userが
+    // 依存配列に入っているため、ログイン完了(userがnull→非nullに変化)した
+    // タイミングで本effectが再評価され、以降は正常に同期される。
+    if (!mounted || !user || !profile || myPathHistory.length === 0) return;
     const now = Date.now();
     if (now - lastFirestoreSyncAtRef.current < FIRESTORE_SYNC_INTERVAL_MS) return;
     lastFirestoreSyncAtRef.current = now;
@@ -204,7 +208,7 @@ export default function Home() {
       phone: profile.phone,
       position: userLocation ?? undefined,
     });
-  }, [myPathHistory, mounted, profile, myStatus, userLocation]);
+  }, [myPathHistory, mounted, user, profile, myStatus, userLocation]);
 
   // 移動していない間もuser_locationsの位置・ステータス・updatedAtが古いままに
   // ならないよう、GPS追跡ON中は一定間隔でハートビート同期を行う(上のeffectは
@@ -213,7 +217,9 @@ export default function Home() {
   // 依存配列を[gpsTracking, mounted, profile]に絞り、位置更新のたびにタイマーが
   // 張り直されないようにするため、最新値はref(userLocationRef等)経由で参照する。
   useEffect(() => {
-    if (!mounted || !profile || !gpsTracking) return;
+    // userを依存配列に含め、ログイン完了/セッション切れ復帰のたびに
+    // タイマーを張り直す(未ログイン中はFirestore書き込みを試みない)。
+    if (!mounted || !user || !profile || !gpsTracking) return;
     const interval = setInterval(() => {
       const loc = userLocationRef.current;
       if (!loc) return;
@@ -229,19 +235,45 @@ export default function Home() {
       );
     }, HEARTBEAT_SYNC_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [mounted, profile, gpsTracking]);
+  }, [mounted, user, profile, gpsTracking]);
 
   // 同組織の他クルーの実機位置(user_locations)をリアルタイム購読し、地図に渡す。
   // 自分自身のドキュメントはlib/crewLocations.ts側で除外している
   // (自分の現在地は別途userLocationとして地図に渡しているため)。
+  // 依存配列にuserを含めることで、ログイン完了(Auth状態の変化でuserがnullから
+  // 実値に変わったタイミング)や再ログイン後に、自動的に購読が再実行される。
   useEffect(() => {
-    if (!profile) {
+    if (!user || !profile) {
       setCrewMembers([]);
       return;
     }
     const unsubscribe = subscribeCrewLocations(profile.organizationId, profile.uid, setCrewMembers);
     return () => unsubscribe();
-  }, [profile]);
+  }, [user, profile]);
+
+  // ログイン完了(auth状態がuser: null → 実ユーザーに変化)を検知したタイミングで、
+  // GPS追跡が既にON(前回セッションからlocalStorageで復元された状態)であれば
+  // 初回位置送信を1回だけ強制実行する。上のmyPathHistory依存effectは経路が
+  // 変化するまで発火しないため、再ログイン直後にuser_locationsが古いまま
+  // 放置されるのを防ぐ。
+  useEffect(() => {
+    if (!mounted || !user || !profile || !gpsTracking) return;
+    const loc = userLocationRef.current;
+    if (!loc) return;
+    console.log("[GPS Debug][ログイン] Auth状態変化を検知したため初回位置送信を実行します", {
+      uid: profile.uid,
+      organizationId: profile.organizationId,
+    });
+    lastFirestoreSyncAtRef.current = Date.now();
+    syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistoryRef.current, {
+      status: myStatusRef.current,
+      phone: profile.phone,
+      position: loc,
+    });
+    // userが変化した(=ログイン/再ログインが完了した)タイミングでのみ実行したいため、
+    // 依存はuser/mounted/profileに絞る(loc/gpsTrackingは最新値をrefから読む)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, mounted, profile]);
 
   // 地図の「現在地を表示」ボタン(LocateControl)が現在地取得に成功した際のコールバック。
   // 「待機中」の場合でも一時的に現在地ピンを表示できるようにしつつ、「出動中」表示との
