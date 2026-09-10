@@ -35,6 +35,11 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
+      // 仮想キーボードを閉じてからメイン画面(地図)へ遷移する。
+      // キーボード表示中にMap(Leaflet)を描画すると、iOS Safariの
+      // ビューポート縮小状態を引きずってコンテナ幅がズレ、地図が
+      // 拡大・はみ出して表示されることがあるための対策。
+      (document.activeElement as HTMLElement)?.blur();
       router.push("/");
     } catch (err) {
       console.error(err);

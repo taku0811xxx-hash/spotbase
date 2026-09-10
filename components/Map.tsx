@@ -360,13 +360,51 @@ const mapStyles = `
 `;
 
 // 地図の初期化とコンテナサイズの再計算を行うコンポーネント
-// SSR/初期描画時のLeafletレンダリング遅延を防ぐ
+// SSR/初期描画時のLeafletレンダリング遅延を防ぐ。
+// ログイン直後などはコンテナ(親要素)のレイアウト確定・アニメーション・
+// 仮想キーボードの開閉が完了する前にLeafletがサイズを計測してしまい、
+// 実際のコンテナ幅とズレたまま(=拡大・はみ出しに見える)描画されることが
+// あるため、マウント直後に加えて100〜300ms後にも再計測を行う。
+// あわせて、画面リサイズ時・タブ/アプリのフォアグラウンド復帰時にも
+// invalidateSize()を実行し、ズレを解消し続ける。
 function MapInitializer() {
   const map = useMap();
   useEffect(() => {
     // マウント直後に invalidateSize() を実行し、タイル描画を即座に開始
     // これによりタッチ操作待たずに地図が表示される
     map.invalidateSize();
+
+    // 親要素のレイアウト確定を待ってから再計測する(複数回試行することで、
+    // アニメーション時間の違いや端末差を吸収する)
+    const timeoutIds = [100, 200, 300].map((delay) =>
+      setTimeout(() => {
+        if (!isMapReady(map)) return;
+        map.invalidateSize();
+      }, delay)
+    );
+
+    function handleWindowResize() {
+      if (!isMapReady(map)) return;
+      map.invalidateSize();
+    }
+
+    function handleVisibilityChange() {
+      // タブ切り替え・アプリのバックグラウンド/フォアグラウンド復帰時。
+      // 非表示中はコンテナのサイズが0で計測されている可能性があるため、
+      // 復帰直後に再計測する。
+      if (document.visibilityState !== "visible") return;
+      if (!isMapReady(map)) return;
+      map.invalidateSize();
+    }
+
+    window.addEventListener("resize", handleWindowResize);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      timeoutIds.forEach(clearTimeout);
+      window.removeEventListener("resize", handleWindowResize);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [map]);
   return null;
 }
@@ -931,7 +969,13 @@ export default function Map({
         doubleClickZoom={true}
         zoomControl={true}
         className="h-full w-full pointer-events-auto"
-        style={{ touchAction: "manipulation", WebkitTouchCallout: "none" }}
+        style={{
+          touchAction: "manipulation",
+          WebkitTouchCallout: "none",
+          maxWidth: "100vw",
+          boxSizing: "border-box",
+          overflow: "hidden",
+        }}
       >
       {/* 地図初期化コンポーネント - invalidateSize() を実行してタイル描画を即座に開始 */}
       <MapInitializer />

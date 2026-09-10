@@ -51,3 +51,14 @@ header,
     background: #ffffff;
   }
 }
+
+/* iOS Safariはinput/select/textareaのfont-sizeが16px未満だとフォーカス時に
+   画面を自動拡大(ズームイン)する。ログイン直後や入力操作時の意図しない
+   拡大を防ぐため、16px未満にならないよう固定する。 */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  select,
+  textarea,
+  input {
+    font-size: 16px !important;
+  }
+}

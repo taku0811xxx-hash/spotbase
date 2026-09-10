@@ -1197,7 +1197,10 @@ export default function Home() {
         />
 
         {/* Map Container - Takes remaining space */}
-        <main className="flex-1 h-full w-full relative overflow-hidden z-10" style={{ touchAction: "manipulation" }}>
+        <main
+          className="flex-1 h-full w-full relative overflow-hidden z-10"
+          style={{ touchAction: "manipulation", maxWidth: "100vw", boxSizing: "border-box" }}
+        >
           {/* Map */}
           <Map
             pins={filteredByLocation}
