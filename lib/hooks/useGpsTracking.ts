@@ -49,11 +49,10 @@ const WATCH_OPTIONS: PositionOptions = {
 // バックオフ再試行の間隔(ms)。TIMEOUT/POSITION_UNAVAILABLEのたびに段階的に延ばし、
 // 上限に達したら以降はその間隔で再試行し続ける。
 const BACKOFF_STEPS_MS = [2000, 4000, 8000, 15000];
-// watchPositionのイベントに一定時間更新が無い場合、ハートビートとして
-// getCurrentPositionによる強制取得を試みるまでの経過時間
-const STALE_THRESHOLD_MS = 15000;
-// ハートビート(定期ヘルスチェック)の実行間隔
-const HEARTBEAT_INTERVAL_MS = 12000;
+// 静止中(distanceFilter/watchPositionのイベントが発火しない間)でも、管理者画面や
+// 他メンバーの地図上のピンが「最新のオンライン位置」として更新され続けるよう、
+// 移動の有無に関わらず一定間隔で現在地を強制的に再取得・再通知する間隔。
+const FORCE_SEND_INTERVAL_MS = 20000;
 
 /**
  * 出動中の現在地(GPS)を安定して継続取得するためのフック。
@@ -79,8 +78,11 @@ export function useGpsTracking({
 
   const watchIdRef = useRef<number | null>(null);
   const backoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const forceSendTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastFixAtRef = useRef<number>(0);
+  // ネイティブ(distanceFilterベース)は単発のgetCurrentPosition相当のAPIを
+  // 持たないため、強制送信タイマーでは直近に受信済みの座標を再通知する。
+  const lastNativeLocRef = useRef<LatLng | null>(null);
   const retryCountRef = useRef(0);
   const gotFirstFixRef = useRef(false);
   const permissionDeniedRef = useRef(false);
@@ -153,6 +155,7 @@ export function useGpsTracking({
           lastFixAtRef.current = Date.now();
           const loc = { lat: position.latitude, lng: position.longitude };
           console.log("[GPS Debug][Native] fix取得", loc);
+          lastNativeLocRef.current = loc;
           setCurrentLocation(loc);
           setGpsStatus("active");
           onFixRef.current?.(loc);
@@ -171,12 +174,28 @@ export function useGpsTracking({
           if (defaultLocation) setCurrentLocation((prev) => prev ?? defaultLocation);
         });
 
+      // このプラグインはdistanceFilter(5m)以上動かないとコールバックが発火しない。
+      // 静止中でも管理者画面/他メンバーの地図上のピンが「最新のオンライン位置」として
+      // 更新され続けるよう、直近に受信済みの座標を一定間隔で再通知する
+      // (新しいGPS取得ではなく、位置送信側のupdatedAtを更新させるための再送)。
+      forceSendTimerRef.current = setInterval(() => {
+        if (!activeRef.current) return;
+        const loc = lastNativeLocRef.current;
+        if (!loc) return;
+        console.log("[GPS Debug][Native] 強制送信タイマー: 直近の座標を再通知します", loc);
+        onFixRef.current?.(loc);
+      }, FORCE_SEND_INTERVAL_MS);
+
       return () => {
         cancelled = true;
         activeRef.current = false;
         setShowAlwaysPermissionPrompt(false);
         if (watcherId) {
           BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => {});
+        }
+        if (forceSendTimerRef.current) {
+          clearInterval(forceSendTimerRef.current);
+          forceSendTimerRef.current = null;
         }
       };
     }
@@ -271,15 +290,14 @@ export function useGpsTracking({
       watchIdRef.current = navigator.geolocation.watchPosition(handleFix, handleError, WATCH_OPTIONS);
     }
 
-    // watchPositionのイベント発火だけに依存せず、一定間隔で更新有無を確認し、
-    // 一定時間更新が無ければgetCurrentPositionで強制的に再取得するハートビート。
-    // iOS Safari等、バックグラウンド復帰後にwatchPositionが無言で停止したままに
-    // なるケースへの保険。
-    function heartbeat() {
+    // watchPositionのイベント発火(=移動)だけに依存せず、移動の有無に関わらず
+    // 一定間隔(FORCE_SEND_INTERVAL_MS)でgetCurrentPositionによる強制取得を行う。
+    // 静止中でも管理者画面/他メンバーの地図上のピンが「最新のオンライン位置」として
+    // 更新され続けるようにするための強制送信タイマー(iOS Safari等、バックグラウンド
+    // 復帰後にwatchPositionが無言で停止したままになるケースへの保険も兼ねる)。
+    function forceSend() {
       if (!activeRef.current || permissionDeniedRef.current) return;
-      const elapsed = Date.now() - lastFixAtRef.current;
-      if (lastFixAtRef.current !== 0 && elapsed < STALE_THRESHOLD_MS) return;
-      console.log("[GPS Debug] ハートビート: 更新が滞っているためgetCurrentPositionで強制取得します");
+      console.log("[GPS Debug] 強制送信タイマー: getCurrentPositionで現在地を再取得します");
       navigator.geolocation.getCurrentPosition(handleFix, handleError, WATCH_OPTIONS);
     }
 
@@ -316,17 +334,19 @@ export function useGpsTracking({
     }
 
     startWatch();
+    // distanceFilter相当のイベントを待たず、ONにした直後の初期座標を即座に取得する。
+    navigator.geolocation.getCurrentPosition(handleFix, handleError, WATCH_OPTIONS);
     requestWakeLock();
-    heartbeatTimerRef.current = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
+    forceSendTimerRef.current = setInterval(forceSend, FORCE_SEND_INTERVAL_MS);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       activeRef.current = false;
       clearWatch();
       clearBackoffTimer();
-      if (heartbeatTimerRef.current) {
-        clearInterval(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = null;
+      if (forceSendTimerRef.current) {
+        clearInterval(forceSendTimerRef.current);
+        forceSendTimerRef.current = null;
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       releaseWakeLock();
