@@ -107,6 +107,31 @@ export async function syncPathToFirestore(
 ): Promise<void> {
   const last = path[path.length - 1];
   const position = extra?.position ?? (last ? { lat: last.lat, lng: last.lng } : null);
+
+  // uid/organizationIdが空文字・undefinedのまま呼ばれるとuser_locationsが
+  // 作成されない(あるいは意図しないドキュメントIDに書き込まれる)原因になるため、
+  // 実際にsetDocへ渡る直前の値をここで必ず出力しておく。
+  console.log("[GPS履歴][Debug] syncPathToFirestore呼び出し", {
+    uid,
+    organizationId,
+    category,
+    name,
+    position,
+    pathLength: path.length,
+    hasStatus: extra?.status !== undefined,
+  });
+
+  if (!uid) {
+    console.error("[GPS履歴][Debug] uidが空のためuser_locationsへの書き込みをスキップします");
+    return;
+  }
+  if (!organizationId) {
+    console.warn(
+      "[GPS履歴][Debug] organizationIdが空のまま書き込もうとしています(管理者/他クルー側で表示されない原因になります):",
+      { uid }
+    );
+  }
+
   try {
     await setDoc(
       doc(db, "user_locations", uid),
@@ -122,7 +147,20 @@ export async function syncPathToFirestore(
       },
       { merge: true }
     );
+    console.log("[GPS履歴][Debug] user_locations/" + uid + " への書き込みに成功しました", { position });
   } catch (error) {
-    console.warn("[GPS履歴] Firestoreへの同期に失敗しました(localStorageには保存済みのため経路は失われません):", error);
+    // Firestoreのエラーにはcode(例: "permission-denied", "unavailable")が
+    // 含まれるため、原因切り分けのためcode/messageも明示的に出力する。
+    const firestoreError = error as { code?: string; message?: string };
+    console.error(
+      "[GPS履歴] user_locations/" + uid + " へのFirestore同期に失敗しました(localStorageには保存済みのため経路は失われません):",
+      {
+        code: firestoreError?.code,
+        message: firestoreError?.message,
+        error,
+        uid,
+        organizationId,
+      }
+    );
   }
 }

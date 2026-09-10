@@ -292,15 +292,67 @@ export default function Home() {
     });
   }
 
+  // getCurrentPositionWithFallback自体は各試行にtimeoutを設定しているが、
+  // 端末/WebView側の実装によってはtimeoutが機能せずコールバックが一切
+  // 呼ばれないまま停止するケースがある(特にCapacitor/WKWebViewで権限確認
+  // ダイアログが絡む場合)。その場合でもトグルON操作自体を止めないよう、
+  // GPS_TOGGLE_TIMEOUT_MS経過したら既知の座標(直近のuserLocation、無ければ
+  // DEFAULT_LOCATION)にフォールバックして処理を進める。
+  const GPS_TOGGLE_TIMEOUT_MS = 8000;
+
+  async function getLocationForGpsToggleOn(): Promise<{ lat: number; lng: number }> {
+    const fallback = userLocationRef.current ?? DEFAULT_LOCATION;
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        console.warn(
+          "[GPS Debug][トグルON] 現在地取得が" + GPS_TOGGLE_TIMEOUT_MS + "ms以内に完了しなかったため、既知の座標にフォールバックします:",
+          fallback
+        );
+        resolve(fallback);
+      }, GPS_TOGGLE_TIMEOUT_MS);
+
+      getCurrentPositionWithFallback()
+        .then((loc) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(loc);
+        })
+        .catch((error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          console.warn("[GPS Debug][トグルON] 現在地取得に失敗したため、既知の座標にフォールバックします:", error, fallback);
+          resolve(fallback);
+        });
+    });
+  }
+
   // ステータスボタンから呼ばれるON/OFF切り替えハンドラ。
   // 「待機中→出動中」への切り替え時のみ、現在地を強制的に取得してから
-  // ステータスを更新する(取得できなければ待機中のまま維持しキャンセルする)。
+  // ステータスを更新する。現在地が取得できない場合も既知の座標に
+  // フォールバックして必ずuser_locations/{uid}への書き込みまで到達させる
+  // (完全に位置情報が使えない端末/環境の場合のみキャンセルする)。
   // 「出動中→待機中」への切り替えはGPS取得不要のため即座に反映する。
   async function handleToggleGpsTracking() {
-    if (gpsAcquiring) return; // 連打防止
+    console.log("[GPS Debug][トグル] handleToggleGpsTracking呼び出し", {
+      現在のgpsTracking: gpsTracking,
+      uid: profile?.uid,
+      organizationId: profile?.organizationId,
+      gpsAcquiring,
+    });
+
+    if (gpsAcquiring) {
+      console.log("[GPS Debug][トグル] gpsAcquiring中のため連打防止でスキップ");
+      return; // 連打防止
+    }
 
     if (gpsTracking) {
       // 出動中 → 待機中: 即座に切り替え
+      console.log("[GPS Debug][トグル] 出動中→待機中に切り替えます");
       setGpsTracking(false);
       try {
         window.localStorage.setItem(GPS_TRACKING_STORAGE_KEY, "false");
@@ -310,10 +362,16 @@ export default function Home() {
       return;
     }
 
-    // 待機中 → 出動中: 現在地を確実に取得してから切り替える
+    if (!profile) {
+      console.warn("[GPS Debug][トグル] profileが未取得のため出動中への切り替えを中止します");
+      return;
+    }
+
+    // 待機中 → 出動中: 現在地の取得を試みつつ、必ずONへ切り替える
     setGpsAcquiring(true);
     try {
-      const loc = await getCurrentPositionWithFallback();
+      const loc = await getLocationForGpsToggleOn();
+      console.log("[GPS Debug][トグル] トグルON用の座標が確定しました:", loc);
       setUserLocation(loc);
       setFlyTo(loc);
       // 取得済みなので、continuousなwatchPosition側の初回自動センタリングは不要
@@ -336,16 +394,29 @@ export default function Home() {
       // GPSトラッキングON操作から実際にFirestoreへ書き込まれるまでの間、
       // myPathHistoryの変化(10m以上の移動)やハートビート(最大20秒後)を
       // 待っていると、管理者/他クルー側にピンが反映されるまで遅延してしまう。
-      // ここで取得済みのloc・organizationIdを使って即座に1回同期しておく。
-      if (profile) {
-        lastFirestoreSyncAtRef.current = Date.now();
-        syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistoryRef.current, {
-          status: myStatusRef.current,
-          phone: profile.phone,
-          position: loc,
+      // ここで確定したloc・organizationIdを使って即座に1回同期しておく。
+      lastFirestoreSyncAtRef.current = Date.now();
+      console.log("[GPS Debug][トグル] syncPathToFirestoreを即時実行します", {
+        uid: profile.uid,
+        organizationId: profile.organizationId,
+        loc,
+      });
+      syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistoryRef.current, {
+        status: myStatusRef.current,
+        phone: profile.phone,
+        position: loc,
+      })
+        .then(() => {
+          console.log("[GPS Debug][トグル] syncPathToFirestore(即時)が完了しました");
+        })
+        .catch((error) => {
+          // syncPathToFirestore自体は内部でcatch済み(スロー無し)だが、
+          // 呼び出し経路の変更に備えて念のためここでもログを残す
+          console.error("[GPS Error][トグル] syncPathToFirestore(即時)で予期しないエラー:", error);
         });
-      }
     } catch (error) {
+      // getLocationForGpsToggleOnはフォールバックにより通常reject/throwしないため、
+      // ここに来るのは navigator.geolocation自体が存在しない等、致命的なケースのみ。
       console.error("[GPS Error] 出動中への切り替えに失敗しました:", error);
       window.alert("位置情報を取得できませんでした。端末の位置情報設定を確認してください");
       // 待機中のまま維持(状態変更をキャンセル)
