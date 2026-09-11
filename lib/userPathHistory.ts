@@ -59,6 +59,38 @@ export function shouldAppendPoint(path: PathPoint[], next: PathPoint): boolean {
   return distanceMeters(last, next) >= MIN_DISTANCE_METERS;
 }
 
+// 移動速度に応じたGPS記録・送信間隔の動的切替。
+//
+// 停止中は電池・Firestore書き込み量を節約するため間隔を大きく取り、
+// 高速移動中(車・電車等)は経路の解像度を上げるため間隔を短くする。
+// GeolocationPosition.coords.speed(m/s)が取得できる端末/ブラウザでは
+// それを使い、取得できない場合は直前fixとの距離・経過時間から呼び出し側が
+// フォールバック計算した速度を渡す想定。
+export type SpeedTier = "stopped" | "walking" | "fast";
+
+// 速度帯の閾値(km/h)。3km/h未満は停止(信号待ち等の誤差込み)、
+// 15km/h以上は車・電車等の高速移動とみなす。
+const STOPPED_MAX_KMH = 3;
+const WALKING_MAX_KMH = 15;
+
+export function classifySpeedKmh(speedKmh: number): SpeedTier {
+  if (!Number.isFinite(speedKmh) || speedKmh < STOPPED_MAX_KMH) return "stopped";
+  if (speedKmh < WALKING_MAX_KMH) return "walking";
+  return "fast";
+}
+
+// 各速度帯でのGPS記録・送信間隔(ms)。要件の範囲(停止中30秒〜1分/徒歩10〜15秒/
+// 高速2〜3秒)の中間程度の値を採用している。
+export const INTERVAL_MS_BY_SPEED_TIER: Record<SpeedTier, number> = {
+  stopped: 45_000, // 30秒〜1分
+  walking: 12_000, // 10秒〜15秒
+  fast: 2_500, // 2秒〜3秒
+};
+
+export function intervalMsForSpeedKmh(speedKmh: number): number {
+  return INTERVAL_MS_BY_SPEED_TIER[classifySpeedKmh(speedKmh)];
+}
+
 // 点数の上限を超えないよう、古い点から間引きつつ新しい点を末尾に追加する。
 export function appendPoint(path: PathPoint[], next: PathPoint): PathPoint[] {
   const updated = [...path, next];

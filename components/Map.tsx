@@ -19,12 +19,8 @@ import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
 import type { PathPoint } from "@/lib/userPathHistory";
-import {
-  getDailyLocationHistory,
-  splitPathIntoSegments,
-  todayDateKey,
-  yesterdayDateKey,
-} from "@/lib/locationHistory";
+import { getDailyLocationHistory, todayDateKey, yesterdayDateKey } from "@/lib/locationHistory";
+import { buildRoutePieces, type RoutePiece } from "@/lib/routeInterpolation";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
 import {
   RainRadarTileLayer,
@@ -922,13 +918,34 @@ export default function Map({
   const effectiveRoutePath =
     historicalPath.length > 0 ? historicalPath : isViewingSelfToday ? selfPath : [];
 
-  // 記録ギャップ(既定10分)で経路を複数セグメントに分割し、GPSが一時的に
-  // 取得できなかった区間を直線で結ばないようにする。
-  const routeSegments = splitPathIntoSegments(effectiveRoutePath);
-  const routeSegmentPositions: [number, number][][] = routeSegments.map((segment) =>
-    segment.filter((p) => isValidCoordinate(p.lat, p.lng)).map((p) => [p.lat, p.lng] as [number, number])
-  );
-  const routeFitBoundsPath: [number, number][] = routeSegmentPositions.flat();
+  // 取得した経路を「通常」「OSRM道路補間」「長時間データ欠損(破線)」の3種類の
+  // 描画ピースに変換する(lib/routeInterpolation.ts参照)。OSRM問い合わせを
+  // 伴うため非同期。selfLocationHistory(参照)を依存に使うことで、
+  // 同じ内容のまま再レンダリングされただけの場合には再実行されないようにする。
+  const [routePieces, setRoutePieces] = useState<RoutePiece[]>([]);
+  const [routePiecesLoading, setRoutePiecesLoading] = useState(false);
+  useEffect(() => {
+    if (effectiveRoutePath.length < 2) {
+      setRoutePieces([]);
+      return;
+    }
+    let cancelled = false;
+    setRoutePiecesLoading(true);
+    buildRoutePieces(effectiveRoutePath)
+      .then((pieces) => {
+        if (!cancelled) setRoutePieces(pieces);
+      })
+      .finally(() => {
+        if (!cancelled) setRoutePiecesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historicalPath, isViewingSelfToday, selfLocationHistory]);
+
+  const routeFitBoundsPath: [number, number][] = routePieces.flatMap((piece) => piece.positions);
+  const isRouteLoading = historicalLoading || routePiecesLoading;
 
   // 雨雲レーダーのタイムライン(過去〜最新〜未来予測)。選択中フレームのインデックスは
   // 初回ロード時に「最新の実測フレーム」で初期化し、以後はユーザーのスライダー操作/
@@ -1025,11 +1042,17 @@ export default function Map({
             )}
           </div>
 
-          {historicalLoading ? (
-            <p className="text-[10px] sm:text-xs text-white/70">読み込み中...</p>
+          {isRouteLoading ? (
+            <p className="text-[10px] sm:text-xs text-white/70">
+              {historicalLoading ? "読み込み中..." : "道路に沿って経路を補間中..."}
+            </p>
           ) : effectiveRoutePath.length === 0 ? (
             <p className="text-[10px] sm:text-xs text-white/70">この日の記録はありません</p>
-          ) : null}
+          ) : (
+            <p className="text-[9px] sm:text-[10px] text-white/60 leading-tight">
+              薄い実線=推定経路(道路補間) / 破線=データ欠損区間
+            </p>
+          )}
         </div>
       )}
 
@@ -1308,23 +1331,36 @@ export default function Map({
           );
         })}
 
-      {/* クルー移動経路(選択中のクルーのみ) - 目立つオレンジの破線で描画。
-          自分の経路(実機GPS)は青、他クルーの経路はオレンジの破線で区別する。
-          記録が10分以上途切れた区間(routeSegments分割済み)は別のPolylineとして
-          描画するため、GPS電波不良等で飛んだ区間が直線で結ばれることはない。 */}
-      {routeSegmentPositions
-        .filter((segment) => segment.length > 1)
-        .map((segment, idx) => (
-          <Polyline
-            key={`route-segment-${activeRouteCrewId}-${idx}`}
-            positions={segment}
-            pathOptions={
-              activeRouteCrewId === SELF_ROUTE_ID
-                ? { color: "#2563eb", weight: 5, opacity: 0.9 }
-                : { color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" }
-            }
-          />
-        ))}
+      {/* クルー移動経路(選択中のクルーのみ)。自分の経路(実機GPS)は青、
+          他クルーの経路はオレンジで区別する。lib/routeInterpolation.tsで
+          3種類に分類済み:
+            - normal: 実測点をそのまま結んだ通常の実線
+            - interpolated: 30秒〜15分・200m以上のGPS欠損をOSRMで道路形状に
+              沿って補間した経路(薄い実線)
+            - gap: 15分以上(またはOSRM補間失敗)の長時間欠損区間。実際の経路とは
+              限らないため無理に繋げず、破線でデータ未取得区間だと分かるようにする */}
+      {routePieces
+        .filter((piece) => piece.positions.length > 1)
+        .map((piece, idx) => {
+          const isSelfRoute = activeRouteCrewId === SELF_ROUTE_ID;
+          const pathOptions =
+            piece.style === "gap"
+              ? { color: "#94a3b8", weight: 4, opacity: 0.7, dashArray: "2 10" }
+              : piece.style === "interpolated"
+                ? isSelfRoute
+                  ? { color: "#2563eb", weight: 4, opacity: 0.55 }
+                  : { color: "#ea580c", weight: 4, opacity: 0.55, dashArray: "4 6" }
+                : isSelfRoute
+                  ? { color: "#2563eb", weight: 5, opacity: 0.9 }
+                  : { color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" };
+          return (
+            <Polyline
+              key={`route-piece-${activeRouteCrewId}-${idx}`}
+              positions={piece.positions}
+              pathOptions={pathOptions}
+            />
+          );
+        })}
 
       {searchMarker && isValidCoordinate(searchMarker.lat, searchMarker.lng) && (
         <Marker

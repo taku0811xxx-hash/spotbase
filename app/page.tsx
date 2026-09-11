@@ -34,6 +34,8 @@ import {
   syncPathToFirestore,
   setUserLocationOffline,
   syncDailyLocationHistory,
+  distanceMeters,
+  intervalMsForSpeedKmh,
 } from "@/lib/userPathHistory";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
@@ -123,11 +125,21 @@ export default function Home() {
   const [myPathHistory, setMyPathHistory] = useState<PathPoint[]>([]);
   // Firestoreへの同期頻度を抑えるための直近同期時刻(書き込み過多の防止)
   const lastFirestoreSyncAtRef = useRef(0);
-  // 経路の追従性(他クルー・管理者画面での反映の速さ)を上げるため15秒→10秒に短縮。
-  const FIRESTORE_SYNC_INTERVAL_MS = 10000; // 10秒に1回まで
+  // GPS記録・送信間隔は移動速度に応じて動的に切り替える(停止中30秒〜1分/
+  // 徒歩10〜15秒/高速2〜3秒。lib/userPathHistory.tsのintervalMsForSpeedKmh参照)。
+  // 速度が判定できるまでの初期値として、徒歩程度の間隔を入れておく。
+  const dynamicSyncIntervalMsRef = useRef(12000);
+  // 速度のフォールバック計算(coords.speedが取得できない場合)用に、直前の
+  // 生fix(距離フィルタ前・全fix)の座標・時刻を保持しておく。
+  const lastRawFixForSpeedRef = useRef<PathPoint | null>(null);
+  // myPathHistoryへの記録を動的間隔(dynamicSyncIntervalMsRef)でスロットリング
+  // するための直近記録時刻。
+  const lastAcceptedFixAtRef = useRef(0);
   // 停止中(移動していない)でもuser_locationsのupdatedAt/positionが古いままに
-  // ならないよう、GPS追跡ONの間は定期的にハートビート同期を行う間隔。
-  const HEARTBEAT_SYNC_INTERVAL_MS = 20000; // 20秒に1回
+  // ならないよう、GPS追跡ONの間は定期的にハートビート同期をチェックする間隔。
+  // 実際に送信するかどうかはdynamicSyncIntervalMsRefで判定するため、
+  // このタイマー自体は動的間隔より十分細かい間隔で回しておけばよい。
+  const HEARTBEAT_CHECK_INTERVAL_MS = 5000; // 5秒ごとにチェック
 
   // 同組織の他クルーの実機位置(Firestore user_locationsをリアルタイム購読)。
   // これまでダミーデータ(lib/dummyCrew.ts)を表示していたピンを実データに置き換える。
@@ -195,8 +207,9 @@ export default function Home() {
   }, [myPathHistory, mounted]);
 
   // 自分の移動経路をFirestoreへも非同期で同期する(ベストエフォート。
-  // 書き込み頻度を抑えるため、前回同期からFIRESTORE_SYNC_INTERVAL_MS以上
-  // 経過している場合のみ実行する)。失敗してもlocalStorage側には影響しない。
+  // 書き込み頻度を抑えるため、前回同期からdynamicSyncIntervalMsRef(移動速度に
+  // 応じて動的に変わる間隔)以上経過している場合のみ実行する)。
+  // 失敗してもlocalStorage側には影響しない。
   useEffect(() => {
     // Firebase Authのセッションが未確立(再ログイン待ち等)の間は、どうせ
     // permission-deniedになるだけのFirestore書き込みを試みない。userが
@@ -204,7 +217,7 @@ export default function Home() {
     // タイミングで本effectが再評価され、以降は正常に同期される。
     if (!mounted || !user || !profile || myPathHistory.length === 0) return;
     const now = Date.now();
-    if (now - lastFirestoreSyncAtRef.current < FIRESTORE_SYNC_INTERVAL_MS) return;
+    if (now - lastFirestoreSyncAtRef.current < dynamicSyncIntervalMsRef.current) return;
     lastFirestoreSyncAtRef.current = now;
     syncPathToFirestore(profile.uid, profile.organizationId, profile.category, profile.name, myPathHistory, {
       status: myStatus,
@@ -220,6 +233,10 @@ export default function Home() {
   // ならないよう、GPS追跡ON中は一定間隔でハートビート同期を行う(上のeffectは
   // myPathHistoryが変化した時=一定距離動いた時にしか発火しないため、停止中は
   // このタイマーが無いと管理者画面の「最終更新」がどんどん古くなってしまう)。
+  // このタイマー自体はHEARTBEAT_CHECK_INTERVAL_MS(5秒)ごとに細かくチェックする
+  // だけで、実際に送信するかどうかはdynamicSyncIntervalMsRef(移動速度に応じた
+  // 動的間隔)で判定する。これにより、停止中は30秒〜1分に1回、高速移動中は
+  // 2〜3秒に1回など、ハートビートも記録・送信間隔の動的切替に追従する。
   // 依存配列を[gpsTracking, mounted, profile]に絞り、位置更新のたびにタイマーが
   // 張り直されないようにするため、最新値はref(userLocationRef等)経由で参照する。
   useEffect(() => {
@@ -230,6 +247,7 @@ export default function Home() {
       const loc = userLocationRef.current;
       if (!loc) return;
       const now = Date.now();
+      if (now - lastFirestoreSyncAtRef.current < dynamicSyncIntervalMsRef.current) return;
       lastFirestoreSyncAtRef.current = now;
       syncPathToFirestore(
         profile.uid,
@@ -240,7 +258,7 @@ export default function Home() {
         { status: myStatusRef.current, phone: profile.phone, position: loc }
       );
       syncDailyLocationHistory(profile.uid, profile.organizationId, myPathHistoryRef.current);
-    }, HEARTBEAT_SYNC_INTERVAL_MS);
+    }, HEARTBEAT_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [mounted, user, profile, gpsTracking]);
 
@@ -557,10 +575,31 @@ export default function Home() {
 
     function handleFix(position: GeolocationPosition) {
       const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+      const now = position.timestamp || Date.now();
       console.log(
         `[GPS Debug] 継続追跡取得成功(${usingStandardAccuracy ? "標準精度" : "高精度"}):`,
         position
       );
+
+      // 移動速度を判定し、GPS記録・送信間隔を動的に切り替える(要件:
+      // 停止中30秒〜1分/徒歩10〜15秒/高速(車・電車等)2〜3秒)。
+      // GeolocationPosition.coords.speed(m/s)が取得できればそれを優先し、
+      // 取得できない端末/ブラウザの場合は直前fixとの距離・経過時間から
+      // 簡易フォールバックで速度を推定する。
+      let speedMs = position.coords.speed;
+      if (speedMs == null || !Number.isFinite(speedMs) || speedMs < 0) {
+        const prevRaw = lastRawFixForSpeedRef.current;
+        if (prevRaw) {
+          const dtSec = (now - prevRaw.timestamp) / 1000;
+          if (dtSec > 0.5) {
+            speedMs = distanceMeters(prevRaw, loc) / dtSec;
+          }
+        }
+      }
+      lastRawFixForSpeedRef.current = { lat: loc.lat, lng: loc.lng, timestamp: now };
+      const speedKmh = speedMs != null && Number.isFinite(speedMs) ? Math.max(0, speedMs) * 3.6 : 0;
+      dynamicSyncIntervalMsRef.current = intervalMsForSpeedKmh(speedKmh);
+
       setUserLocation(loc);
       // 地図が動いて操作の邪魔にならないよう、ONにした直後の初回のみ中心移動する
       if (!hasCenteredOnGpsRef.current) {
@@ -568,13 +607,15 @@ export default function Home() {
         hasCenteredOnGpsRef.current = true;
       }
 
+      // 記録スロットリング: 動的間隔(dynamicSyncIntervalMsRef)より短い間隔で
+      // 来たfixは経路記録の対象にしない(停止中は間引いてバッテリー/書き込み量を
+      // 節約し、高速移動中は逆に細かく記録する)。
+      if (now - lastAcceptedFixAtRef.current < dynamicSyncIntervalMsRef.current) return;
+      lastAcceptedFixAtRef.current = now;
+
       // 実機の移動経路として蓄積する。GPS誤差によるブレを防ぐため、直前の記録点から
-      // 一定距離(既定10m)以上移動した場合のみ追加する(lib/userPathHistory.ts参照)。
-      const point: PathPoint = {
-        lat: loc.lat,
-        lng: loc.lng,
-        timestamp: position.timestamp || Date.now(),
-      };
+      // 一定距離(既定8m)以上移動した場合のみ追加する(lib/userPathHistory.ts参照)。
+      const point: PathPoint = { lat: loc.lat, lng: loc.lng, timestamp: now };
       setMyPathHistory((prev) => (shouldAppendPoint(prev, point) ? appendPoint(prev, point) : prev));
     }
 
