@@ -1054,37 +1054,59 @@ export default function Map({
           </Marker>
         ))}
 
-      {userLocation && isValidCoordinate(userLocation.lat, userLocation.lng) && (() => {
-        const { main: myStatusColor } = CREW_STATUS_COLOR[myStatus] ?? CREW_STATUS_COLOR["待機中"];
+      {/* 自分自身の現在地ピン。
+          - このタブでGPS追跡ON(またはtempLocationVisible)中は、ローカルのuserLocation
+            (watchPositionで取得した最新座標)をそのまま使う。
+          - それ以外(このタブではGPS追跡していない/オフにした)の場合でも、
+            user_locationsに同期済みの自分のドキュメントがあれば(=別デバイス/
+            別タブでGPS追跡中、または直前まで追跡していた場合)、そちらの座標で
+            フォールバック表示する。これにより「同期は成功しているのに自分の
+            ピンだけ地図に出ない」という問題を防ぐ。 */}
+      {(() => {
+        const liveSelf =
+          userLocation && isValidCoordinate(userLocation.lat, userLocation.lng) ? userLocation : null;
+        const syncedSelf = crewMembers.find((c) => c.isSelf) ?? null;
+        const selfPosition =
+          liveSelf ??
+          (syncedSelf && isValidCoordinate(syncedSelf.position[0], syncedSelf.position[1])
+            ? { lat: syncedSelf.position[0], lng: syncedSelf.position[1] }
+            : null);
+        if (!selfPosition) return null;
+
+        const selfName = liveSelf ? myProfile?.name ?? "未設定" : syncedSelf?.name ?? "未設定";
+        const selfCategory = liveSelf ? myProfile?.category : syncedSelf?.role;
+        const selfPhone = liveSelf ? myProfile?.phone : syncedSelf?.phone;
+        const selfStatus = liveSelf ? myStatus : syncedSelf?.status ?? myStatus;
+        const { main: myStatusColor } = CREW_STATUS_COLOR[selfStatus] ?? CREW_STATUS_COLOR["待機中"];
         return (
           <Marker
-            position={[userLocation.lat, userLocation.lng]}
+            position={[selfPosition.lat, selfPosition.lng]}
             icon={userLocationIcon}
           >
             <Popup>
               <div className="space-y-2 w-52">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-bold text-gray-900">
-                    (自分) {myProfile?.name ?? "未設定"}
-                    {myProfile?.category ? ` / ${myProfile.category}` : ""}
+                    (自分) {selfName}
+                    {selfCategory ? ` / ${selfCategory}` : ""}
                   </p>
                   <span
                     className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 whitespace-nowrap"
                     style={{ backgroundColor: myStatusColor }}
                   >
-                    {myStatus}
+                    {selfStatus}
                   </span>
                 </div>
                 {/* 電話番号リンク: crewポップアップと同様、Leafletのデフォルトの
                     リンク色(青)がTailwindクラスより詳細度で勝ってしまうため、
                     style属性で明示的に黒文字(#1a1a1a)を指定して確実に上書きする。 */}
-                {myProfile?.phone ? (
+                {selfPhone ? (
                   <a
-                    href={`tel:${myProfile.phone}`}
+                    href={`tel:${selfPhone}`}
                     style={{ color: "#1a1a1a" }}
                     className="block text-center text-sm bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded px-2 py-1.5 transition-colors font-semibold"
                   >
-                    📞 {myProfile.phone}
+                    📞 {selfPhone}
                   </a>
                 ) : (
                   <p className="text-center text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
@@ -1115,10 +1137,12 @@ export default function Map({
         );
       })()}
 
-      {/* 報道クルー/スタッフの位置ピン(ダミーデータ)。ステータスに応じて色分けし、
-          クリック時にPopupで詳細(氏名・職種・ステータス・車両・連絡先等)を表示する。 */}
+      {/* 報道クルー/スタッフの位置ピン。ステータスに応じて色分けし、
+          クリック時にPopupで詳細(氏名・職種・ステータス・車両・連絡先等)を表示する。
+          自分自身(isSelf)は上の専用ブロックで別アイコン(青い現在地ドット)として
+          表示済みのため、ここでは除外して重複表示を防ぐ。 */}
       {crewMembers
-        .filter((crew) => isValidCoordinate(crew.position[0], crew.position[1]))
+        .filter((crew) => !crew.isSelf && isValidCoordinate(crew.position[0], crew.position[1]))
         .map((crew) => {
           const { main } = CREW_STATUS_COLOR[crew.status] ?? CREW_STATUS_COLOR["待機中"];
           return (

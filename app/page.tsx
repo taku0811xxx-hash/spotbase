@@ -237,9 +237,11 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [mounted, user, profile, gpsTracking]);
 
-  // 同組織の他クルーの実機位置(user_locations)をリアルタイム購読し、地図に渡す。
-  // 自分自身のドキュメントはlib/crewLocations.ts側で除外している
-  // (自分の現在地は別途userLocationとして地図に渡しているため)。
+  // 同組織のクルー(自分自身を含む)の実機位置(user_locations)をリアルタイム
+  // 購読し、地図に渡す。以前は自分自身のドキュメントをここで除外していたが、
+  // その場合ローカルのgpsTrackingがONになっていない別デバイス/別タブから
+  // 地図を開くと自分のピンが全く表示されないという問題があったため、
+  // isSelf:true付きでそのまま含めるようにした(区別はMap.tsx側で行う)。
   // 依存配列にuserを含めることで、ログイン完了(Auth状態の変化でuserがnullから
   // 実値に変わったタイミング)や再ログイン後に、自動的に購読が再実行される。
   useEffect(() => {

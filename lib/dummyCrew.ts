@@ -29,6 +29,7 @@ export type CrewMember = {
   updatedAt: string;
   position: [number, number]; // [latitude, longitude]
   locationHistory?: LocationHistory;
+  isSelf?: boolean; // 自分自身の位置情報(user_locationsから取得)であることを示すフラグ。地図側で見た目を区別するために使う。
 };
 
 export const dummyCrewMembers: CrewMember[] = [

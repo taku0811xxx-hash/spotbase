@@ -41,7 +41,7 @@ function formatRelativeUpdatedAt(ts: Timestamp | undefined): string {
 // user_locationsの1ドキュメントをCrewMemberへ変換する。
 // position(またはpathの最終点)が無い=一度も位置情報が同期されていないメンバーは
 // 地図上に表示しようがないのでnullを返し、呼び出し側で除外する。
-function toCrewMember(uid: string, data: UserLocationDoc): CrewMember | null {
+function toCrewMember(uid: string, data: UserLocationDoc, isSelf: boolean): CrewMember | null {
   const lastPathPoint = data.path && data.path.length > 0 ? data.path[data.path.length - 1] : null;
   const position = data.position ?? (lastPathPoint ? { lat: lastPathPoint.lat, lng: lastPathPoint.lng } : null);
   if (!position) return null;
@@ -61,12 +61,17 @@ function toCrewMember(uid: string, data: UserLocationDoc): CrewMember | null {
       data.path && data.path.length > 1
         ? { path: data.path.map((p) => [p.lat, p.lng] as [number, number]), stayPoints: [] }
         : undefined,
+    isSelf,
   };
 }
 
-// 同組織(organizationId一致)の他メンバーの位置情報をリアルタイム購読する。
-// 自分自身(selfUid)のドキュメントは、地図側で別途「自分の現在地」として
-// 表示しているため一覧から除外する。返り値の関数を呼ぶと購読解除できる。
+// 同組織(organizationId一致)のメンバー(自分自身を含む)の位置情報をリアルタイム
+// 購読する。以前は自分自身(selfUid)のドキュメントを一覧から除外していたが、
+// それだとローカル側でGPS追跡をONにしていない別デバイス/別タブから地図を
+// 開いた場合に自分のピンが一切表示されないという問題があった。そのため
+// ここではselfUidも除外せず、isSelf:trueを付けて返す。表示側(Map.tsx)で
+// isSelfを見て見た目(アイコン・ラベル)を他クルーと区別する。
+// 返り値の関数を呼ぶと購読解除できる。
 export function subscribeCrewLocations(
   organizationId: string,
   selfUid: string,
@@ -103,21 +108,18 @@ export function subscribeCrewLocations(
         const uid = d.id;
         const data = d.data() as UserLocationDoc;
 
-        if (uid === selfUid) {
-          console.log(`[クルー位置][Debug] スキップ(自分自身): uid=${uid}`);
-          continue;
-        }
+        const isSelf = uid === selfUid;
 
         const hasPosition = !!data.position;
         const hasPath = !!(data.path && data.path.length > 0);
         if (!hasPosition && !hasPath) {
           console.log(
-            `[クルー位置][Debug] スキップ(position/pathなし): uid=${uid}, name=${data.name ?? "?"}, organizationId=${data.organizationId ?? "?"}`
+            `[クルー位置][Debug] スキップ(position/pathなし): uid=${uid}, name=${data.name ?? "?"}, organizationId=${data.organizationId ?? "?"}, isSelf=${isSelf}`
           );
           continue;
         }
 
-        const member = toCrewMember(uid, data);
+        const member = toCrewMember(uid, data, isSelf);
         if (!member) {
           // toCrewMember内部の判定と上のhasPosition/hasPathチェックが食い違うことは
           // 基本的に無いはずだが、念のためログを残す
