@@ -47,9 +47,13 @@ service cloud.firestore {
     }
 
     match /incidents/{incidentId} {
-      allow read: if canView(resource.data);
-      allow create: if isSignedIn() && isOwnOrgData(request.resource.data);
-      allow update, delete: if canView(resource.data);
+      // incidentsドキュメントには分類(category)フィールドが存在しないため、
+      // canView/isOwnOrgData(分類一致を要求)を使うと一般ユーザーは常に
+      // permission-deniedになってしまう。同組織の認証ユーザーであれば
+      // 分類を問わず読み書きできるようにする。
+      allow read: if sameOrg(resource.data);
+      allow create: if isSignedIn() && sameOrg(request.resource.data);
+      allow update, delete: if sameOrg(resource.data);
     }
 
     match /breaking_alerts/{alertId} {
