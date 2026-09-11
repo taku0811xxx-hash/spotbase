@@ -123,7 +123,8 @@ export default function Home() {
   const [myPathHistory, setMyPathHistory] = useState<PathPoint[]>([]);
   // Firestoreへの同期頻度を抑えるための直近同期時刻(書き込み過多の防止)
   const lastFirestoreSyncAtRef = useRef(0);
-  const FIRESTORE_SYNC_INTERVAL_MS = 15000; // 15秒に1回まで
+  // 経路の追従性(他クルー・管理者画面での反映の速さ)を上げるため15秒→10秒に短縮。
+  const FIRESTORE_SYNC_INTERVAL_MS = 10000; // 10秒に1回まで
   // 停止中(移動していない)でもuser_locationsのupdatedAt/positionが古いままに
   // ならないよう、GPS追跡ONの間は定期的にハートビート同期を行う間隔。
   const HEARTBEAT_SYNC_INTERVAL_MS = 20000; // 20秒に1回
@@ -577,7 +578,10 @@ export default function Home() {
       setMyPathHistory((prev) => (shouldAppendPoint(prev, point) ? appendPoint(prev, point) : prev));
     }
 
-    console.log("[GPS Debug] 継続追跡を開始します(高精度, timeout 5000ms)");
+    // enableHighAccuracy: trueを指定し、GPSチップ(可能な端末では)による高精度
+    // 測位を使う。maximumAgeは経路描画の精度・追従性を上げるため5000msから
+    // 3000msに短縮し、古いキャッシュ位置を使い回す期間を減らしている。
+    console.log("[GPS Debug] 継続追跡を開始します(高精度, timeout 5000ms, maximumAge 3000ms)");
     let id = navigator.geolocation.watchPosition(
       handleFix,
       (error) => {
@@ -612,7 +616,7 @@ export default function Home() {
         );
         watchIdRef.current = id;
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 3000 }
     );
     watchIdRef.current = id;
 
@@ -1157,7 +1161,8 @@ export default function Home() {
               dispatchListOpen={isDispatchListOpen}
               myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
               myStatus={myStatus}
-              selfLocationHistory={myPathHistory.map((p) => [p.lat, p.lng] as [number, number])}
+              selfLocationHistory={myPathHistory}
+              selfUid={profile?.uid ?? null}
             />
           </main>
         </div>
@@ -1244,7 +1249,8 @@ export default function Home() {
             onLocated={handleLocated}
             myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
             myStatus={myStatus}
-            selfLocationHistory={myPathHistory.map((p) => [p.lat, p.lng] as [number, number])}
+            selfLocationHistory={myPathHistory}
+            selfUid={profile?.uid ?? null}
           />
         </main>
 

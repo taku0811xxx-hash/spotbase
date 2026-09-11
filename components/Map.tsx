@@ -17,7 +17,14 @@ import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
-import type { CrewMember, CrewStatus, StayPoint } from "@/lib/dummyCrew";
+import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
+import type { PathPoint } from "@/lib/userPathHistory";
+import {
+  getDailyLocationHistory,
+  splitPathIntoSegments,
+  todayDateKey,
+  yesterdayDateKey,
+} from "@/lib/locationHistory";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
 import {
   RainRadarTileLayer,
@@ -325,7 +332,8 @@ type Props = {
   onLocated?: (loc: { lat: number; lng: number }) => void; // 現在地表示ボタン押下時のコールバック
   myProfile?: { name: string; category: string; phone?: string } | null; // 自分の現在地マーカーのポップアップに表示するログインユーザー情報
   myStatus?: CrewStatus; // 自分の現在のステータス(ユーザーステータスパネルと連動)
-  selfLocationHistory?: [number, number][]; // 実機watchPositionから蓄積された自分の移動経路(呼び出し側で距離フィルタリング・永続化済み)
+  selfLocationHistory?: PathPoint[]; // 実機watchPositionから蓄積された自分の移動経路(呼び出し側で距離フィルタリング・永続化済み、当日分のみ)
+  selfUid?: string | null; // 自分自身のuid。「経路を見る」機能でlocation_historiesから過去日の履歴を取得する際に使う(isOnline:false等でcrewMembersに自分が含まれない場合の保険)
 };
 
 // 自分の移動経路を表す特別なID。crewMembersのidと衝突しない専用の値として扱う。
@@ -845,25 +853,82 @@ export default function Map({
   myProfile = null,
   myStatus = "待機中",
   selfLocationHistory = [],
+  selfUid = null,
 }: Props) {
   const [showHazardMap, setShowHazardMap] = useState(false);
   const [showRainRadar, setShowRainRadar] = useState(false);
   const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
 
   // 「経路を見る」で選択中のクルーID。nullの間は経路非表示。SELF_ROUTE_IDの場合は
-  // 自分自身の移動経路(呼び出し側で実機watchPositionから蓄積・距離フィルタリング・
-  // localStorage/Firestoreへ永続化済みのselfLocationHistory)を表示する。
+  // 自分自身の移動経路を表示する。
   const [activeRouteCrewId, setActiveRouteCrewId] = useState<string | null>(null);
   const activeRouteCrew = crewMembers.find((c) => c.id === activeRouteCrewId) ?? null;
+  const activeRouteCrewUid = activeRouteCrew?.id ?? null;
 
-  const selfPath = selfLocationHistory.filter(([lat, lng]) => isValidCoordinate(lat, lng));
+  // selfLocationHistoryは呼び出し側(app/page.tsx)から渡される「当日分・実機
+  // watchPositionで蓄積中」のローカル経路。location_historiesへの同期が
+  // 間に合っていない直近の動きを見せるためのフォールバックとして使う。
+  const selfPath = selfLocationHistory.filter((p) => isValidCoordinate(p.lat, p.lng));
 
-  const activeRouteHistory =
-    activeRouteCrewId === SELF_ROUTE_ID
-      ? selfPath.length > 1
-        ? { path: selfPath, stayPoints: [] as StayPoint[] }
-        : null
-      : activeRouteCrew?.locationHistory ?? null;
+  // 「経路を見る」の日付・期間選択(今日/昨日/日付指定)。ルートを開き直すたびに
+  // 「今日」にリセットする。
+  const [routeDateMode, setRouteDateMode] = useState<"today" | "yesterday" | "custom">("today");
+  const [routeCustomDate, setRouteCustomDate] = useState<string>(todayDateKey());
+  useEffect(() => {
+    if (activeRouteCrewId) {
+      setRouteDateMode("today");
+      setRouteCustomDate(todayDateKey());
+    }
+  }, [activeRouteCrewId]);
+  const selectedRouteDateKey =
+    routeDateMode === "today" ? todayDateKey() : routeDateMode === "yesterday" ? yesterdayDateKey() : routeCustomDate;
+
+  // Firestore(location_histories)から選択日の移動履歴を取得する。
+  // ドキュメントID(`${uid}_${date}`)で1件取得するだけなので、複数日の経路が
+  // 混ざって1本の線になることはない(日付を跨いだ範囲取得はgetLocationHistoryRange
+  // を使う別関数として用意してあるが、本UIでは1日単位のみ扱う)。
+  const [historicalPath, setHistoricalPath] = useState<PathPoint[]>([]);
+  const [historicalLoading, setHistoricalLoading] = useState(false);
+  useEffect(() => {
+    if (!activeRouteCrewId) {
+      setHistoricalPath([]);
+      setHistoricalLoading(false);
+      return;
+    }
+    const targetUid = activeRouteCrewId === SELF_ROUTE_ID ? selfUid : activeRouteCrewUid;
+    if (!targetUid) {
+      setHistoricalPath([]);
+      return;
+    }
+    let cancelled = false;
+    setHistoricalLoading(true);
+    getDailyLocationHistory(targetUid, selectedRouteDateKey)
+      .then((points) => {
+        if (!cancelled) setHistoricalPath(points);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoricalLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRouteCrewId, selectedRouteDateKey, selfUid, activeRouteCrewUid]);
+
+  // Firestore側にまだ同期されていない直近の自分の動きを見せるため、
+  // 「自分・今日」を見ている間はFirestore取得結果が空でもローカルのselfPathに
+  // フォールバックする。
+  const isViewingSelfToday =
+    activeRouteCrewId === SELF_ROUTE_ID && selectedRouteDateKey === todayDateKey();
+  const effectiveRoutePath =
+    historicalPath.length > 0 ? historicalPath : isViewingSelfToday ? selfPath : [];
+
+  // 記録ギャップ(既定10分)で経路を複数セグメントに分割し、GPSが一時的に
+  // 取得できなかった区間を直線で結ばないようにする。
+  const routeSegments = splitPathIntoSegments(effectiveRoutePath);
+  const routeSegmentPositions: [number, number][][] = routeSegments.map((segment) =>
+    segment.filter((p) => isValidCoordinate(p.lat, p.lng)).map((p) => [p.lat, p.lng] as [number, number])
+  );
+  const routeFitBoundsPath: [number, number][] = routeSegmentPositions.flat();
 
   // 雨雲レーダーのタイムライン(過去〜最新〜未来予測)。選択中フレームのインデックスは
   // 初回ロード時に「最新の実測フレーム」で初期化し、以後はユーザーのスライダー操作/
@@ -908,21 +973,63 @@ export default function Map({
           ずらして表示する。 */}
       {(activeRouteCrew || activeRouteCrewId === SELF_ROUTE_ID) && (
         <div
-          className={`absolute right-1.5 sm:right-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg pl-2.5 pr-1.5 sm:pl-3 sm:pr-2 py-1.5 flex items-center gap-1.5 sm:gap-2 pointer-events-auto max-w-[calc(100%-0.75rem)] sm:max-w-xs ${
+          className={`absolute right-1.5 sm:right-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg px-2.5 sm:px-3 py-1.5 flex flex-col gap-1.5 pointer-events-auto max-w-[calc(100%-0.75rem)] sm:max-w-xs ${
             showLegend ? "top-24 sm:top-32" : "top-1.5 sm:top-4"
           }`}
         >
-          <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap truncate min-w-0">
-            📍 {activeRouteCrewId === SELF_ROUTE_ID ? "自分" : activeRouteCrew?.name} の経路を表示中
-          </span>
-          <button
-            onClick={() => setActiveRouteCrewId(null)}
-            title="経路を非表示にする"
-            aria-label="経路を非表示にする"
-            className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-[11px] sm:text-xs transition-colors"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap truncate min-w-0">
+              📍 {activeRouteCrewId === SELF_ROUTE_ID ? "自分" : activeRouteCrew?.name} の経路を表示中
+            </span>
+            <button
+              onClick={() => setActiveRouteCrewId(null)}
+              title="経路を非表示にする"
+              aria-label="経路を非表示にする"
+              className="flex-shrink-0 ml-auto w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-[11px] sm:text-xs transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* 日付・期間選択: 今日/昨日/日付指定。location_historiesから
+              選択した日の分だけを取得するため、複数日の経路が混ざって
+              1本の線になることはない。 */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {(
+              [
+                { mode: "today" as const, label: "今日" },
+                { mode: "yesterday" as const, label: "昨日" },
+                { mode: "custom" as const, label: "日付指定" },
+              ]
+            ).map(({ mode, label }) => (
+              <button
+                key={mode}
+                onClick={() => setRouteDateMode(mode)}
+                className={`text-[10px] sm:text-xs rounded px-1.5 py-0.5 transition-colors ${
+                  routeDateMode === mode
+                    ? "bg-white text-slate-900 font-semibold"
+                    : "bg-white/10 hover:bg-white/20 text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {routeDateMode === "custom" && (
+              <input
+                type="date"
+                value={routeCustomDate}
+                max={todayDateKey()}
+                onChange={(e) => setRouteCustomDate(e.target.value || todayDateKey())}
+                className="text-[10px] sm:text-xs rounded px-1 py-0.5 text-slate-900 bg-white"
+              />
+            )}
+          </div>
+
+          {historicalLoading ? (
+            <p className="text-[10px] sm:text-xs text-white/70">読み込み中...</p>
+          ) : effectiveRoutePath.length === 0 ? (
+            <p className="text-[10px] sm:text-xs text-white/70">この日の記録はありません</p>
+          ) : null}
         </div>
       )}
 
@@ -986,7 +1093,7 @@ export default function Map({
       {/* 詳細パネル開閉時のリサイズ処理 */}
       <PanelResizeHandler showDetailPanel={showDetailPanel} selectedPin={selectedPin} dispatchListOpen={dispatchListOpen} />
       {/* クルー移動経路表示時、経路全体が収まるよう地図の表示範囲を自動調整 */}
-      <RouteFitBounds path={activeRouteHistory?.path ?? null} />
+      <RouteFitBounds path={routeFitBoundsPath.length > 0 ? routeFitBoundsPath : null} />
       {/* 現在地表示ボタン */}
       <LocateControl onLocated={onLocated} lastKnownLocation={lastKnownLocation} />
       {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
@@ -1201,36 +1308,23 @@ export default function Map({
           );
         })}
 
-      {/* クルー移動経路(選択中のクルーのみ) - 目立つオレンジの破線で描画 */}
-      {/* 移動経路のライン: 自分の経路(実機GPS)は青、他クルーの経路はオレンジの破線で区別する */}
-      {activeRouteHistory && activeRouteHistory.path.filter(([lat, lng]) => isValidCoordinate(lat, lng)).length > 1 && (
-        <Polyline
-          positions={activeRouteHistory.path.filter(([lat, lng]) => isValidCoordinate(lat, lng))}
-          pathOptions={
-            activeRouteCrewId === SELF_ROUTE_ID
-              ? { color: "#2563eb", weight: 5, opacity: 0.9 }
-              : { color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" }
-          }
-        />
-      )}
-
-      {/* クルー移動経路の滞在ポイント */}
-      {activeRouteHistory &&
-        activeRouteHistory.stayPoints
-          .filter((sp) => isValidCoordinate(sp.lat, sp.lng))
-          .map((sp, idx) => (
-            <Marker key={`stay-${activeRouteCrewId}-${idx}`} position={[sp.lat, sp.lng]} icon={stayPointIcon}>
-              <Popup>
-                <div className="space-y-1 w-48">
-                  <p className="font-bold text-gray-900">{sp.name}</p>
-                  <p className="text-sm text-gray-700">
-                    {sp.arrivedAt}〜{sp.departedAt}
-                  </p>
-                  <p className="text-xs text-gray-500">{sp.duration}滞在</p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+      {/* クルー移動経路(選択中のクルーのみ) - 目立つオレンジの破線で描画。
+          自分の経路(実機GPS)は青、他クルーの経路はオレンジの破線で区別する。
+          記録が10分以上途切れた区間(routeSegments分割済み)は別のPolylineとして
+          描画するため、GPS電波不良等で飛んだ区間が直線で結ばれることはない。 */}
+      {routeSegmentPositions
+        .filter((segment) => segment.length > 1)
+        .map((segment, idx) => (
+          <Polyline
+            key={`route-segment-${activeRouteCrewId}-${idx}`}
+            positions={segment}
+            pathOptions={
+              activeRouteCrewId === SELF_ROUTE_ID
+                ? { color: "#2563eb", weight: 5, opacity: 0.9 }
+                : { color: "#ea580c", weight: 5, opacity: 0.9, dashArray: "10 8" }
+            }
+          />
+        ))}
 
       {searchMarker && isValidCoordinate(searchMarker.lat, searchMarker.lng) && (
         <Marker

@@ -29,7 +29,10 @@ const STORAGE_KEY = "user_path_history";
 const MAX_POINTS = 2000;
 
 // この距離(メートル)未満の移動はGPS誤差によるブレとみなし、履歴に追加しない。
-export const MIN_DISTANCE_METERS = 10;
+// (元は10mだったが、経路描画の精度・滑らかさを上げるため8mに調整。
+// あまり小さくしすぎるとGPS誤差そのものを経路として拾ってジグザグになるため、
+// 一般的なスマートフォンGPSの誤差(数m〜10m程度)を踏まえた値にしている)
+export const MIN_DISTANCE_METERS = 8;
 
 // 2点間の距離をHaversine公式で計算する(メートル単位)。
 export function distanceMeters(
