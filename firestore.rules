@@ -70,5 +70,16 @@ service cloud.firestore {
       allow create, update: if isSignedIn() && request.auth.uid == uid;
       allow delete: if false;
     }
+
+    match /location_histories/{docId} {
+      // 日付単位(YYYY-MM-DD)で蓄積される移動履歴ログ。ドキュメントIDは
+      // `${uid}_${date}` で、本人のuidをdata.uidに保持する(lib/userPathHistory.ts
+      // のsyncDailyLocationHistory参照)。GPSがOFF(user_locations側がisOnline:false)
+      // になっても、こちらのログは消さずに保持する。
+      allow read: if isSignedIn() &&
+        (request.auth.uid == resource.data.uid || requesterProfile().organizationId == resource.data.organizationId);
+      allow create, update: if isSignedIn() && request.auth.uid == request.resource.data.uid;
+      allow delete: if false;
+    }
   }
 }

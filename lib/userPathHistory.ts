@@ -9,6 +9,13 @@
 //      経路が消えないようにする(DB未接続でも動作するフォールバック)。
 //   2. Firestore(`user_locations/{uid}`)にも非同期で同期する。書き込みに
 //      失敗してもlocalStorage側の履歴には一切影響させない(ベストエフォート)。
+//
+// `user_locations/{uid}`はあくまで「現在オンラインかどうか」を表すリアルタイム
+// ドキュメントであり、GPSがOFFになった際はisOnline:falseに更新するだけで
+// ドキュメント自体は消さない(firestore.rulesでもdeleteは禁止している)。
+// 一方、移動履歴(過去の軌跡)はisOnlineの状態に関わらず消えてはならないため、
+// 別コレクション`location_histories`に日付単位(YYYY-MM-DD)で分けて蓄積する
+// (syncDailyLocationHistory参照)。
 
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "./firebase";
@@ -167,6 +174,10 @@ export async function syncPathToFirestore(
         ...(extra?.phone !== undefined ? { phone: extra.phone } : {}),
         ...(position ? { position } : {}),
         path: path.slice(-MAX_POINTS),
+        // このメソッドはGPS追跡中(gpsTracking=ON)にのみ呼ばれるため、
+        // 呼ばれた時点で常にオンライン扱いにする。OFFへの遷移は
+        // setUserLocationOffline()側でisOnline:falseに更新する。
+        isOnline: true,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -191,5 +202,97 @@ export async function syncPathToFirestore(
         "[GPS履歴] 権限エラーが発生しました。認証セッションが切れている可能性があります。再度ログインしてください。"
       );
     }
+  }
+}
+
+// GPSがOFFになったこと(トグルOFF操作、または位置情報取得のエラーで継続追跡を
+// 諦めた場合)を検知した際に呼ぶ。user_locations/{uid}を削除するとpath等の
+// 直近の位置情報が失われてしまう上、firestore.rulesでもdeleteは禁止しているため、
+// isOnline:falseへの更新のみ行う。クルー位置の購読側(lib/crewLocations.ts)は
+// isOnline:trueのドキュメントのみ地図に描画するため、これによって即座に
+// ピンが消える。
+export async function setUserLocationOffline(uid: string): Promise<void> {
+  if (!uid) {
+    console.error("[GPS履歴][Debug] uidが空のためisOnline更新をスキップします");
+    return;
+  }
+  if (!auth.currentUser || auth.currentUser.uid !== uid) {
+    // 未ログイン/uid不一致時はどうせ権限エラーになるだけなので書き込まない
+    console.warn(
+      "[GPS履歴] 未ログインまたはuid不一致のため、user_locationsのisOnline更新をスキップしました。",
+      { uid, authUid: auth.currentUser?.uid ?? null }
+    );
+    return;
+  }
+
+  try {
+    await setDoc(
+      doc(db, "user_locations", uid),
+      { isOnline: false, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+    console.log(`[GPS履歴][Debug] user_locations/${uid} をisOnline:falseに更新しました`);
+  } catch (error) {
+    const firestoreError = error as { code?: string; message?: string };
+    console.error(`[GPS履歴] user_locations/${uid} のisOnline:false更新に失敗しました:`, {
+      code: firestoreError?.code,
+      message: firestoreError?.message,
+      error,
+    });
+  }
+}
+
+// タイムスタンプ(ms)をローカルタイムゾーンの"YYYY-MM-DD"文字列に変換する。
+// (toISOString()はUTC基準になってしまい日付がずれるため使わない)
+function formatDateKey(timestampMs: number): string {
+  const d = new Date(timestampMs);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// 移動経路の履歴を日付単位(YYYY-MM-DD)でFirestore(`location_histories`)に
+// 蓄積する。user_locations/{uid}側のpathはドキュメントサイズ上限対策で
+// 直近MAX_POINTS件しか保持できず、かつisOnline:false(GPS OFF)になっても
+// 内容自体は残るが将来上書きで古いものから消えていくため、「消えない」
+// 過去ログとしてはこちらを正とする。
+//
+// 呼び出しのたびに「今日の分」の座標だけを抽出してドキュメントをmerge書き込み
+// する(過去の日付分は既に前回までの呼び出しで書き込み済みという前提)。
+// ドキュメントIDは `${uid}_${date}` とし、1ユーザー1日1ドキュメントにする。
+export async function syncDailyLocationHistory(
+  uid: string,
+  organizationId: string,
+  path: PathPoint[]
+): Promise<void> {
+  if (!uid || path.length === 0) return;
+  if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+
+  const today = formatDateKey(Date.now());
+  const todaysPoints = path.filter((p) => formatDateKey(p.timestamp) === today);
+  if (todaysPoints.length === 0) return;
+
+  const docId = `${uid}_${today}`;
+  try {
+    await setDoc(
+      doc(db, "location_histories", docId),
+      {
+        uid,
+        organizationId,
+        date: today,
+        path: todaysPoints,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    console.log(`[GPS履歴][Debug] location_histories/${docId} を更新しました(${todaysPoints.length}点)`);
+  } catch (error) {
+    const firestoreError = error as { code?: string; message?: string };
+    console.error(`[GPS履歴] location_histories/${docId} への書き込みに失敗しました:`, {
+      code: firestoreError?.code,
+      message: firestoreError?.message,
+      error,
+    });
   }
 }

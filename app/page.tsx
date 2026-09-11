@@ -32,6 +32,8 @@ import {
   shouldAppendPoint,
   appendPoint,
   syncPathToFirestore,
+  setUserLocationOffline,
+  syncDailyLocationHistory,
 } from "@/lib/userPathHistory";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
@@ -208,6 +210,9 @@ export default function Home() {
       phone: profile.phone,
       position: userLocation ?? undefined,
     });
+    // 日別の移動履歴(location_histories)も同時に蓄積する。isOnline状態には
+    // 依存しないため、GPSがOFFになっても既に書き込んだ日の履歴は消えない。
+    syncDailyLocationHistory(profile.uid, profile.organizationId, myPathHistory);
   }, [myPathHistory, mounted, user, profile, myStatus, userLocation]);
 
   // 移動していない間もuser_locationsの位置・ステータス・updatedAtが古いままに
@@ -233,6 +238,7 @@ export default function Home() {
         myPathHistoryRef.current,
         { status: myStatusRef.current, phone: profile.phone, position: loc }
       );
+      syncDailyLocationHistory(profile.uid, profile.organizationId, myPathHistoryRef.current);
     }, HEARTBEAT_SYNC_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [mounted, user, profile, gpsTracking]);
@@ -393,6 +399,12 @@ export default function Home() {
       } catch (error) {
         console.warn("GPS追跡状態の保存に失敗しました:", error);
       }
+      // GPS OFF(停止処理)を検知したので、user_locations/{uid}を
+      // isOnline:falseに更新し、地図上から自分のピンを即座に消す。
+      // (位置履歴自体は消さない。location_historiesは別途保持されている)
+      if (profile) {
+        setUserLocationOffline(profile.uid);
+      }
       return;
     }
 
@@ -448,6 +460,7 @@ export default function Home() {
           // 呼び出し経路の変更に備えて念のためここでもログを残す
           console.error("[GPS Error][トグル] syncPathToFirestore(即時)で予期しないエラー:", error);
         });
+      syncDailyLocationHistory(profile.uid, profile.organizationId, myPathHistoryRef.current);
     } catch (error) {
       // getLocationForGpsToggleOnはフォールバックにより通常reject/throwしないため、
       // ここに来るのは navigator.geolocation自体が存在しない等、致命的なケースのみ。
@@ -572,6 +585,11 @@ export default function Home() {
         // 権限拒否の場合は標準精度でも許可されないため、再試行せずフォールバック座標を使う
         if (error.code === error.PERMISSION_DENIED) {
           setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+          // GPSがOFF(権限拒否)になったことを検知したので、他クルー側の
+          // 地図からは自分のピンを即座に消す(isOnline:false)。
+          if (profile) {
+            setUserLocationOffline(profile.uid);
+          }
           return;
         }
         // 高精度側のwatchをやめて標準精度で張り直す
@@ -584,6 +602,11 @@ export default function Home() {
           (error2) => {
             console.warn("[GPS Error] 継続追跡失敗(標準精度)。デフォルト座標を使用します:", error2);
             setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+            // 高精度・標準精度の両方が失敗した=実質的にGPSが使えない状態
+            // なので、こちらもisOnline:falseに更新して自分のピンを消す。
+            if (profile) {
+              setUserLocationOffline(profile.uid);
+            }
           },
           { enableHighAccuracy: false, timeout: 8000, maximumAge: 5000 }
         );

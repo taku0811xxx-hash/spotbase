@@ -4,6 +4,9 @@
 // これまでapp/page.tsxではlib/dummyCrew.tsのダミーデータをそのまま表示していたが、
 // 本モジュールでは実際にGPS追跡(出動中)しているメンバーの位置をFirestoreから
 // 取得して表示する。書き込み側はlib/userPathHistory.ts(syncPathToFirestore)。
+// isOnline:trueのドキュメントのみを表示対象とする(GPS OFF時はisOnline:false
+// に更新されるだけでドキュメント自体・位置履歴は消えないため、地図から消えても
+// データは失われない。setUserLocationOffline参照)。
 
 import { collection, onSnapshot, query, where, Timestamp } from "firebase/firestore";
 import { db, auth } from "./firebase";
@@ -19,6 +22,10 @@ type UserLocationDoc = {
   position?: { lat: number; lng: number };
   path?: { lat: number; lng: number; timestamp: number }[];
   updatedAt?: Timestamp;
+  // GPS追跡中かどうか。false(またはfalseに更新された)の場合は、
+  // 位置データ自体は残っていても地図上のピンとしては表示しない
+  // (lib/userPathHistory.tsのsetUserLocationOffline参照)。
+  isOnline?: boolean;
 };
 
 const DEFAULT_STATUS: CrewStatus = "待機中";
@@ -109,6 +116,15 @@ export function subscribeCrewLocations(
         const data = d.data() as UserLocationDoc;
 
         const isSelf = uid === selfUid;
+
+        if (data.isOnline !== true) {
+          // isOnlineが無い(旧データ/未同期)場合も含め、trueでなければ
+          // GPSはOFFとみなして地図には出さない(位置データ自体は消さない)。
+          console.log(
+            `[クルー位置][Debug] スキップ(isOnlineでない): uid=${uid}, name=${data.name ?? "?"}, isOnline=${data.isOnline}, isSelf=${isSelf}`
+          );
+          continue;
+        }
 
         const hasPosition = !!data.position;
         const hasPath = !!(data.path && data.path.length > 0);
