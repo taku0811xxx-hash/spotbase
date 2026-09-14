@@ -14,6 +14,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
@@ -938,47 +939,74 @@ function RadiusPresetControl() {
 // placementModeActiveを含めるとその値が変わるたびに再登録が起きてしまうため、
 // refで最新値を読む形にして登録自体は安定させている)。
 function FieldNoteMapInteractionHandler({
+  isDesktopViewport,
   placementModeActive,
-  onPick,
+  onDesktopPick,
+  onMobileTap,
 }: {
+  isDesktopViewport: boolean;
   placementModeActive: boolean;
-  onPick: (lat: number, lng: number) => void;
+  onDesktopPick: (lat: number, lng: number) => void;
+  onMobileTap: (lat: number, lng: number) => void;
 }) {
   const activeRef = useRef(placementModeActive);
   useEffect(() => {
     activeRef.current = placementModeActive;
   }, [placementModeActive]);
 
+  // useMapEventのハンドラをuseCallbackで安定させている(下記コメント参照)ため、
+  // isDesktopViewportの最新値もrefで読む(依存配列に含めると再登録が発生するため)。
+  const isDesktopRef = useRef(isDesktopViewport);
+  useEffect(() => {
+    isDesktopRef.current = isDesktopViewport;
+  }, [isDesktopViewport]);
+
   const map = useMap();
   // Leafletの'contextmenu'イベント側でもL.DomEvent.preventDefault()しているが、
   // ブラウザ・OS・拡張機能の組み合わせによっては純正の右クリックメニューが
   // 先に表示されてしまうことがあるため、マップのDOMコンテナに直接ネイティブの
-  // contextmenuリスナーを張って必ずpreventDefault()することで二重に確実化する。
+  // contextmenuリスナーを張って必ずpreventDefault()することで二重に確実化する
+  // (PCの右クリックのみが対象。モバイルではそもそも下記の通りcontextmenuを
+  // 使わないため実質何もしない)。
   useEffect(() => {
     const container = map.getContainer();
     function blockNativeContextMenu(ev: Event) {
+      if (!isDesktopRef.current) return;
       ev.preventDefault();
     }
     container.addEventListener("contextmenu", blockNativeContextMenu);
     return () => container.removeEventListener("contextmenu", blockNativeContextMenu);
   }, [map]);
 
+  // PCの本物の右クリックのみを対象とする投稿トリガー。
+  // モバイルの長押し(Leaflet Map.TapHoldによるcontextmenuシミュレーション)は
+  // 不安定だったため完全に廃止し、モバイルは下のhandleClick(シングルタップ)に
+  // 一本化した。MapContainer側もtapHold={false}にして、モバイルでこの
+  // イベント自体がそもそも発火しないようにしている。
   const handleContextMenu = useCallback(
     (e: L.LeafletMouseEvent) => {
+      if (!isDesktopRef.current) return;
       L.DomEvent.preventDefault(e.originalEvent);
       const { lat, lng } = e.latlng;
-      onPick(lat, lng);
+      onDesktopPick(lat, lng);
     },
-    [onPick]
+    [onDesktopPick]
   );
 
+  // モバイル: シングルタップが常時、仮ピン設置(→確認ポップアップ表示)のトリガー。
+  // PC: 「＋情報投稿」ボタンで設置モードに入っている間だけ、通常の左クリックで
+  // 即座にフォームを開く(右クリックと並行して使える補助導線)。
   const handleClick = useCallback(
     (e: L.LeafletMouseEvent) => {
-      if (!activeRef.current) return;
       const { lat, lng } = e.latlng;
-      onPick(lat, lng);
+      if (!isDesktopRef.current) {
+        onMobileTap(lat, lng);
+        return;
+      }
+      if (!activeRef.current) return;
+      onDesktopPick(lat, lng);
     },
-    [onPick]
+    [onDesktopPick, onMobileTap]
   );
 
   useMapEvent("contextmenu", handleContextMenu);
@@ -1000,7 +1028,9 @@ function FieldNotePostControl({
       type="button"
       onClick={onTogglePlacementMode}
       title="ONにすると地図の左クリックで通行止め・現場コメントの投稿位置を指定できます(右クリックはいつでも利用可)"
-      className={`absolute top-1.5 left-14 sm:top-4 sm:left-20 z-[1000] flex items-center gap-1 text-xs sm:text-sm font-semibold rounded-full shadow-lg border px-3 py-2 pointer-events-auto transition-colors ${
+      // PC向けの補助導線のため、モバイル幅では非表示にする
+      // (モバイルはシングルタップがそのまま投稿トリガーになるため不要)
+      className={`hidden sm:flex absolute top-1.5 left-14 sm:top-4 sm:left-20 z-[1000] items-center gap-1 text-xs sm:text-sm font-semibold rounded-full shadow-lg border px-3 py-2 pointer-events-auto transition-colors ${
         placementModeActive
           ? "bg-blue-600 text-white border-blue-600"
           : "bg-white hover:bg-gray-50 text-gray-800 border-gray-200"
@@ -1008,6 +1038,88 @@ function FieldNotePostControl({
     >
       {placementModeActive ? "📍 地図をクリックして位置を指定" : "＋ 情報投稿"}
     </button>
+  );
+}
+
+// モバイルのシングルタップ直後に表示する「ここに情報を投稿」確認バブル。
+// Leaflet標準のPopupは地図のtransform(translate3d、パン用)が作る独立した
+// スタッキングコンテキストに閉じ込められてしまい、Pane側でz-indexをどれだけ
+// 上げても地図の外側にある他の固定UI(気象トグル等、z-[1000])の方が手前に
+// 来てしまいタップを奪われる不具合があった(CSSの仕様上、transformを持つ
+// 要素は新しいスタッキングコンテキストを作るため、その中の要素がどれだけ
+// z-indexを上げても外側の要素を追い越せない)。
+// そのため、このコンポーネント自体はMapContainerの中(useMap()が使える位置)に
+// 配置しつつ、実際に見える吹き出しUIはReact Portalで地図の外側の兄弟要素
+// (portalContainer、z-[3000])へ描画することで、他の固定UIと同じ
+// スタッキングコンテキストで確実に最前面・タップ可能な状態にしている。
+// 位置は地図のパン・ズームに追従させるため、'move'/'zoom'/'resize'イベントの
+// たびにlatLngToContainerPoint()で再計算する。
+function MobileDraftConfirmBubble({
+  lat,
+  lng,
+  portalContainer,
+  onConfirm,
+  onDismiss,
+}: {
+  lat: number;
+  lng: number;
+  portalContainer: HTMLDivElement | null;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  const map = useMap();
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    function updatePoint() {
+      if (!isMapReady(map)) return;
+      const p = map.latLngToContainerPoint([lat, lng]);
+      setPoint({ x: p.x, y: p.y });
+    }
+    updatePoint();
+    map.on("move zoom resize", updatePoint);
+    return () => {
+      map.off("move zoom resize", updatePoint);
+    };
+  }, [map, lat, lng]);
+
+  if (!portalContainer || !point) return null;
+
+  return createPortal(
+    <div
+      className="absolute pointer-events-auto"
+      style={{
+        left: point.x,
+        top: point.y,
+        transform: "translate(-50%, -100%)",
+        marginTop: -10,
+      }}
+    >
+      <div className="relative bg-white rounded-xl shadow-2xl border border-gray-200 p-3 space-y-2 w-48">
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="閉じる"
+          title="閉じる"
+          className="absolute top-1 right-1 w-5 h-5 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center text-xs leading-none"
+        >
+          ✕
+        </button>
+        <p className="text-xs text-gray-500 pr-4">
+          📍 {lat.toFixed(5)}, {lng.toFixed(5)}
+        </p>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="block w-full text-center text-sm bg-blue-600 text-white hover:bg-blue-700 rounded px-3 py-2 font-medium transition-colors"
+        >
+          ここに情報を投稿
+        </button>
+        {/* 吹き出しの三角形(下向き、仮ピンの先端を指す) */}
+        <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-gray-200 rotate-45" />
+      </div>
+    </div>,
+    portalContainer
   );
 }
 
@@ -1229,6 +1341,12 @@ export default function Map({
   // 一覧クリックでの「該当ピンへフォーカス」用に、各field_noteのMarkerインスタンスを保持
   const fieldNoteMarkerRefs = useRef<Record<string, L.Marker | null>>({});
 
+  // モバイルの「ここに情報を投稿」確認バブル(MobileDraftConfirmBubble)を
+  // React Portalで描画する先。地図(MapContainer)の外側の兄弟要素として
+  // レンダリングし、Leafletのtransformが作るスタッキングコンテキストの
+  // 影響を受けずに最前面へ確実に表示できるようにする。
+  const [mobileConfirmPortalEl, setMobileConfirmPortalEl] = useState<HTMLDivElement | null>(null);
+
   // PC(デスクトップ)幅かどうか。Tailwindの sm ブレークポイント(640px)に合わせる。
   // PCでは投稿フォームをサイドパネルに埋め込み、モバイルでは全画面モーダルとして
   // 表示するため、どちらの体裁で開くかをこれで判定する。
@@ -1242,9 +1360,16 @@ export default function Map({
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
-  // 投稿位置が確定した時に呼ぶ共通処理。PCではサイドパネルを開いて
-  // 「投稿フォーム」ビューに切り替え、モバイルでは全画面モーダル(下記の
-  // FieldNoteForm)がpendingFieldNoteLocationの存在だけで自動的に開く。
+  // 実際の投稿フォーム(PCはサイドパネルのformビュー、モバイルは全画面モーダル)を
+  // 表示するかどうか。モバイルの「シングルタップ」経由では、タップ直後はまだ
+  // フォームを開かず、仮ピン+確認ポップアップ(「ここに情報を投稿」ボタン)だけを
+  // 出す2段階フローにするため、pendingFieldNoteLocationの有無とは別に持つ。
+  const [fieldNoteComposerOpen, setFieldNoteComposerOpen] = useState(false);
+
+  // 投稿位置が確定し、フォームを即座に開く場合の共通処理(PCの右クリック/
+  // 「＋情報投稿」設置モードでの左クリック/自分の現在地ピンの「この場所の情報を
+  // 入力」ボタンから使う。これらはいずれもユーザーの意図が明確なため、
+  // モバイルのシングルタップのような確認ステップを挟まない)。
   // useCallbackで参照を安定させ、FieldNoteMapInteractionHandler側の
   // useMapEvent登録が(このMapコンポーネント自体は他の状態変化で高頻度に
   // 再レンダリングされるにも関わらず)不要に再登録されないようにしている。
@@ -1253,6 +1378,7 @@ export default function Map({
       setFieldNoteError("");
       setPendingFieldNoteLocation({ lat, lng });
       setFieldNotePlacementMode(false);
+      setFieldNoteComposerOpen(true);
       if (isDesktopViewport) {
         setFieldNotePanelView("form");
         setFieldNotePanelOpen(true);
@@ -1261,10 +1387,26 @@ export default function Map({
     [isDesktopViewport]
   );
 
+  // モバイルのシングルタップ用: タップした位置に仮ピンを立てて「ここに情報を
+  // 投稿」の確認ポップアップだけを表示する(フォームはまだ開かない)。誤タップで
+  // いきなり投稿フォームが全画面表示されるのを避けるための中間確認ステップ。
+  const placeMobileDraftPin = useCallback((lat: number, lng: number) => {
+    setFieldNoteError("");
+    setPendingFieldNoteLocation({ lat, lng });
+    setFieldNoteComposerOpen(false);
+  }, []);
+
+  // 確認ポップアップの「ここに情報を投稿」ボタン押下時: 位置はそのままに、
+  // 実際の投稿フォーム(モバイル全画面モーダル)を開く。
+  const confirmMobileDraftPin = useCallback(() => {
+    setFieldNoteComposerOpen(true);
+  }, []);
+
   function closeFieldNoteComposer() {
     setPendingFieldNoteLocation(null);
     setFieldNoteError("");
     setFieldNotePanelView("list");
+    setFieldNoteComposerOpen(false);
   }
 
   async function handleSubmitFieldNote(input: {
@@ -1525,6 +1667,12 @@ export default function Map({
         </div>
       )}
 
+      {/* MobileDraftConfirmBubbleのポータル先。地図(MapContainer)の兄弟要素として
+          配置することで、地図内部のtransformによるスタッキングコンテキストの
+          影響を受けずに最前面(z-[3000])に表示できる。pointer-events-noneで
+          普段は透過し、ポータルされた子要素側でpointer-events-autoを指定する。 */}
+      <div ref={setMobileConfirmPortalEl} className="absolute inset-0 z-[3000] pointer-events-none" />
+
       <MapContainer
         center={center}
         zoom={12}
@@ -1533,10 +1681,21 @@ export default function Map({
         touchZoom={true}
         doubleClickZoom={true}
         zoomControl={true}
+        // モバイルの長押し(Map.TapHoldによる'contextmenu'イベントのシミュレーション)は
+        // 端末・ブラウザによって発火が不安定だったため、現場情報投稿の導線として
+        // 採用するのをやめた(モバイルは下のFieldNoteMapInteractionHandlerで
+        // 「シングルタップ」に一本化)。tapHold自体を明示的にfalseにして、
+        // モバイルで意図せず'contextmenu'が発火することも無くしておく。
+        tapHold={false}
         className="h-full w-full pointer-events-auto"
         style={{
           touchAction: "manipulation",
           WebkitTouchCallout: "none",
+          // スマホ標準の長押しメニュー(テキスト選択のハイライト・コピー/共有バブル等)が
+          // 割り込むと、上のtapHoldが検知する前にタッチシーケンスが横取りされてしまう
+          // ため、地図コンテナ上でのテキスト選択自体を無効化しておく。
+          WebkitUserSelect: "none",
+          userSelect: "none",
           maxWidth: "100vw",
           boxSizing: "border-box",
           overflow: "hidden",
@@ -1556,12 +1715,16 @@ export default function Map({
       <LocateControl onLocated={onLocated} lastKnownLocation={lastKnownLocation} />
       {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
       <RadiusPresetControl />
-      {/* 現場一次情報の投稿位置指定: 右クリック(PC)/長押し(モバイル)は常時有効。
-          「＋ 情報投稿」ボタンON時は通常の左クリックでも指定できる */}
+      {/* 現場一次情報の投稿位置指定:
+          - PC: 右クリックで常時即座にフォームを開く。「＋情報投稿」ON時は
+            通常の左クリックでも同様に指定できる。
+          - モバイル: シングルタップで仮ピン+確認ポップアップを表示(長押しは廃止)。 */}
       {onCreateFieldNote && (
         <FieldNoteMapInteractionHandler
+          isDesktopViewport={isDesktopViewport}
           placementModeActive={fieldNotePlacementMode}
-          onPick={openFieldNoteComposer}
+          onDesktopPick={openFieldNoteComposer}
+          onMobileTap={placeMobileDraftPin}
         />
       )}
       {/* 「＋ 情報投稿」モード切り替えボタン(PC向けの補助導線) */}
@@ -1630,6 +1793,7 @@ export default function Map({
       <Pane name="warningLabelPane" style={{ zIndex: 620, pointerEvents: "auto" }}>
         {showWeatherWarnings && <WarningLabelLayer />}
       </Pane>
+
 
       {showPins && pins
         .filter((pin) => isValidCoordinate(pin.lat, pin.lng))
@@ -1861,22 +2025,42 @@ export default function Map({
         </Marker>
       )}
 
-      {/* 投稿位置の仮ピン。右クリック/長押し/自分のピンからの「この場所の情報を
-          入力」で投稿位置が確定すると表示され、投稿フォームが開いている間は
-          その場所に固定表示され続ける。投稿完了・キャンセル(パネル/モーダルを
-          閉じる)のどちらでもpendingFieldNoteLocationがnullになり自動的に消える。
-          interactive={false}にして、下にある地図のクリック/右クリック操作を
-          妨げないようにする。 */}
+      {/* 投稿位置の仮ピン。PCの右クリック/自分のピンの「この場所の情報を入力」/
+          モバイルのシングルタップで投稿位置が確定すると表示され、投稿フォームが
+          開いている間はその場所に固定表示され続ける。投稿完了・キャンセル
+          (パネル/モーダル/確認バブルを閉じる)のいずれでもpendingFieldNoteLocation
+          がnullになり自動的に消える。常にinteractive={false}にして、下にある
+          地図のクリック/右クリック操作を妨げないようにする(モバイルの確認用
+          「ここに情報を投稿」ボタンは、下のMobileDraftConfirmBubbleとして
+          地図の外側にポータル描画される別要素なので、こちらには影響しない)。 */}
       {pendingFieldNoteLocation && isValidCoordinate(pendingFieldNoteLocation.lat, pendingFieldNoteLocation.lng) && (
         <Marker
           // 座標が変わるたびに必ず新規のMarker DOMとして描画させ、「位置更新のみで
           // 見た目の再描画が反映されない」ケースを避けるためkeyに座標を含める
-          // (再度右クリックして違う場所に打ち直した場合も確実に追従させる)。
+          // (再度タップ/右クリックして違う場所に打ち直した場合も確実に追従させる)。
           key={`field-note-draft-${pendingFieldNoteLocation.lat}-${pendingFieldNoteLocation.lng}`}
           position={[pendingFieldNoteLocation.lat, pendingFieldNoteLocation.lng]}
           icon={tempFieldNoteIcon}
           interactive={false}
           keyboard={false}
+        />
+      )}
+
+      {/* モバイルのシングルタップ直後(まだ投稿フォームを開いていない確認段階)に
+          表示する「ここに情報を投稿」確認バブル。Leaflet標準のPopupは地図の
+          transform(translate3d)が作るスタッキングコンテキストに閉じ込められて
+          しまい、z-indexをどれだけ上げても地図の外側にある他の固定UI(気象トグル
+          等、z-[1000])より手前に出せず、タップが奪われてしまう問題があった。
+          そのためLeafletのPopup機構は使わず、地図の外側(MapContainerの兄弟)に
+          用意したポータル先へReact Portalで描画することで、他の固定UIと同じ
+          スタッキングコンテキストで確実に最前面(z-[3000])に出せるようにしている。 */}
+      {pendingFieldNoteLocation && !isDesktopViewport && !fieldNoteComposerOpen && onCreateFieldNote && (
+        <MobileDraftConfirmBubble
+          lat={pendingFieldNoteLocation.lat}
+          lng={pendingFieldNoteLocation.lng}
+          portalContainer={mobileConfirmPortalEl}
+          onConfirm={confirmMobileDraftPin}
+          onDismiss={closeFieldNoteComposer}
         />
       )}
 
@@ -2081,8 +2265,11 @@ export default function Map({
 
       {/* モバイル(狭幅)では全画面モーダルとして投稿フォームを表示する。
           PC(デスクトップ幅)では代わりにFieldNoteSidePanel内に埋め込み表示される
-          (openFieldNoteComposerがisDesktopViewportに応じて出し分けている)。 */}
-      {pendingFieldNoteLocation && onCreateFieldNote && !isDesktopViewport && (
+          (openFieldNoteComposerがisDesktopViewportに応じて出し分けている)。
+          fieldNoteComposerOpenも条件に含めることで、モバイルのシングルタップ
+          直後(まだ「ここに情報を投稿」ボタンを押していない確認段階)では
+          このモーダルをいきなり開かず、上の確認ポップアップだけを表示する。 */}
+      {pendingFieldNoteLocation && onCreateFieldNote && !isDesktopViewport && fieldNoteComposerOpen && (
         <FieldNoteForm
           lat={pendingFieldNoteLocation.lat}
           lng={pendingFieldNoteLocation.lng}
