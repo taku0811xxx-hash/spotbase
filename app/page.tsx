@@ -6,6 +6,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getAllPins, searchPins, createQuickPin, type Pin } from "@/lib/pins";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
+import {
+  subscribeActiveFieldNotes,
+  createFieldNote,
+  resolveFieldNote,
+  type FieldNote,
+  type FieldNoteCategory,
+} from "@/lib/fieldNotes";
 import { getDispatchRecords, createQuickDispatchRecord } from "@/lib/dispatchRecords";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import { useBreakingAlerts } from "@/lib/hooks/useBreakingAlerts";
@@ -81,6 +88,9 @@ export default function Home() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   // クライアント側のリアルタイム取得フック（60秒ごとに自動更新）
   const { alerts: breakingAlerts } = useBreakingAlerts();
+  // 現場一次情報(通行止め・現場コメント等)。リアルタイム購読でactiveのみ保持し、
+  // 「復旧済み」にされた瞬間に地図上から自動的に消える。
+  const [fieldNotes, setFieldNotes] = useState<FieldNote[]>([]);
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
@@ -277,6 +287,43 @@ export default function Home() {
     const unsubscribe = subscribeCrewLocations(profile.organizationId, profile.uid, setCrewMembers);
     return () => unsubscribe();
   }, [user, profile]);
+
+  // 現場一次情報(field_notes)のリアルタイム購読。同組織のactive分のみ。
+  useEffect(() => {
+    if (!user || !profile) {
+      setFieldNotes([]);
+      return;
+    }
+    const unsubscribe = subscribeActiveFieldNotes(profile.organizationId, setFieldNotes);
+    return () => unsubscribe();
+  }, [user, profile]);
+
+  async function handleCreateFieldNote(input: {
+    lat: number;
+    lng: number;
+    category: FieldNoteCategory;
+    comment: string;
+  }) {
+    if (!profile) throw new Error("プロフィール未取得のため投稿できません");
+    await createFieldNote({
+      organizationId: profile.organizationId,
+      authorUid: profile.uid,
+      authorName: profile.name,
+      category: input.category,
+      comment: input.comment,
+      lat: input.lat,
+      lng: input.lng,
+    });
+  }
+
+  async function handleResolveFieldNote(fieldNoteId: string) {
+    if (!profile) return;
+    try {
+      await resolveFieldNote(fieldNoteId, profile.uid);
+    } catch (err) {
+      console.error("[FieldNote] failed to resolve:", err);
+    }
+  }
 
   // ログイン完了(auth状態がuser: null → 実ユーザーに変化)を検知したタイミングで、
   // GPS追跡が既にON(前回セッションからlocalStorageで復元された状態)であれば
@@ -1204,6 +1251,9 @@ export default function Home() {
               myStatus={myStatus}
               selfLocationHistory={myPathHistory}
               selfUid={profile?.uid ?? null}
+              fieldNotes={fieldNotes}
+              onCreateFieldNote={handleCreateFieldNote}
+              onResolveFieldNote={handleResolveFieldNote}
             />
           </main>
         </div>
@@ -1292,6 +1342,9 @@ export default function Home() {
             myStatus={myStatus}
             selfLocationHistory={myPathHistory}
             selfUid={profile?.uid ?? null}
+            fieldNotes={fieldNotes}
+            onCreateFieldNote={handleCreateFieldNote}
+            onResolveFieldNote={handleResolveFieldNote}
           />
         </main>
 
