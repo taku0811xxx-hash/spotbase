@@ -8,17 +8,21 @@ import {
   Polyline,
   Pane,
   useMap,
+  useMapEvent,
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Pin } from "@/lib/pins";
 import type { RoadSuggestion } from "@/lib/roads";
 import type { Incident } from "@/lib/incidents";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import type { CrewMember, CrewStatus } from "@/lib/dummyCrew";
 import type { PathPoint } from "@/lib/userPathHistory";
+import type { FieldNote, FieldNoteCategory } from "@/lib/fieldNotes";
+import { FIELD_NOTE_CATEGORY_META, formatFieldNoteRelativeTime } from "@/lib/fieldNotes";
+import FieldNoteForm from "./FieldNoteForm";
 import { getDailyLocationHistory, todayDateKey, yesterdayDateKey } from "@/lib/locationHistory";
 import { buildRoutePieces, type RoutePiece } from "@/lib/routeInterpolation";
 import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
@@ -207,6 +211,93 @@ const stayPointIcon = L.divIcon({
   popupAnchor: [0, -13],
 });
 
+// 現場一次情報(field_notes)用のアイコンをキャッシュしつつカテゴリごとに生成する。
+// カテゴリごとの絵文字・色は lib/fieldNotes.ts の FIELD_NOTE_CATEGORY_META に集約済み。
+//
+// アンカー位置について: このファイルの他のピン(defaultIcon/searchIcon/incidentIcon等)
+// と同様、画像は「先端が下向きのしずく型(ピン)」として描画し、iconAnchorはその
+// 先端(画像下端中央 = [iconWidth/2, iconHeight])に合わせる。以前は円形バッジを
+// 描画しているにも関わらずiconAnchorだけ下端中央にしていたため、実際に見える円の
+// 中心と指定座標が一致せず、ズーム/パン時に位置がズレて見える不具合があった
+// (円をそのまま使うなら中心アンカー、ピン型にするなら先端アンカー、のどちらかに
+// 揃える必要がある。ここではアプリ全体の見た目に合わせてピン型+先端アンカーを採用)。
+const FIELD_NOTE_PIN_WIDTH = 32;
+const FIELD_NOTE_PIN_HEIGHT = 42;
+const fieldNoteIconCache = new globalThis.Map<FieldNoteCategory, L.DivIcon>();
+function getFieldNoteIcon(category: FieldNoteCategory): L.DivIcon {
+  const cached = fieldNoteIconCache.get(category);
+  if (cached) return cached;
+
+  const meta = FIELD_NOTE_CATEGORY_META[category];
+  const icon = L.divIcon({
+    className: "",
+    html: `
+      <svg width="${FIELD_NOTE_PIN_WIDTH}" height="${FIELD_NOTE_PIN_HEIGHT}" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="16" cy="39" rx="7" ry="2.2" fill="rgba(0,0,0,0.35)"/>
+        <path d="M16 0C7.2 0 0 7.2 0 16c0 11 16 26 16 26s16-15 16-26C32 7.2 24.8 0 16 0z"
+              fill="${meta.color}" stroke="white" stroke-width="2"/>
+        <circle cx="16" cy="16" r="9" fill="white" opacity="0.95"/>
+        <text x="16" y="21" text-anchor="middle" font-size="14" line-height="1">${meta.emoji}</text>
+      </svg>
+    `,
+    // 先端(針の位置=実際の座標)を画像の下端中央に固定する
+    iconSize: [FIELD_NOTE_PIN_WIDTH, FIELD_NOTE_PIN_HEIGHT],
+    iconAnchor: [FIELD_NOTE_PIN_WIDTH / 2, FIELD_NOTE_PIN_HEIGHT],
+    popupAnchor: [0, -FIELD_NOTE_PIN_HEIGHT + 4],
+  });
+  fieldNoteIconCache.set(category, icon);
+  return icon;
+}
+
+// 仮ピン(ドラフトマーカー)のサイズ。通常のピン(このファイルのdefaultIcon: 25×41)
+// の約1.5倍(25×1.5=37.5→38, 41×1.5=61.5→62)を基準にし、目立たせつつも
+// 極端に大きくならないようにする。仮ピン自身のしずく型パスは32×42の
+// viewBoxで描いているため、アスペクト比が崩れないよう同じ比率(32:42)を保ったまま
+// この基準サイズに近い数値へスケールする。
+const DRAFT_PIN_WIDTH = 38;
+const DRAFT_PIN_HEIGHT = 50;
+
+// 現場情報投稿フォーム/パネルが開いている間、「どこに投稿しようとしているか」を
+// 視覚的に示す仮ピン(まだカテゴリ未確定の入力中状態)。カテゴリ確定後のピン
+// (getFieldNoteIcon)とは色(赤)で見た目を区別する。フォームを閉じる/投稿完了
+// するとpendingFieldNoteLocationがnullになり、このピンも消える。
+// getFieldNoteIconと同じく先端(画像下端中央)をアンカーにする。
+//
+// 単一の赤いピン画像のみを表示する(以前あった薄い青の破線リング/halo装飾は
+// 見た目が煩雑で分かりづらいとの指摘を受けて完全に削除した)。
+//
+// 【重要】点滅アニメーションはopacityのみに留め、transform(scale等)は使わない。
+// Leafletが位置決めに使うtransform: translate3d(...)と"同じ要素"に対して
+// transformをアニメーションさせると、インラインstyleのtransformが上書きされ
+// (合成されず)、Leafletの座標に基づく実際の位置が失われてマーカーが地図の
+// 原点(左上)付近に表示されてしまう不具合が過去にあったため。opacityは
+// transformと競合しないため安全に使える。
+const tempFieldNoteIcon = L.divIcon({
+  className: "",
+  html: `
+    <style>
+      @keyframes fieldNoteTempPulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.55; }
+      }
+      .field-note-temp-pulse {
+        animation: fieldNoteTempPulse 1s ease-in-out infinite;
+      }
+    </style>
+    <div class="field-note-temp-pulse">
+      <svg width="${DRAFT_PIN_WIDTH}" height="${DRAFT_PIN_HEIGHT}" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="16" cy="39" rx="7" ry="2.2" fill="rgba(0,0,0,0.3)"/>
+        <path d="M16 0C7.2 0 0 7.2 0 16c0 11 16 26 16 26s16-15 16-26C32 7.2 24.8 0 16 0z"
+              fill="#dc2626" stroke="white" stroke-width="2"/>
+        <circle cx="16" cy="15" r="5" fill="white"/>
+      </svg>
+    </div>
+  `,
+  iconSize: [DRAFT_PIN_WIDTH, DRAFT_PIN_HEIGHT],
+  iconAnchor: [DRAFT_PIN_WIDTH / 2, DRAFT_PIN_HEIGHT],
+  popupAnchor: [0, -DRAFT_PIN_HEIGHT + 4],
+});
+
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
 /**
@@ -330,6 +421,14 @@ type Props = {
   myStatus?: CrewStatus; // 自分の現在のステータス(ユーザーステータスパネルと連動)
   selfLocationHistory?: PathPoint[]; // 実機watchPositionから蓄積された自分の移動経路(呼び出し側で距離フィルタリング・永続化済み、当日分のみ)
   selfUid?: string | null; // 自分自身のuid。「経路を見る」機能でlocation_historiesから過去日の履歴を取得する際に使う(isOnline:false等でcrewMembersに自分が含まれない場合の保険)
+  fieldNotes?: FieldNote[]; // 現場一次情報(通行止め・現場コメント等)。activeのもののみ渡される想定
+  onCreateFieldNote?: (input: {
+    lat: number;
+    lng: number;
+    category: FieldNoteCategory;
+    comment: string;
+  }) => Promise<void>; // 情報投稿フォーム送信時のコールバック(実際のFirestore書き込みは呼び出し側で行う)
+  onResolveFieldNote?: (fieldNoteId: string) => Promise<void>; // 「復旧済み」ボタン押下時のコールバック
 };
 
 // 自分の移動経路を表す特別なID。crewMembersのidと衝突しない専用の値として扱う。
@@ -813,6 +912,260 @@ function RadiusPresetControl() {
   );
 }
 
+// マップとの操作から現場情報の投稿位置を確定させるハンドラ。
+// - contextmenu: Leafletはブラウザのcontextmenuイベントをそのまま
+//   Mapの'contextmenu'として発火するため、これ1つでPCの右クリックと
+//   モバイルの長押しの両方を検知できる。常時有効で、押した瞬間に開く
+//   (地図のダブルクリックズームとは無関係なので、doubleClickZoomは
+//   有効なまま = ズーム操作と干渉しない)。
+// - click: 「＋ 情報投稿」ボタン(FieldNotePostControl)で設置モードに
+//   入っている間だけ有効。PCで「右クリックしにくい」場合の補助導線として、
+//   通常の左クリックで位置指定できるようにする。
+//
+// 【座標について】 e.latlngはLeafletがそのイベント発生時点のポインタ位置から
+// 都度計算する値であり、固定値やstateの初期値を参照することは一切ない
+// (const { lat, lng } = e.latlng; がそのままクリックした地点の座標になる)。
+//
+// 【イベント登録について】 以前はuseMapEvents({contextmenu, click})に
+// 毎レンダー新規生成したオブジェクトを渡していたため、親(Map)が再レンダリング
+// されるたび(GPS位置更新・クルー位置更新・雨雲レーダー更新など、この画面では
+// 非常に高頻度に発生する)にmap.off()→map.on()が再実行され、内部的な
+// 登録・解除が過剰に発生していた。ここではonPick(呼び出し元でuseCallback化
+// 済み)を安定した参照として渡し、contextmenu/clickそれぞれをuseMapEvent
+// (単数形)+useCallbackで個別に安定登録することで、不要な再登録を防ぎ、
+// 「登録されているのが常に最新のonPickであることが保証された」構造にしている
+// (activeRefで設置モードの最新値を読むのも同じ狙い: useCallbackの依存配列に
+// placementModeActiveを含めるとその値が変わるたびに再登録が起きてしまうため、
+// refで最新値を読む形にして登録自体は安定させている)。
+function FieldNoteMapInteractionHandler({
+  placementModeActive,
+  onPick,
+}: {
+  placementModeActive: boolean;
+  onPick: (lat: number, lng: number) => void;
+}) {
+  const activeRef = useRef(placementModeActive);
+  useEffect(() => {
+    activeRef.current = placementModeActive;
+  }, [placementModeActive]);
+
+  const map = useMap();
+  // Leafletの'contextmenu'イベント側でもL.DomEvent.preventDefault()しているが、
+  // ブラウザ・OS・拡張機能の組み合わせによっては純正の右クリックメニューが
+  // 先に表示されてしまうことがあるため、マップのDOMコンテナに直接ネイティブの
+  // contextmenuリスナーを張って必ずpreventDefault()することで二重に確実化する。
+  useEffect(() => {
+    const container = map.getContainer();
+    function blockNativeContextMenu(ev: Event) {
+      ev.preventDefault();
+    }
+    container.addEventListener("contextmenu", blockNativeContextMenu);
+    return () => container.removeEventListener("contextmenu", blockNativeContextMenu);
+  }, [map]);
+
+  const handleContextMenu = useCallback(
+    (e: L.LeafletMouseEvent) => {
+      L.DomEvent.preventDefault(e.originalEvent);
+      const { lat, lng } = e.latlng;
+      onPick(lat, lng);
+    },
+    [onPick]
+  );
+
+  const handleClick = useCallback(
+    (e: L.LeafletMouseEvent) => {
+      if (!activeRef.current) return;
+      const { lat, lng } = e.latlng;
+      onPick(lat, lng);
+    },
+    [onPick]
+  );
+
+  useMapEvent("contextmenu", handleContextMenu);
+  useMapEvent("click", handleClick);
+  return null;
+}
+
+// 「＋ 情報投稿」モード切り替えボタン。ONにすると、次に地図を左クリックした
+// 位置が投稿位置になる(右クリックは常時有効な別導線として並行して使える)。
+function FieldNotePostControl({
+  placementModeActive,
+  onTogglePlacementMode,
+}: {
+  placementModeActive: boolean;
+  onTogglePlacementMode: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onTogglePlacementMode}
+      title="ONにすると地図の左クリックで通行止め・現場コメントの投稿位置を指定できます(右クリックはいつでも利用可)"
+      className={`absolute top-1.5 left-14 sm:top-4 sm:left-20 z-[1000] flex items-center gap-1 text-xs sm:text-sm font-semibold rounded-full shadow-lg border px-3 py-2 pointer-events-auto transition-colors ${
+        placementModeActive
+          ? "bg-blue-600 text-white border-blue-600"
+          : "bg-white hover:bg-gray-50 text-gray-800 border-gray-200"
+      }`}
+    >
+      {placementModeActive ? "📍 地図をクリックして位置を指定" : "＋ 情報投稿"}
+    </button>
+  );
+}
+
+// 一次情報一覧サイドパネル(PC: 右側の常設パネル / モバイル: 下からのボトムシート)。
+// PC(デスクトップ幅)では「投稿フォーム」ビューにも切り替えられ、地図の
+// ダブルクリック/自分のピンの「この場所の情報を入力」等で投稿位置が
+// 確定すると自動的にこのビューへ切り替わる(呼び出し側のpanelView制御)。
+// 一覧項目クリックで該当ピンへ地図をフォーカスし、ポップアップを開く。
+// 「復旧済み」もここから直接操作できる(ポップアップ側と同じコールバックを共用)。
+function FieldNoteSidePanel({
+  notes,
+  open,
+  onToggle,
+  markerRefs,
+  onResolveFieldNote,
+  panelView,
+  pendingLocation,
+  submitting,
+  error,
+  onSubmitForm,
+  onCancelForm,
+}: {
+  notes: FieldNote[];
+  open: boolean;
+  onToggle: () => void;
+  markerRefs: React.RefObject<Record<string, L.Marker | null>>;
+  onResolveFieldNote?: (fieldNoteId: string) => Promise<void>;
+  panelView: "list" | "form";
+  pendingLocation: { lat: number; lng: number } | null;
+  submitting: boolean;
+  error: string;
+  onSubmitForm: (input: { category: FieldNoteCategory; comment: string }) => void;
+  onCancelForm: () => void;
+}) {
+  const map = useMap();
+
+  function handleFocus(note: FieldNote) {
+    if (!isMapReady(map)) return;
+    map.flyTo([note.lat, note.lng], Math.max(map.getZoom(), 16), {
+      animate: true,
+      duration: 0.8,
+    });
+    // flyToのアニメーション中にポップアップを開くと表示位置がずれるため、
+    // アニメーション完了目安の時間だけ待ってから開く。
+    window.setTimeout(() => {
+      markerRefs.current[note.id]?.openPopup();
+    }, 850);
+  }
+
+  return (
+    <>
+      {/* 開閉トグルボタン */}
+      <button
+        type="button"
+        onClick={onToggle}
+        title="現場一次情報の一覧"
+        className="absolute top-20 right-1.5 sm:top-24 sm:right-4 z-[1000] flex items-center gap-1 bg-white hover:bg-gray-50 text-gray-800 text-xs sm:text-sm font-semibold rounded-full shadow-lg border border-gray-200 px-3 py-1.5 sm:py-2 pointer-events-auto"
+      >
+        🗒️ 一次情報{notes.length > 0 ? ` (${notes.length})` : ""}
+      </button>
+
+      {open && (
+        <>
+          {/* 地図の外(ヘッダーバー・検索バー等)にはみ出させないため、viewport基準の
+              fixedではなく、地図コンテナ(position: relativeな<main>)基準のabsolute
+              で配置する。これによりheader/検索バーの領域自体に描画されなくなるため、
+              z-indexの重なり順に関わらず両者と物理的に被らない。 */}
+          {/* モバイルではボトムシートの背後をタップで閉じられるようにする */}
+          <div
+            className="absolute inset-0 z-[1999] bg-black/20 sm:hidden pointer-events-auto"
+            onClick={onToggle}
+          />
+          <div
+            className={`absolute z-[2000] bg-white shadow-2xl flex flex-col pointer-events-auto
+              inset-x-0 bottom-0 max-h-[65vh] rounded-t-2xl border-t border-gray-200
+              sm:inset-y-0 sm:right-0 sm:left-auto sm:bottom-auto sm:top-0 sm:h-full sm:w-80
+              sm:max-h-none sm:rounded-t-none sm:rounded-l-2xl sm:border-t-0 sm:border-l`}
+          >
+            <div className="flex items-center justify-between gap-2 p-3 border-b border-gray-200 flex-shrink-0">
+              <h3 className="font-bold text-gray-900 text-sm">
+                {panelView === "form"
+                  ? "現場情報を投稿"
+                  : `現場一次情報${notes.length > 0 ? ` (${notes.length}件)` : ""}`}
+              </h3>
+              <button
+                type="button"
+                onClick={onToggle}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {panelView === "form" && pendingLocation ? (
+              <FieldNoteForm
+                variant="inline"
+                lat={pendingLocation.lat}
+                lng={pendingLocation.lng}
+                submitting={submitting}
+                error={error}
+                onSubmit={onSubmitForm}
+                onClose={onCancelForm}
+              />
+            ) : (
+              <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
+                <p className="p-3 text-xs text-gray-400 bg-gray-50 border-b border-gray-100">
+                  💡 地図をダブルクリック(PC)/長押し(モバイル)、または自分の現在地ピンの
+                  「この場所の情報を入力」から新規投稿できます
+                </p>
+                {notes.length === 0 ? (
+                  <p className="p-4 text-sm text-gray-500 text-center">
+                    現在、投稿されている一次情報はありません
+                  </p>
+                ) : (
+                  notes.map((note) => {
+                    const meta = FIELD_NOTE_CATEGORY_META[note.category];
+                    return (
+                      <div key={note.id} className="p-3 space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleFocus(note)}
+                          className="block w-full text-left space-y-1.5"
+                        >
+                          <span
+                            className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+                            style={{ backgroundColor: meta.color }}
+                          >
+                            {meta.emoji} {meta.label}
+                          </span>
+                          <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                            {note.comment}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {note.authorName || "不明"} ・ {formatFieldNoteRelativeTime(note.createdAt)}
+                          </p>
+                        </button>
+                        {onResolveFieldNote && (
+                          <button
+                            type="button"
+                            onClick={() => onResolveFieldNote(note.id)}
+                            className="block w-full text-center text-xs bg-green-600 text-white hover:bg-green-700 rounded px-2 py-1.5 transition-colors font-medium"
+                          >
+                            ✅ 復旧済み
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 // Inject Leaflet control styles
 function MapStyleInjector() {
   useEffect(() => {
@@ -850,10 +1203,92 @@ export default function Map({
   myStatus = "待機中",
   selfLocationHistory = [],
   selfUid = null,
+  fieldNotes = [],
+  onCreateFieldNote,
+  onResolveFieldNote,
 }: Props) {
   const [showHazardMap, setShowHazardMap] = useState(false);
   const [showRainRadar, setShowRainRadar] = useState(false);
   const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
+
+  // 現場情報投稿フォームの状態。地図のダブルクリック/長押しや自分のピンの
+  // 「この場所の情報を入力」ボタンで座標が確定すると開く。
+  const [pendingFieldNoteLocation, setPendingFieldNoteLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [submittingFieldNote, setSubmittingFieldNote] = useState(false);
+  const [fieldNoteError, setFieldNoteError] = useState("");
+  // 一次情報一覧サイドパネル(PC)/ボトムシート(モバイル)の開閉状態、および
+  // その中身が「一覧」か「投稿フォーム」かのビュー切替。
+  const [fieldNotePanelOpen, setFieldNotePanelOpen] = useState(false);
+  const [fieldNotePanelView, setFieldNotePanelView] = useState<"list" | "form">("list");
+  // 「＋ 情報投稿」ボタン押下後、次に地図を左クリックした位置を投稿位置として使う
+  // 「設置モード」(PC向けの補助導線。右クリックは常時有効な別導線として並行して使える)。
+  const [fieldNotePlacementMode, setFieldNotePlacementMode] = useState(false);
+  // 一覧クリックでの「該当ピンへフォーカス」用に、各field_noteのMarkerインスタンスを保持
+  const fieldNoteMarkerRefs = useRef<Record<string, L.Marker | null>>({});
+
+  // PC(デスクトップ)幅かどうか。Tailwindの sm ブレークポイント(640px)に合わせる。
+  // PCでは投稿フォームをサイドパネルに埋め込み、モバイルでは全画面モーダルとして
+  // 表示するため、どちらの体裁で開くかをこれで判定する。
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+  useEffect(() => {
+    function updateViewport() {
+      setIsDesktopViewport(window.innerWidth >= 640);
+    }
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  // 投稿位置が確定した時に呼ぶ共通処理。PCではサイドパネルを開いて
+  // 「投稿フォーム」ビューに切り替え、モバイルでは全画面モーダル(下記の
+  // FieldNoteForm)がpendingFieldNoteLocationの存在だけで自動的に開く。
+  // useCallbackで参照を安定させ、FieldNoteMapInteractionHandler側の
+  // useMapEvent登録が(このMapコンポーネント自体は他の状態変化で高頻度に
+  // 再レンダリングされるにも関わらず)不要に再登録されないようにしている。
+  const openFieldNoteComposer = useCallback(
+    (lat: number, lng: number) => {
+      setFieldNoteError("");
+      setPendingFieldNoteLocation({ lat, lng });
+      setFieldNotePlacementMode(false);
+      if (isDesktopViewport) {
+        setFieldNotePanelView("form");
+        setFieldNotePanelOpen(true);
+      }
+    },
+    [isDesktopViewport]
+  );
+
+  function closeFieldNoteComposer() {
+    setPendingFieldNoteLocation(null);
+    setFieldNoteError("");
+    setFieldNotePanelView("list");
+  }
+
+  async function handleSubmitFieldNote(input: {
+    category: FieldNoteCategory;
+    comment: string;
+  }) {
+    if (!pendingFieldNoteLocation || !onCreateFieldNote) return;
+    setSubmittingFieldNote(true);
+    setFieldNoteError("");
+    try {
+      await onCreateFieldNote({
+        lat: pendingFieldNoteLocation.lat,
+        lng: pendingFieldNoteLocation.lng,
+        category: input.category,
+        comment: input.comment,
+      });
+      closeFieldNoteComposer();
+    } catch (err) {
+      console.error("[FieldNote] failed to submit:", err);
+      setFieldNoteError("投稿に失敗しました。もう一度お試しください。");
+    } finally {
+      setSubmittingFieldNote(false);
+    }
+  }
 
   // 「経路を見る」で選択中のクルーID。nullの間は経路非表示。SELF_ROUTE_IDの場合は
   // 自分自身の移動経路を表示する。
@@ -1121,6 +1556,38 @@ export default function Map({
       <LocateControl onLocated={onLocated} lastKnownLocation={lastKnownLocation} />
       {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
       <RadiusPresetControl />
+      {/* 現場一次情報の投稿位置指定: 右クリック(PC)/長押し(モバイル)は常時有効。
+          「＋ 情報投稿」ボタンON時は通常の左クリックでも指定できる */}
+      {onCreateFieldNote && (
+        <FieldNoteMapInteractionHandler
+          placementModeActive={fieldNotePlacementMode}
+          onPick={openFieldNoteComposer}
+        />
+      )}
+      {/* 「＋ 情報投稿」モード切り替えボタン(PC向けの補助導線) */}
+      {onCreateFieldNote && (
+        <FieldNotePostControl
+          placementModeActive={fieldNotePlacementMode}
+          onTogglePlacementMode={() => setFieldNotePlacementMode((v) => !v)}
+        />
+      )}
+      {/* 現場一次情報の一覧/投稿フォームパネル(PCサイドパネル/モバイルボトムシート) */}
+      <FieldNoteSidePanel
+        notes={fieldNotes}
+        open={fieldNotePanelOpen}
+        onToggle={() => {
+          setFieldNotePanelOpen((v) => !v);
+          setFieldNotePanelView("list");
+        }}
+        markerRefs={fieldNoteMarkerRefs}
+        onResolveFieldNote={onResolveFieldNote}
+        panelView={fieldNotePanelView}
+        pendingLocation={pendingFieldNoteLocation}
+        submitting={submittingFieldNote}
+        error={fieldNoteError}
+        onSubmitForm={handleSubmitFieldNote}
+        onCancelForm={closeFieldNoteComposer}
+      />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -1261,6 +1728,16 @@ export default function Map({
                     移動経路を記録中です
                   </p>
                 )}
+                {/* 現在地での通行止め・現場コメント投稿(モバイルの主要な投稿導線)。
+                    PCではダブルクリックでも投稿できるが、ここからも同じ位置で開ける。 */}
+                {onCreateFieldNote && (
+                  <button
+                    onClick={() => openFieldNoteComposer(selfPosition.lat, selfPosition.lng)}
+                    className="block w-full text-center text-sm bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded px-2 py-1.5 transition-colors font-medium"
+                  >
+                    ⛔ この場所の情報を入力
+                  </button>
+                )}
               </div>
             </Popup>
           </Marker>
@@ -1383,6 +1860,81 @@ export default function Map({
           </Popup>
         </Marker>
       )}
+
+      {/* 投稿位置の仮ピン。右クリック/長押し/自分のピンからの「この場所の情報を
+          入力」で投稿位置が確定すると表示され、投稿フォームが開いている間は
+          その場所に固定表示され続ける。投稿完了・キャンセル(パネル/モーダルを
+          閉じる)のどちらでもpendingFieldNoteLocationがnullになり自動的に消える。
+          interactive={false}にして、下にある地図のクリック/右クリック操作を
+          妨げないようにする。 */}
+      {pendingFieldNoteLocation && isValidCoordinate(pendingFieldNoteLocation.lat, pendingFieldNoteLocation.lng) && (
+        <Marker
+          // 座標が変わるたびに必ず新規のMarker DOMとして描画させ、「位置更新のみで
+          // 見た目の再描画が反映されない」ケースを避けるためkeyに座標を含める
+          // (再度右クリックして違う場所に打ち直した場合も確実に追従させる)。
+          key={`field-note-draft-${pendingFieldNoteLocation.lat}-${pendingFieldNoteLocation.lng}`}
+          position={[pendingFieldNoteLocation.lat, pendingFieldNoteLocation.lng]}
+          icon={tempFieldNoteIcon}
+          interactive={false}
+          keyboard={false}
+        />
+      )}
+
+      {/* 現場一次情報(field_notes): 通行止め・現場コメント等。
+          activeのもののみ渡される想定(復旧済みは呼び出し側のsubscribeで既に除外)。
+          ポップアップの「復旧済み」ボタン押下で即座にstatusを更新し、
+          リアルタイム購読側の更新でこの一覧からも消える。 */}
+      {fieldNotes
+        .filter((note) => isValidCoordinate(note.lat, note.lng))
+        .map((note) => {
+          const meta = FIELD_NOTE_CATEGORY_META[note.category];
+          return (
+            <Marker
+              key={note.id}
+              position={[note.lat, note.lng]}
+              icon={getFieldNoteIcon(note.category)}
+              ref={(instance) => {
+                fieldNoteMarkerRefs.current[note.id] = instance;
+              }}
+            >
+              <Popup>
+                <div className="space-y-1.5 w-56">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      {meta.emoji} {meta.label}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                    {note.comment}
+                  </p>
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p>投稿者: {note.authorName || "不明"}</p>
+                    <p>
+                      {note.createdAt?.toDate?.()
+                        ? note.createdAt.toDate().toLocaleString("ja-JP", {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "日時不明"}
+                      {" "}({formatFieldNoteRelativeTime(note.createdAt)})
+                    </p>
+                  </div>
+                  {onResolveFieldNote && (
+                    <button
+                      onClick={() => onResolveFieldNote(note.id)}
+                      className="block w-full text-center text-sm bg-green-600 text-white hover:bg-green-700 rounded px-2 py-1.5 transition-colors font-medium"
+                    >
+                      ✅ 復旧済み
+                    </button>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
 
       {incidents
         .filter((incident) => isValidCoordinate(incident.latitude, incident.longitude))
@@ -1526,6 +2078,20 @@ export default function Map({
         );
       })}
       </MapContainer>
+
+      {/* モバイル(狭幅)では全画面モーダルとして投稿フォームを表示する。
+          PC(デスクトップ幅)では代わりにFieldNoteSidePanel内に埋め込み表示される
+          (openFieldNoteComposerがisDesktopViewportに応じて出し分けている)。 */}
+      {pendingFieldNoteLocation && onCreateFieldNote && !isDesktopViewport && (
+        <FieldNoteForm
+          lat={pendingFieldNoteLocation.lat}
+          lng={pendingFieldNoteLocation.lng}
+          submitting={submittingFieldNote}
+          error={fieldNoteError}
+          onSubmit={handleSubmitFieldNote}
+          onClose={closeFieldNoteComposer}
+        />
+      )}
     </>
   );
 }

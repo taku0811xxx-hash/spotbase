@@ -56,6 +56,16 @@ service cloud.firestore {
       allow update, delete: if sameOrg(resource.data);
     }
 
+    match /field_notes/{fieldNoteId} {
+      // 現場一次情報(通行止め・現場コメント等): 同組織のユーザーであれば
+      // 分類を問わず閲覧・投稿・更新(復旧ステータス変更)できる。速報性が
+      // 重要な情報のため、pinsのような分類一致(isOwnOrgData)は要求しない。
+      allow read: if sameOrg(resource.data);
+      allow create: if isSignedIn() && sameOrg(request.resource.data);
+      allow update: if sameOrg(resource.data);
+      allow delete: if false;
+    }
+
     match /breaking_alerts/{alertId} {
       // 未確認速報ピン：パブリック情報として誰でも閲覧可能、書き込みはサーバー側のみ
       allow read: if true;
