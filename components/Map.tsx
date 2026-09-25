@@ -26,17 +26,30 @@ import { FIELD_NOTE_CATEGORY_META, formatFieldNoteRelativeTime } from "@/lib/fie
 import FieldNoteForm from "./FieldNoteForm";
 import { getDailyLocationHistory, todayDateKey, yesterdayDateKey } from "@/lib/locationHistory";
 import { buildRoutePieces, type RoutePiece } from "@/lib/routeInterpolation";
-import { HazardMapTileLayer, HazardMapToggle } from "./HazardMapLayer";
+// 気象・災害系レイヤー(ハザードマップ/雨雲レーダー/警報注意報)のON/OFFボタンは
+// UIから削除した。タイルレイヤー自体は関連stateが常にfalseのため描画されない
+// (Pane構成やz-index調整を壊さないよう、レイヤー本体のコードは維持している)。
+import { HazardMapTileLayer } from "./HazardMapLayer";
 import {
   RainRadarTileLayer,
-  RainRadarToggle,
   RainRadarPreloader,
   RainRadarTimeControl,
   useRainRadarFrames,
   WarningPolygonLayer,
   WarningLabelLayer,
-  WeatherWarningToggle,
 } from "./WeatherLayers";
+
+// 「現在地表示」ボタンをUI上に表示するかどうか。
+// 位置情報共有・GPS追跡系のUIを画面から非表示にする方針のためfalse。
+// LocateControl自体のロジックは削除せず保持している(将来のロケクルー管理機能で再利用予定)。
+const SHOW_LOCATE_CONTROL = false;
+
+// 地図上の「自分自身の現在地マーカー」(青い光暈付きドット)を描画するかどうか。
+// 位置情報関連のUIを地図上から完全に取り除く方針のためfalse。
+// マーカーの算出ロジック(userLocation/crewMembersからの自己位置特定、
+// ポップアップ内容等)は削除せず保持しており、将来の「ロケクルー管理」
+// 機能で再利用する想定。trueに戻せば再表示できる。
+const SHOW_SELF_LOCATION_MARKER = false;
 
 // LeafletのデフォルトマーカーアイコンがNext.js環境だと壊れるための修正
 const defaultIcon = L.icon({
@@ -428,6 +441,8 @@ type Props = {
     lng: number;
     category: FieldNoteCategory;
     comment: string;
+    tags?: string[];
+    contactInfo?: string;
   }) => Promise<void>; // 情報投稿フォーム送信時のコールバック(実際のFirestore書き込みは呼び出し側で行う)
   onResolveFieldNote?: (fieldNoteId: string) => Promise<void>; // 「復旧済み」ボタン押下時のコールバック
 };
@@ -1014,33 +1029,6 @@ function FieldNoteMapInteractionHandler({
   return null;
 }
 
-// 「＋ 情報投稿」モード切り替えボタン。ONにすると、次に地図を左クリックした
-// 位置が投稿位置になる(右クリックは常時有効な別導線として並行して使える)。
-function FieldNotePostControl({
-  placementModeActive,
-  onTogglePlacementMode,
-}: {
-  placementModeActive: boolean;
-  onTogglePlacementMode: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onTogglePlacementMode}
-      title="ONにすると地図の左クリックで通行止め・現場コメントの投稿位置を指定できます(右クリックはいつでも利用可)"
-      // PC向けの補助導線のため、モバイル幅では非表示にする
-      // (モバイルはシングルタップがそのまま投稿トリガーになるため不要)
-      className={`hidden sm:flex absolute top-1.5 left-14 sm:top-4 sm:left-20 z-[1000] items-center gap-1 text-xs sm:text-sm font-semibold rounded-full shadow-lg border px-3 py-2 pointer-events-auto transition-colors ${
-        placementModeActive
-          ? "bg-blue-600 text-white border-blue-600"
-          : "bg-white hover:bg-gray-50 text-gray-800 border-gray-200"
-      }`}
-    >
-      {placementModeActive ? "📍 地図をクリックして位置を指定" : "＋ 情報投稿"}
-    </button>
-  );
-}
-
 // モバイルのシングルタップ直後に表示する「ここに情報を投稿」確認バブル。
 // Leaflet標準のPopupは地図のtransform(translate3d、パン用)が作る独立した
 // スタッキングコンテキストに閉じ込められてしまい、Pane側でz-indexをどれだけ
@@ -1151,7 +1139,12 @@ function FieldNoteSidePanel({
   pendingLocation: { lat: number; lng: number } | null;
   submitting: boolean;
   error: string;
-  onSubmitForm: (input: { category: FieldNoteCategory; comment: string }) => void;
+  onSubmitForm: (input: {
+    category: FieldNoteCategory;
+    comment: string;
+    tags?: string[];
+    contactInfo?: string;
+  }) => void;
   onCancelForm: () => void;
 }) {
   const map = useMap();
@@ -1171,15 +1164,10 @@ function FieldNoteSidePanel({
 
   return (
     <>
-      {/* 開閉トグルボタン */}
-      <button
-        type="button"
-        onClick={onToggle}
-        title="現場一次情報の一覧"
-        className="absolute top-20 right-1.5 sm:top-24 sm:right-4 z-[1000] flex items-center gap-1 bg-white hover:bg-gray-50 text-gray-800 text-xs sm:text-sm font-semibold rounded-full shadow-lg border border-gray-200 px-3 py-1.5 sm:py-2 pointer-events-auto"
-      >
-        🗒️ 一次情報{notes.length > 0 ? ` (${notes.length})` : ""}
-      </button>
+      {/* 「一次情報」開閉トグルボタンはUI整理方針により削除した。
+          このパネル自体は投稿フォーム(panelView === "form")表示に引き続き
+          使われるため、openFieldNoteComposer等からのプログラム的な開閉
+          (setFieldNotePanelOpen)はそのまま維持している。 */}
 
       {open && (
         <>
@@ -1226,8 +1214,7 @@ function FieldNoteSidePanel({
             ) : (
               <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
                 <p className="p-3 text-xs text-gray-400 bg-gray-50 border-b border-gray-100">
-                  💡 地図をダブルクリック(PC)/長押し(モバイル)、または自分の現在地ピンの
-                  「この場所の情報を入力」から新規投稿できます
+                  💡 地図をダブルクリック(PC)/長押し(モバイル)して新規投稿できます
                 </p>
                 {notes.length === 0 ? (
                   <p className="p-4 text-sm text-gray-500 text-center">
@@ -1243,11 +1230,8 @@ function FieldNoteSidePanel({
                           onClick={() => handleFocus(note)}
                           className="block w-full text-left space-y-1.5"
                         >
-                          <span
-                            className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full text-white"
-                            style={{ backgroundColor: meta.color }}
-                          >
-                            {meta.emoji} {meta.label}
+                          <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                            {meta.label}
                           </span>
                           <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
                             {note.comment}
@@ -1293,7 +1277,9 @@ function MapStyleInjector() {
 
 export default function Map({
   pins,
-  center = [35.681, 139.767],
+  // 初期表示位置は東京駅周辺。半径30km圏内(一都三県メイン)がバランスよく
+  // 収まるよう、初期ズームレベルはMapContainer側で11に設定している。
+  center = [35.6812, 139.7671],
   flyTo,
   searchMarker,
   onSelectPin,
@@ -1319,9 +1305,14 @@ export default function Map({
   onCreateFieldNote,
   onResolveFieldNote,
 }: Props) {
-  const [showHazardMap, setShowHazardMap] = useState(false);
-  const [showRainRadar, setShowRainRadar] = useState(false);
-  const [showWeatherWarnings, setShowWeatherWarnings] = useState(false);
+  // ハザードマップ/雨雲レーダー/警報注意報のON/OFFボタンはUI整理方針により削除したため、
+  // 常時OFF固定。レイヤー本体のコード(Pane構成・z-index調整含む)はそのまま維持している。
+  const showHazardMap = false;
+  const showRainRadar = false;
+  const showWeatherWarnings = false;
+
+  // 一次情報(field_notes)のカテゴリ別 表示/非表示切替ボタンはUI整理方針により
+  // 完全削除したため、カテゴリによる絞り込みは行わず常に全件表示する。
 
   // 現場情報投稿フォームの状態。地図のダブルクリック/長押しや自分のピンの
   // 「この場所の情報を入力」ボタンで座標が確定すると開く。
@@ -1335,9 +1326,9 @@ export default function Map({
   // その中身が「一覧」か「投稿フォーム」かのビュー切替。
   const [fieldNotePanelOpen, setFieldNotePanelOpen] = useState(false);
   const [fieldNotePanelView, setFieldNotePanelView] = useState<"list" | "form">("list");
-  // 「＋ 情報投稿」ボタン押下後、次に地図を左クリックした位置を投稿位置として使う
-  // 「設置モード」(PC向けの補助導線。右クリックは常時有効な別導線として並行して使える)。
-  const [fieldNotePlacementMode, setFieldNotePlacementMode] = useState(false);
+  // 「＋情報投稿」ボタン(左クリック設置モード切り替え)はUI整理方針により削除したため、
+  // 左クリック設置モードは常時OFF固定。PC右クリック/モバイルタップの導線は影響を受けない。
+  const fieldNotePlacementMode = false;
   // 一覧クリックでの「該当ピンへフォーカス」用に、各field_noteのMarkerインスタンスを保持
   const fieldNoteMarkerRefs = useRef<Record<string, L.Marker | null>>({});
 
@@ -1377,7 +1368,6 @@ export default function Map({
     (lat: number, lng: number) => {
       setFieldNoteError("");
       setPendingFieldNoteLocation({ lat, lng });
-      setFieldNotePlacementMode(false);
       setFieldNoteComposerOpen(true);
       if (isDesktopViewport) {
         setFieldNotePanelView("form");
@@ -1412,6 +1402,8 @@ export default function Map({
   async function handleSubmitFieldNote(input: {
     category: FieldNoteCategory;
     comment: string;
+    tags?: string[];
+    contactInfo?: string;
   }) {
     if (!pendingFieldNoteLocation || !onCreateFieldNote) return;
     setSubmittingFieldNote(true);
@@ -1422,6 +1414,8 @@ export default function Map({
         lng: pendingFieldNoteLocation.lng,
         category: input.category,
         comment: input.comment,
+        tags: input.tags,
+        contactInfo: input.contactInfo,
       });
       closeFieldNoteComposer();
     } catch (err) {
@@ -1503,7 +1497,10 @@ export default function Map({
   const [routePiecesLoading, setRoutePiecesLoading] = useState(false);
   useEffect(() => {
     if (effectiveRoutePath.length < 2) {
-      setRoutePieces([]);
+      // 既に空配列の場合はsetStateを呼ばない(無限レンダリングループ防止)。
+      // routePiecesはbuildRoutePieces()で毎回新しい配列参照が作られるため、
+      // 空→空のsetStateであっても参照が変わり再レンダリングを誘発してしまう。
+      setRoutePieces((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     let cancelled = false;
@@ -1541,23 +1538,10 @@ export default function Map({
     <>
       <MapStyleInjector />
 
-      {/* 気象レイヤー(ハザードマップ/雨雲レーダー/警報注意報)のON/OFFトグル群 - 左上の
-          Leaflet標準ズームコントロール(+/-)や右上の凡例ボックスと被らないよう、
-          ズームコントロールの下側に縦に並べて独立配置する */}
-      <div className="absolute top-20 left-1.5 sm:top-24 sm:left-4 z-[1000] flex flex-col gap-1.5 items-start">
-        <HazardMapToggle
-          enabled={showHazardMap}
-          onToggle={() => setShowHazardMap((v) => !v)}
-        />
-        <RainRadarToggle
-          enabled={showRainRadar}
-          onToggle={() => setShowRainRadar((v) => !v)}
-        />
-        <WeatherWarningToggle
-          enabled={showWeatherWarnings}
-          onToggle={() => setShowWeatherWarnings((v) => !v)}
-        />
-      </div>
+      {/* 地図左上のカテゴリ絞り込みボタン(現場一次情報の表示/非表示切替)、および
+          気象・災害系(ハザードマップ/雨雲レーダー/警報注意報)のトグルボタンは
+          いずれもUI整理方針により完全削除した(タイルレイヤー自体もshow系stateが
+          常にfalseのため描画されない)。 */}
 
       {/* クルー移動経路の表示状態インフォメーションバー。
           「表示中」の告知と「非表示」操作を1つのコンパクトなバーに集約し、
@@ -1675,7 +1659,8 @@ export default function Map({
 
       <MapContainer
         center={center}
-        zoom={12}
+        // 東京中心・半径30km圏内(一都三県メイン)がバランスよく収まるズームレベル
+        zoom={11}
         scrollWheelZoom={false}
         dragging={true}
         touchZoom={true}
@@ -1711,8 +1696,13 @@ export default function Map({
       <PanelResizeHandler showDetailPanel={showDetailPanel} selectedPin={selectedPin} dispatchListOpen={dispatchListOpen} />
       {/* クルー移動経路表示時、経路全体が収まるよう地図の表示範囲を自動調整 */}
       <RouteFitBounds path={routeFitBoundsPath.length > 0 ? routeFitBoundsPath : null} />
-      {/* 現在地表示ボタン */}
-      <LocateControl onLocated={onLocated} lastKnownLocation={lastKnownLocation} />
+      {/* 現在地表示ボタン:
+          位置情報共有UIを画面から非表示にする方針のため、ボタン自体はレンダリングしない。
+          内部ロジック(LocateControl、onLocated、watchPosition等)は削除せず保持しており、
+          SHOW_LOCATE_CONTROL を true に戻せば再表示できる。 */}
+      {SHOW_LOCATE_CONTROL && (
+        <LocateControl onLocated={onLocated} lastKnownLocation={lastKnownLocation} />
+      )}
       {/* 半径プリセットボタン(1km/5km/10km/30km) - 直感的なズーム操作用 */}
       <RadiusPresetControl />
       {/* 現場一次情報の投稿位置指定:
@@ -1727,13 +1717,9 @@ export default function Map({
           onMobileTap={placeMobileDraftPin}
         />
       )}
-      {/* 「＋ 情報投稿」モード切り替えボタン(PC向けの補助導線) */}
-      {onCreateFieldNote && (
-        <FieldNotePostControl
-          placementModeActive={fieldNotePlacementMode}
-          onTogglePlacementMode={() => setFieldNotePlacementMode((v) => !v)}
-        />
-      )}
+      {/* 「＋情報投稿」ボタン(PC向けの左クリック設置モード切り替え)はUI整理方針により
+          削除した。PCは右クリック、モバイルはシングルタップで投稿位置を指定する
+          導線(FieldNoteMapInteractionHandler)はそのまま利用できる。 */}
       {/* 現場一次情報の一覧/投稿フォームパネル(PCサイドパネル/モバイルボトムシート) */}
       <FieldNoteSidePanel
         notes={fieldNotes}
@@ -1815,15 +1801,17 @@ export default function Map({
           </Marker>
         ))}
 
-      {/* 自分自身の現在地ピン。
+      {/* 自分自身の現在地ピン:
           - このタブでGPS追跡ON(またはtempLocationVisible)中は、ローカルのuserLocation
             (watchPositionで取得した最新座標)をそのまま使う。
           - それ以外(このタブではGPS追跡していない/オフにした)の場合でも、
             user_locationsに同期済みの自分のドキュメントがあれば(=別デバイス/
             別タブでGPS追跡中、または直前まで追跡していた場合)、そちらの座標で
             フォールバック表示する。これにより「同期は成功しているのに自分の
-            ピンだけ地図に出ない」という問題を防ぐ。 */}
-      {(() => {
+            ピンだけ地図に出ない」という問題を防ぐ。
+          位置情報UIを地図上から完全に取り除く方針のため、SHOW_SELF_LOCATION_MARKERが
+          falseの間はこのマーカー自体を描画しない(算出ロジックは保持)。 */}
+      {SHOW_SELF_LOCATION_MARKER && (() => {
         const liveSelf =
           userLocation && isValidCoordinate(userLocation.lat, userLocation.lng) ? userLocation : null;
         const syncedSelf = crewMembers.find((c) => c.isSelf) ?? null;
@@ -1837,8 +1825,6 @@ export default function Map({
         const selfName = liveSelf ? myProfile?.name ?? "未設定" : syncedSelf?.name ?? "未設定";
         const selfCategory = liveSelf ? myProfile?.category : syncedSelf?.role;
         const selfPhone = liveSelf ? myProfile?.phone : syncedSelf?.phone;
-        const selfStatus = liveSelf ? myStatus : syncedSelf?.status ?? myStatus;
-        const { main: myStatusColor } = CREW_STATUS_COLOR[selfStatus] ?? CREW_STATUS_COLOR["待機中"];
         return (
           <Marker
             position={[selfPosition.lat, selfPosition.lng]}
@@ -1851,12 +1837,6 @@ export default function Map({
                     (自分) {selfName}
                     {selfCategory ? ` / ${selfCategory}` : ""}
                   </p>
-                  <span
-                    className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 whitespace-nowrap"
-                    style={{ backgroundColor: myStatusColor }}
-                  >
-                    {selfStatus}
-                  </span>
                 </div>
                 {/* 電話番号リンク: crewポップアップと同様、Leafletのデフォルトの
                     リンク色(青)がTailwindクラスより詳細度で勝ってしまうため、
@@ -1915,7 +1895,6 @@ export default function Map({
       {crewMembers
         .filter((crew) => !crew.isSelf && isValidCoordinate(crew.position[0], crew.position[1]))
         .map((crew) => {
-          const { main } = CREW_STATUS_COLOR[crew.status] ?? CREW_STATUS_COLOR["待機中"];
           return (
             <Marker
               key={crew.id}
@@ -1926,12 +1905,6 @@ export default function Map({
                 <div className="space-y-2 w-52">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-bold text-gray-900">{crew.name}</p>
-                    <span
-                      className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 whitespace-nowrap"
-                      style={{ backgroundColor: main }}
-                    >
-                      {crew.status}
-                    </span>
                   </div>
                   <p className="text-sm text-gray-600">{crew.role}</p>
                   <div className="text-xs text-gray-500 space-y-0.5">
@@ -2084,13 +2057,45 @@ export default function Map({
               <Popup>
                 <div className="space-y-1.5 w-56">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {meta.emoji} {meta.label}
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      {meta.label}
                     </span>
                   </div>
+                  {note.name && (
+                    <p className="text-sm font-semibold text-gray-900">{note.name}</p>
+                  )}
                   <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
                     {note.comment}
                   </p>
+                  {note.tags && note.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {note.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {note.contactInfo && (
+                    <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">
+                      📞 {note.contactInfo}
+                    </p>
+                  )}
+                  {/* ユーザーが自由に追加したカスタム項目(電波情報・駐車場情報等)を
+                      「項目名: 内容」のリストとして表示する。 */}
+                  {note.customFields && note.customFields.length > 0 && (
+                    <dl className="text-xs text-gray-700 space-y-1 border-t border-gray-100 pt-1.5">
+                      {note.customFields.map((field, i) => (
+                        <div key={`${field.key}-${i}`} className="flex gap-1">
+                          <dt className="font-medium text-gray-500 flex-shrink-0">{field.key}:</dt>
+                          <dd className="whitespace-pre-wrap break-words">{field.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
                   <div className="text-xs text-gray-500 space-y-0.5">
                     <p>投稿者: {note.authorName || "不明"}</p>
                     <p>

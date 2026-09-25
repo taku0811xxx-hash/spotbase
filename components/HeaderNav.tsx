@@ -2,27 +2,29 @@
 
 import { memo } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import Logo from "./Logo";
 import UserStatusPanel from "./UserStatusPanel";
 import type { UserProfile } from "@/lib/userProfile";
-import type { CrewStatus } from "@/lib/dummyCrew";
+import { APP_MODE, APP_MODE_META } from "@/lib/config";
+import { usePhotoProfile } from "@/lib/hooks/usePhotoProfile";
 
 interface Props {
   profile: UserProfile | null;
   onLogout: () => void;
-  activeDispatchCount?: number;
   onToggleMenu?: () => void;
-  gpsTracking?: boolean; // 出動中(true)/待機中(false)のGPS追跡状態
-  gpsAcquiring?: boolean; // 待機中→出動中切り替え時のGPS測位中フラグ(ボタンをローディング表示・disabledにする)
+  gpsTracking?: boolean; // GPS追跡ON/OFF
+  gpsAcquiring?: boolean; // GPS測位中フラグ(ボタンをローディング表示・disabledにする)
   onToggleGpsTracking?: () => void;
-  onNewDispatch?: () => void; // 「新規出動」クイックフロー(現場選択モーダル)を開く
-  myStatus?: CrewStatus; // ユーザーステータスパネルで切り替える自分自身のステータス
-  onChangeStatus?: (status: CrewStatus) => void;
+  onNewSiteRecord?: () => void; // 「＋現場記録」(SuperScout風の新規現場記録モーダル)を開く
+  onNewPhotoSpot?: () => void; // 「ここトレ！」(photoモード)専用: スポット投稿モーダルを開く
 }
 
 // ヘッダーUI(PC/モバイル共通)。
-// 左: ハンバーガーメニュー(既存メニュー項目はすべてここに格納) + ロゴ + 「＋新規出動」「🚨出動中」(左詰め)
-// 右: ユーザーステータスパネル(ユーザー情報 / GPS ON-OFF / ステータス切替 / ログアウト)
+// 左: ハンバーガーメニュー(既存メニュー項目はすべてここに格納) + ロゴ + 「＋現場記録」(左詰め)
+// 右: ユーザーステータスパネル(ユーザー情報 / GPS ON-OFF / ログアウト)
+// 報道専用の緊急出動・対応件数バッジ(旧「出動中」リンク/「N件対応中」)は
+// ロケハン全般向けアプリへのコンセプト変更に伴い廃止した。
 //
 // 注意(z-index): このヘッダーは Leaflet地図(コントロール z-index:1000、Map.tsx内の
 // 独自オーバーレイは最大 z-[2000])と兄弟要素として並ぶため、ヘッダー自身の
@@ -35,18 +37,21 @@ interface Props {
 const HeaderNav = memo(function HeaderNav({
   profile,
   onLogout,
-  activeDispatchCount = 0,
   onToggleMenu,
   gpsTracking = false,
   gpsAcquiring = false,
   onToggleGpsTracking,
-  onNewDispatch,
-  myStatus = "待機中",
-  onChangeStatus,
+  onNewSiteRecord,
+  onNewPhotoSpot,
 }: Props) {
+  const pathname = usePathname();
+  // photoモード専用のアイコン画像上書き(プロフィール編集で設定)。
+  // 他モードでは未使用だが、hooksはコンポーネントの全レンダーで無条件に呼ぶ必要があるため
+  // ここで呼んでおき、表示側でAPP_MODE === "photo"の場合のみ使う。
+  const { avatarDataUrl } = usePhotoProfile(profile?.name ?? "ゲスト");
   return (
     <div className="relative z-[9999] w-full max-w-full box-border flex flex-row items-center justify-between px-3 py-1.5 bg-gray-900 text-white overflow-visible gap-1">
-      {/* 左: ハンバーガーメニュー + ロゴ + 新規出動 + 出動中(すべて左詰め) */}
+      {/* 左: ハンバーガーメニュー + ロゴ + 新規出動(すべて左詰め) */}
       <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink min-w-0 overflow-x-auto">
         <button
           onClick={onToggleMenu}
@@ -59,42 +64,75 @@ const HeaderNav = memo(function HeaderNav({
           <span className="w-5 h-0.5 bg-white transition-all duration-300" />
         </button>
         <Link href="/" className="flex-shrink-0">
-          <Logo className="text-white text-xs" />
+          <Logo className="text-white text-xs" title={APP_MODE_META[APP_MODE].title} />
         </Link>
 
-        {onNewDispatch && (
+        {onNewSiteRecord && (
           <button
-            onClick={onNewDispatch}
-            className="text-white text-[9px] sm:text-xs font-semibold rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1.5 bg-blue-600 shadow-sm hover:bg-blue-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0"
+            onClick={onNewSiteRecord}
+            className="text-white text-[9px] sm:text-xs font-semibold rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1.5 bg-indigo-700 shadow-sm hover:bg-indigo-800 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap flex-shrink-0"
           >
-            ＋ 新規出動
+            ＋ 現場記録
           </button>
         )}
 
-        <Link
-          href="/dispatch/active"
-          className="text-white text-[9px] sm:text-xs font-medium rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1.5 bg-red-600 border border-red-700 hover:bg-red-700 transition-all duration-150 whitespace-nowrap flex-shrink-0 flex items-center gap-0.5"
-          title="現在対応中の案件を管理"
-        >
-          🚨 <span>出動中</span>
-        </Link>
-
-        {activeDispatchCount > 0 && (
-          <span className="hidden sm:inline px-1.5 py-0.5 text-[10px] bg-red-600 text-white rounded-lg font-medium whitespace-nowrap flex-shrink-0">
-            {activeDispatchCount}件対応中
-          </span>
+        {/* 「ここトレ！」(photoモード)専用: ギャラリー⇔地図一覧のページ切り替えタブ */}
+        {APP_MODE === "photo" && (
+          <nav className="flex items-center gap-1 flex-shrink-0 ml-1">
+            <Link
+              href="/"
+              className={`text-[10px] sm:text-xs font-semibold rounded-full px-2.5 sm:px-3 py-1 sm:py-1.5 transition-colors whitespace-nowrap ${
+                pathname === "/" ? "bg-white text-gray-900" : "text-white/80 hover:bg-white/10"
+              }`}
+            >
+              ギャラリー
+            </Link>
+            <Link
+              href="/map"
+              className={`text-[10px] sm:text-xs font-semibold rounded-full px-2.5 sm:px-3 py-1 sm:py-1.5 transition-colors whitespace-nowrap ${
+                pathname === "/map" ? "bg-white text-gray-900" : "text-white/80 hover:bg-white/10"
+              }`}
+            >
+              地図から探す
+            </Link>
+          </nav>
         )}
       </div>
 
-      {/* 右: ユーザーステータスパネル */}
-      <div className="flex items-center flex-shrink-0">
+      {/* 右: (photoモードのみ)投稿ボタン + ユーザーステータスパネル */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {onNewPhotoSpot && (
+          <button
+            onClick={onNewPhotoSpot}
+            className="text-white text-[10px] sm:text-xs font-bold rounded-full px-3 sm:px-4 py-1.5 bg-gradient-to-r from-orange-500 to-pink-500 shadow-sm hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 whitespace-nowrap"
+          >
+            ＋ 写真を投稿
+          </button>
+        )}
+        {/* 「ここトレ！」(photoモード)専用: マイページへのリンク(テキストで明示) */}
+        {APP_MODE === "photo" && (
+          <Link
+            href="/mypage"
+            className={`flex items-center gap-1 rounded-full text-[10px] sm:text-xs font-semibold px-2.5 sm:px-3 py-1 sm:py-1.5 transition-colors flex-shrink-0 whitespace-nowrap ${
+              pathname === "/mypage" ? "bg-white text-gray-900" : "bg-white/10 text-white hover:bg-white/20"
+            }`}
+            title="マイページ"
+            aria-label="マイページ"
+          >
+            {avatarDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarDataUrl} alt="" className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <span>👤</span>
+            )}
+            <span>マイページ</span>
+          </Link>
+        )}
         <UserStatusPanel
           profile={profile}
           gpsTracking={gpsTracking}
           gpsAcquiring={gpsAcquiring}
           onToggleGpsTracking={onToggleGpsTracking}
-          myStatus={myStatus}
-          onChangeStatus={onChangeStatus ?? (() => {})}
         />
       </div>
     </div>

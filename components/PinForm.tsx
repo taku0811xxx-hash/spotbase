@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { createPin, updatePin, type Pin } from "@/lib/pins";
+import { createPin, updatePin, type Pin, type PinDrawing } from "@/lib/pins";
+import { APP_MODE } from "@/lib/config";
 import { useAuth } from "@/components/AuthProvider";
 import { geocodeQuery, reverseGeocode } from "@/lib/geocode";
 import Toast, { type ToastState } from "./Toast";
@@ -139,6 +140,131 @@ function PhotoPicker({
   );
 }
 
+// 図面(PDF/画像)のドロップゾーン + 既存図面の履歴表示。
+// 「最新図面」は履歴のうちisLatest: trueの1件、それ以外は「過去の図面履歴」として一覧表示する。
+function DrawingManager({
+  files,
+  onChange,
+  existingDrawings,
+}: {
+  files: File[];
+  onChange: (files: File[]) => void;
+  existingDrawings?: PinDrawing[];
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function addFiles(newFiles: FileList | File[]) {
+    onChange([...files, ...Array.from(newFiles)]);
+  }
+
+  function removeFile(index: number) {
+    onChange(files.filter((_, i) => i !== index));
+  }
+
+  const sorted = [...(existingDrawings ?? [])].sort(
+    (a, b) => b.uploadedAt.toMillis() - a.uploadedAt.toMillis()
+  );
+  const latest = sorted.find((d) => d.isLatest) ?? sorted[0];
+  const history = sorted.filter((d) => d.id !== latest?.id);
+
+  return (
+    <div className="space-y-4">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+        }}
+        onClick={() => inputRef.current?.click()}
+        className={`rounded-lg border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors ${
+          dragOver
+            ? "border-blue-400 bg-blue-50"
+            : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/pdf,image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <p className="text-sm text-gray-600">
+          図面ファイル(PDF / 画像)をドラッグ&ドロップ、またはクリックして選択
+        </p>
+      </div>
+
+      {files.length > 0 && (
+        <ul className="space-y-1.5">
+          {files.map((file, i) => (
+            <li
+              key={i}
+              className="flex items-center justify-between gap-2 text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
+            >
+              <span className="truncate">{file.name}</span>
+              <button
+                type="button"
+                onClick={() => removeFile(i)}
+                className="text-gray-400 hover:text-red-600 flex-shrink-0"
+              >
+                削除
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {latest && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">最新図面(最新版)</p>
+          <a
+            href={latest.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between gap-2 text-sm bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 hover:bg-blue-100 transition-colors"
+          >
+            <span className="truncate">{latest.fileName}</span>
+            <span className="text-[11px] text-blue-600 flex-shrink-0">開く / ダウンロード</span>
+          </a>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">過去の図面履歴</p>
+          <ul className="space-y-1.5">
+            {history.map((d) => (
+              <li key={d.id}>
+                <a
+                  href={d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-2 text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-100 transition-colors"
+                >
+                  <span className="truncate">{d.fileName}</span>
+                  <span className="text-gray-400 flex-shrink-0">
+                    {d.uploadedAt.toDate().toLocaleDateString("ja-JP")} / {d.uploadedBy}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Props = {
   initialPosition?: { lat: number; lng: number } | null;
   initialAddress?: string;
@@ -165,6 +291,11 @@ export default function PinForm({
   const router = useRouter();
   const { profile } = useAuth();
   const isEdit = !!existingPin;
+
+  // photoモード(フォトスポット共有アプリ)では、搬入・伝送状況・図面管理等の
+  // 放送クルー向け項目を隠し、「基本情報」「撮影アドバイス」の2タブ構成に簡素化する。
+  const isPhotoMode = APP_MODE === "photo";
+  const [photoTab, setPhotoTab] = useState<"basic" | "advice">("basic");
 
   const [parentLocation, setParentLocation] = useState(
     existingPin?.parentLocation ?? ""
@@ -193,6 +324,7 @@ export default function PinForm({
   const [photos, setPhotos] = useState<File[]>([]);
   const [shootingPhotos, setShootingPhotos] = useState<File[]>([]);
   const [hazardPhotos, setHazardPhotos] = useState<File[]>([]);
+  const [drawings, setDrawings] = useState<File[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
@@ -327,6 +459,7 @@ export default function PinForm({
           newPhotos: photos,
           newShootingPhotos: shootingPhotos,
           newHazardPhotos: hazardPhotos,
+          newDrawings: drawings,
         });
         setConfirmOpen(false);
         setToast({ type: "success", message: "現場情報を更新しました" });
@@ -346,6 +479,7 @@ export default function PinForm({
           photos,
           shootingPhotos,
           hazardPhotos,
+          drawings,
           organizationId: profile.organizationId,
           category: profile.category,
           recordedBy: profile.name,
@@ -392,6 +526,124 @@ export default function PinForm({
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleConfirmedSubmit}
       />
+      {isPhotoMode ? (
+        <form onSubmit={handleOpenConfirm} className="max-w-2xl mx-auto p-5 sm:p-10 space-y-6 pb-32">
+          {/* タブ切替: 基本情報 / 撮影アドバイス の2タブのみ(搬入・伝送状況・図面管理は非表示) */}
+          <div className="flex gap-1 border-b border-gray-200">
+            {(
+              [
+                { id: "basic", label: "基本情報" },
+                { id: "advice", label: "撮影アドバイス" },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setPhotoTab(t.id)}
+                className={`text-sm font-medium px-4 py-2.5 border-b-2 -mb-px transition-colors ${
+                  photoTab === t.id
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {photoTab === "basic" && (
+            <div className="space-y-6">
+              <Section title="写真">
+                <PhotoPicker
+                  label="写真"
+                  files={photos}
+                  onChange={setPhotos}
+                  existingUrls={existingPin?.photoUrls}
+                />
+              </Section>
+
+              <Section title="基本情報">
+                <Field label="タイトル" required>
+                  <input
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="例: 〇〇公園の桜並木"
+                    className={inputClass}
+                  />
+                  {nameSearching && (
+                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      <Spinner className="w-3 h-3" /> 場所を検索中...
+                    </p>
+                  )}
+                </Field>
+                <Field label="住所" required>
+                  <input
+                    required
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="タイトルの入力や地図クリックで自動入力されます"
+                    className={inputClass}
+                  />
+                  {addressLoading && (
+                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      <Spinner className="w-3 h-3" /> 住所を取得中...
+                    </p>
+                  )}
+                </Field>
+              </Section>
+
+              <Section
+                title="位置"
+                description="タイトルを入力するか、地図をクリックして正確な位置を指定してください"
+              >
+                <LocationPicker value={position} onChange={handlePositionChange} />
+                {position ? (
+                  <p className="text-xs text-gray-500">
+                    緯度: {position.lat.toFixed(5)} / 経度: {position.lng.toFixed(5)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-600">まだ位置が選択されていません</p>
+                )}
+              </Section>
+
+              <Section title="説明">
+                <textarea
+                  value={hazards}
+                  onChange={(e) => setHazards(e.target.value)}
+                  placeholder="この場所の説明・アクセス方法・注意事項など"
+                  className={inputClass}
+                  rows={4}
+                />
+              </Section>
+            </div>
+          )}
+
+          {photoTab === "advice" && (
+            <Section
+              title="撮影アドバイス"
+              description="おすすめの時間帯・機材・注意事項などをまとめて記入できます"
+            >
+              <textarea
+                value={shootingSpots}
+                onChange={(e) => setShootingSpots(e.target.value)}
+                placeholder="例: 日没30分前がゴールデンタイム。三脚推奨。逆光になりやすいので午後は要注意。"
+                className={inputClass}
+                rows={10}
+              />
+            </Section>
+          )}
+
+          <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 sm:static sm:border-0 sm:p-0 sm:bg-transparent">
+            <button
+              type="submit"
+              className="w-full max-w-2xl mx-auto flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg py-3 font-medium shadow-sm hover:bg-blue-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150"
+            >
+              {isEdit ? "内容を確認して更新する" : "内容を確認して登録する"}
+            </button>
+          </div>
+        </form>
+      ) : (
       <form onSubmit={handleOpenConfirm} className="max-w-2xl mx-auto p-5 sm:p-10 space-y-8 pb-32">
         <Section title="基本情報">
           <Field label="現場名" required>
@@ -577,6 +829,17 @@ export default function PinForm({
           />
         </Section>
 
+        <Section
+          title="図面管理"
+          description="配置図・見取り図等(PDF/画像)をアップロードできます。アップロードするたびに履歴として残ります"
+        >
+          <DrawingManager
+            files={drawings}
+            onChange={setDrawings}
+            existingDrawings={existingPin?.drawings}
+          />
+        </Section>
+
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 sm:static sm:border-0 sm:p-0 sm:bg-transparent">
           <button
             type="submit"
@@ -586,6 +849,7 @@ export default function PinForm({
           </button>
         </div>
       </form>
+      )}
     </>
   );
 }

@@ -1,10 +1,14 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const config: CapacitorConfig = {
+// NEXT_PUBLIC_APP_MODE=photo (「ここトレ！」) の場合だけ別アプリとして構成する。
+// npm run cap:sync:photo / cap:open:photo がこの環境変数をセットして呼び出す。
+const isPhotoMode = process.env.NEXT_PUBLIC_APP_MODE === 'photo';
+
+const spotbaseConfig: CapacitorConfig = {
   appId: 'com.spotbase.app',
   appName: 'SpotBase',
-  // このアプリはFirebase Admin SDK / Anthropic API を使うAPIルートに
-  // 依存しており、`next export`静的出力とは相性が悪い(サーバー機能が動かない)。
+  // SpotBase本体はFirebase Admin SDK / Anthropic API を使うAPIルートに依存しており、
+  // static export(`output: 'export'`)とは相性が悪い(サーバー機能が動かない)。
   // そのため webDir はビルド成果物の置き場として最低限用意しつつ、
   // 実際の画面表示は server.url 経由でVercel上の本番アプリをそのまま読み込む
   // (Capacitorのネイティブブリッジ/プラグインだけをWebViewに注入する構成)。
@@ -16,5 +20,16 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
 };
+
+const photoConfig: CapacitorConfig = {
+  appId: 'com.cocotore.app',
+  appName: 'ここトレ！',
+  // 「ここトレ！」はFirestoreクライアントSDKのみを使う(サーバーAPIルート非依存)ため、
+  // scripts/build-photo.mjs が生成した静的書き出し(out/)をそのままWebViewへ同梱できる。
+  // そのため server.url は指定せず、ローカルアセットを読み込む本番仕様にしている。
+  webDir: 'out',
+};
+
+const config: CapacitorConfig = isPhotoMode ? photoConfig : spotbaseConfig;
 
 export default config;

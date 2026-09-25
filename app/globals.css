@@ -25,6 +25,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* 「ここトレ！」(APP_MODE === 'photo')専用: 親しみやすい丸ゴシック体。
+   app/layout.tsxでphotoモード時のみ<body>に付与され、配下すべての
+   見出し・本文に継承される(個別コンポーネント側での指定は不要)。 */
+.font-rounded,
+.font-rounded * {
+  font-family: "M PLUS Rounded 1c", "Zen Maru Gothic", "Hiragino Maru Gothic ProN", sans-serif;
+}
+
 /* iOS(Capacitor WebView)でのSafe Areaインセット対応。
    viewport-fit=cover(app/layout.tsxのviewport export)によりWebViewが
    ノッチ/Dynamic Island裏まで描画されるようになるため、画面最上部の

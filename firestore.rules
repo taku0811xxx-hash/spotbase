@@ -81,6 +81,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /photo_users/{uid} {
+      // 「ここトレ！」(photoモード)専用の会員プロフィール。SpotBase本体の
+      // usersコレクション(組織/分類ベース・Admin SDK経由のみ書き込み可)とは
+      // 完全に独立しており、本人のみが自分のドキュメントを読み書きできる
+      // (組織/分類の概念を持たないため、SpotBase側のsameOrg等の判定には一切関与しない)。
+      allow read, create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /photo_spots/{spotId} {
+      // 「ここトレ！」専用の撮影スポット投稿。組織非依存のパブリックな写真共有として、
+      // サインインしていれば誰でも閲覧・投稿でき、編集/削除は投稿者本人のみ可能。
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.postedBy == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.postedBy == request.auth.uid;
+    }
+
     match /location_histories/{docId} {
       // 日付単位(YYYY-MM-DD)で蓄積される移動履歴ログ。ドキュメントIDは
       // `${uid}_${date}` で、本人のuidをdata.uidに保持する(lib/userPathHistory.ts

@@ -4,10 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:pro": "NEXT_PUBLIC_APP_MODE=pro next dev",
+    "dev:photo": "NEXT_PUBLIC_APP_MODE=photo next dev",
+    "dev:walk": "NEXT_PUBLIC_APP_MODE=walk next dev",
     "build": "next build --webpack",
+    "build:photo": "node scripts/build-photo.mjs",
+    "cap:sync:photo": "npm run build:photo && NEXT_PUBLIC_APP_MODE=photo npx cap sync ios",
+    "cap:open:photo": "NEXT_PUBLIC_APP_MODE=photo npx cap open ios",
     "start": "next start",
     "lint": "eslint",
-    "backup": "node scripts/backup-firestore.mjs"
+    "backup": "node scripts/backup-firestore.mjs",
+    "clean-db": "node scripts/clean-db.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
@@ -18,13 +25,16 @@
     "@turf/nearest-point-on-line": "^7.4.0",
     "@turf/turf": "^7.4.0",
     "capacitor-native-settings": "^8.2.0",
+    "exifreader": "^4.45.2",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.48.0",
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-leaflet": "^5.0.0",
+    "react-leaflet-cluster": "^4.1.3",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {

@@ -2,28 +2,27 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { UserProfile } from "@/lib/userProfile";
-import type { CrewStatus } from "@/lib/dummyCrew";
 
-const STATUS_OPTIONS: CrewStatus[] = ["待機中", "移動中", "現場対応中", "帰社中"];
+// GPSトラッキングのON/OFFトグルをUI上に表示するかどうか。
+// 現時点では位置情報共有UIを画面から非表示にする方針のためfalse。
+// 内部ロジック(gpsTracking等)は保持したまま、UIのみ切り替えられるようにしておく。
+const SHOW_GPS_TOGGLE = false;
 
 interface Props {
   profile: UserProfile | null;
   gpsTracking: boolean;
   gpsAcquiring?: boolean;
   onToggleGpsTracking?: () => void;
-  myStatus: CrewStatus;
-  onChangeStatus: (status: CrewStatus) => void;
 }
 
 // ヘッダー右側の「ユーザーステータス」ドロップダウンパネル。
-// ユーザー情報の表示 + GPSトラッキングON/OFF + ステータス切替をまとめて行う。
+// ユーザー情報の表示 + GPSトラッキングON/OFFをまとめて行う。
+// (クルー出動ステータス「待機中」等の切替UIは廃止済み)
 export default function UserStatusPanel({
   profile,
   gpsTracking,
   gpsAcquiring = false,
   onToggleGpsTracking,
-  myStatus,
-  onChangeStatus,
 }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -74,54 +73,41 @@ export default function UserStatusPanel({
             )}
           </div>
 
-          {/* GPSトラッキング ON/OFF */}
-          <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between gap-2">
-            <div>
-              <p className="text-xs text-gray-200 font-medium">GPSトラッキング</p>
-              <p className="text-[10px] text-gray-500 mt-0.5">
-                {gpsAcquiring ? "測位中..." : gpsTracking ? "ON(位置情報を共有中)" : "OFF"}
-              </p>
-            </div>
-            <button
-              onClick={onToggleGpsTracking}
-              disabled={gpsAcquiring}
-              role="switch"
-              aria-checked={gpsTracking}
-              title="位置情報の自動取得(GPS追跡)を切り替え"
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${
-                gpsAcquiring
-                  ? "bg-amber-600 cursor-wait opacity-90"
-                  : gpsTracking
-                    ? "bg-green-600"
-                    : "bg-gray-600"
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
-                  gpsTracking ? "translate-x-6" : "translate-x-1"
+          {/* GPSトラッキング ON/OFF:
+              UIからは非表示にしているが、内部ロジック(gpsTracking/gpsAcquiring state、
+              onToggleGpsTracking、watchPositionによる位置取得等)は削除せず保持している。
+              将来の「ロケクルー管理」「現場メンバーの位置把握」機能で再利用する想定。
+              SHOW_GPS_TOGGLE を true に戻せばUIを再表示できる。 */}
+          {SHOW_GPS_TOGGLE && (
+            <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs text-gray-200 font-medium">GPSトラッキング</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  {gpsAcquiring ? "測位中..." : gpsTracking ? "ON(位置情報を共有中)" : "OFF"}
+                </p>
+              </div>
+              <button
+                onClick={onToggleGpsTracking}
+                disabled={gpsAcquiring}
+                role="switch"
+                aria-checked={gpsTracking}
+                title="位置情報の自動取得(GPS追跡)を切り替え"
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${
+                  gpsAcquiring
+                    ? "bg-amber-600 cursor-wait opacity-90"
+                    : gpsTracking
+                      ? "bg-green-600"
+                      : "bg-gray-600"
                 }`}
-              />
-            </button>
-          </div>
-
-          {/* ステータス切替 */}
-          <div className="px-4 py-3">
-            <label className="text-xs text-gray-200 font-medium block mb-1.5" htmlFor="my-status-select">
-              ステータス
-            </label>
-            <select
-              id="my-status-select"
-              value={myStatus}
-              onChange={(e) => onChangeStatus(e.target.value as CrewStatus)}
-              className="w-full bg-slate-800 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+                    gpsTracking ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

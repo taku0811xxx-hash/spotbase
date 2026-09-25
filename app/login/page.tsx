@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { login, requestPasswordReset } from "@/lib/auth";
+import { APP_MODE } from "@/lib/config";
 import Logo from "@/components/Logo";
 
 function authErrorMessage(err: unknown): string {
@@ -124,6 +126,16 @@ export default function LoginPage() {
               >
                 パスワードをお忘れの方はこちら
               </button>
+              {/* 自己登録が可能なのは「ここトレ！」のみ。SpotBase本体(pro)は
+                  組織管理者が発行するアカウントのみを使う招待制のため表示しない。 */}
+              {APP_MODE === "photo" && (
+                <Link
+                  href="/signup"
+                  className="block text-center text-xs text-gray-500 hover:text-gray-700 hover:underline"
+                >
+                  アカウントをお持ちでない方はこちら(新規会員登録)
+                </Link>
+              )}
             </form>
           ) : (
             <form onSubmit={handleResetSubmit} className="space-y-4">

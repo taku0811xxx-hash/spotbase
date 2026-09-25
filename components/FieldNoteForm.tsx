@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   FIELD_NOTE_CATEGORIES,
   FIELD_NOTE_CATEGORY_META,
+  FIELD_NOTE_TAG_OPTIONS,
   type FieldNoteCategory,
 } from "@/lib/fieldNotes";
 
@@ -12,7 +13,12 @@ interface Props {
   lng: number;
   submitting: boolean;
   error?: string;
-  onSubmit: (input: { category: FieldNoteCategory; comment: string }) => void;
+  onSubmit: (input: {
+    category: FieldNoteCategory;
+    comment: string;
+    tags?: string[];
+    contactInfo?: string;
+  }) => void;
   onClose: () => void;
   // "modal"(既定): 背景オーバーレイ付きの中央モーダルとして表示(モバイル向け)。
   // "inline": オーバーレイなしでそのまま配置できるフォーム本体のみ表示
@@ -32,13 +38,26 @@ export default function FieldNoteForm({
   onClose,
   variant = "modal",
 }: Props) {
-  const [category, setCategory] = useState<FieldNoteCategory>("closure");
+  const [category, setCategory] = useState<FieldNoteCategory>("location");
   const [comment, setComment] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [contactInfo, setContactInfo] = useState("");
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!comment.trim()) return;
-    onSubmit({ category, comment: comment.trim() });
+    onSubmit({
+      category,
+      comment: comment.trim(),
+      tags: selectedTags,
+      contactInfo: contactInfo.trim() || undefined,
+    });
   }
 
   const formBody = (
@@ -49,10 +68,10 @@ export default function FieldNoteForm({
 
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-gray-700">カテゴリ</label>
-        {/* PCサイドパネル(狭幅)でもラベルが折り返さないよう、gap/paddingを詰めて
-            whitespace-nowrapを指定。flex-1で3つ均等幅にしつつ、テキストは
-            折り返さず縮小もしない(min-w-0を付けないことで確保)。 */}
-        <div className="flex gap-1">
+        {/* アイコン・絵文字は使わず、テキストのみのミニマルなセグメントコントロールにする。
+            選択中はダークネイビー、未選択はライトグレー背景+境界線のみで区別する。
+            PCサイドパネル(狭幅)でもラベルが折り返さないよう2列グリッドで均等配置。 */}
+        <div className="grid grid-cols-2 gap-1">
           {FIELD_NOTE_CATEGORIES.map((value) => {
             const meta = FIELD_NOTE_CATEGORY_META[value];
             return (
@@ -60,13 +79,13 @@ export default function FieldNoteForm({
                 key={value}
                 type="button"
                 onClick={() => setCategory(value)}
-                className={`flex-1 whitespace-nowrap text-[11px] sm:text-xs rounded-lg border px-1.5 py-2 font-medium transition-colors ${
+                className={`whitespace-nowrap text-[11px] sm:text-xs rounded-md border px-1.5 py-2 font-medium tracking-wide transition-colors ${
                   category === value
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                 }`}
               >
-                {meta.emoji} {meta.label}
+                {meta.label}
               </button>
             );
           })}
@@ -74,14 +93,51 @@ export default function FieldNoteForm({
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-sm font-medium text-gray-700">コメント</label>
+        <label className="text-sm font-medium text-gray-700">タグ(任意)</label>
+        {/* こちらもアイコンなし、テキストのみのピル型タグ。トーン・オン・トーンの
+            淡い配色で統一し、派手な色分けはしない。 */}
+        <div className="flex flex-wrap gap-1.5">
+          {FIELD_NOTE_TAG_OPTIONS.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => toggleTag(tag)}
+              className={`text-[11px] sm:text-xs rounded-full border px-2.5 py-1 font-medium transition-colors ${
+                selectedTags.includes(tag)
+                  ? "bg-slate-700 text-white border-slate-700"
+                  : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-gray-700">
+          コメント・ロケハンメモ
+        </label>
         <textarea
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           rows={4}
-          placeholder="例: 交差点手前で工事のため通行止め。迂回は北側から。"
+          placeholder="例: 交差点手前の駐車スペース。ロケバス2台まで駐車可、屋根なし。"
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-gray-700">
+          許諾先・担当者メモ(任意)
+        </label>
+        <input
+          type="text"
+          value={contactInfo}
+          onChange={(e) => setContactInfo(e.target.value)}
+          placeholder="例: 施設管理事務所 03-xxxx-xxxx、要事前申請"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 

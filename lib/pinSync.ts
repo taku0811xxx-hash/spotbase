@@ -93,6 +93,7 @@ export async function syncPinFromDispatch(
       newPhotos: [],
       newShootingPhotos: [],
       newHazardPhotos: [],
+      newDrawings: [],
     });
   } else {
     await createPin({
@@ -108,6 +109,7 @@ export async function syncPinFromDispatch(
       photos: [],
       shootingPhotos: [],
       hazardPhotos: [],
+      drawings: [],
       organizationId: params.organizationId,
       category: params.category,
       recordedBy: params.recordedBy,

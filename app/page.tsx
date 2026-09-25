@@ -4,32 +4,50 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAllPins, searchPins, createQuickPin, type Pin } from "@/lib/pins";
+import {
+  getAllPins,
+  searchPins,
+  filterPinsByAttributes,
+  DEFAULT_PIN_ATTRIBUTE_FILTERS,
+  type Pin,
+  type PinAttributeFilters,
+} from "@/lib/pins";
+import PinAttributeFilter from "@/components/PinAttributeFilter";
 import { getHighUrgencyIncidents, type Incident } from "@/lib/incidents";
 import {
   subscribeActiveFieldNotes,
   createFieldNote,
   resolveFieldNote,
+  uploadFieldNoteImages,
+  uploadFieldNoteDrawings,
   type FieldNote,
   type FieldNoteCategory,
+  type FieldNoteCustomField,
+  type FieldNoteDrawing,
 } from "@/lib/fieldNotes";
-import { getDispatchRecords, createQuickDispatchRecord } from "@/lib/dispatchRecords";
+import { getDispatchRecords } from "@/lib/dispatchRecords";
 import type { BreakingAlert } from "@/lib/breaking/parseLocation";
 import { useBreakingAlerts } from "@/lib/hooks/useBreakingAlerts";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
-import { geocodeQuery, reverseGeocode } from "@/lib/geocode";
+import { geocodeQuery } from "@/lib/geocode";
 import { findWideRoadsNear, findStoppableRoadsNear, type RoadSuggestion } from "@/lib/roads";
 import SearchBar from "@/components/SearchBar";
-import PinSidePanel from "@/components/PinSidePanel";
+import PinDetail from "@/components/PinDetail";
 import SearchLocationPanel from "@/components/SearchLocationPanel";
 import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
+import PhotoGalleryView from "@/components/PhotoGalleryView";
+import PhotoUploadModal from "@/components/PhotoUploadModal";
+import { APP_MODE } from "@/lib/config";
+import { getAllPhotoSpots } from "@/lib/photoSpots";
+import { toDisplayProfile } from "@/lib/photoAuth";
+import type { PhotoSpot } from "@/lib/types/photoSpot";
 import BottomSheet from "@/components/BottomSheet";
 import MobileMenuPortal from "@/components/MobileMenuPortal";
 import QuickLocationFilter from "@/components/QuickLocationFilter";
 import GroupedPinList from "@/components/GroupedPinList";
-import NewDispatchModal from "@/components/NewDispatchModal";
+import SiteRecordForm from "@/components/SiteRecordForm";
 import { type CrewMember, type CrewStatus } from "@/lib/dummyCrew";
 import { subscribeCrewLocations } from "@/lib/crewLocations";
 import {
@@ -47,6 +65,14 @@ import {
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
+
+// 位置情報(GPS)の自動取得を起動時に発火させるかどうか。
+// falseの間は、ブラウザ/OS標準の「位置情報の利用を許可しますか？」許可ポップアップが
+// アプリ起動時・画面遷移時に自動表示されることはない。
+// navigator.geolocation呼び出しや位置取得ロジック自体は削除せず保持しており、
+// 将来の「ロケクルー位置管理」機能等で再利用する際は、このフラグをtrueに戻すか、
+// 明示的なユーザー操作(ボタン押下等)のタイミングで個別に呼び出す形にする想定。
+const AUTO_REQUEST_LOCATION_ON_LOAD = false;
 
 type SearchMarker = { lat: number; lng: number; label: string; address: string };
 
@@ -68,7 +94,7 @@ function getParentLocation(pin: Pin): string {
 
 export default function Home() {
   const router = useRouter();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, photoProfile, loading: authLoading } = useAuth();
   const [pins, setPins] = useState<Pin[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -91,7 +117,6 @@ export default function Home() {
   // 現場一次情報(通行止め・現場コメント等)。リアルタイム購読でactiveのみ保持し、
   // 「復旧済み」にされた瞬間に地図上から自動的に消える。
   const [fieldNotes, setFieldNotes] = useState<FieldNote[]>([]);
-  const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [showSiteList, setShowSiteList] = useState(true); // For mobile bottom sheet
 
   // メニュー開閉状態管理(ハンバーガーメニュー。PC/モバイル共通)
@@ -104,13 +129,33 @@ export default function Home() {
   // 地図はデフォルトで「検索窓＋全面地図」のシンプルな構成にする。
   const [isDispatchListOpen, setIsDispatchListOpen] = useState(false);
 
-  // 「新規出動」クイックフロー用の状態
-  const [showNewDispatchModal, setShowNewDispatchModal] = useState(false);
-  const [creatingDispatch, setCreatingDispatch] = useState(false);
-  const [newSiteError, setNewSiteError] = useState("");
+  // 「＋現場記録」モーダル(SuperScout風の新規登録フォーム)の開閉・送信状態
+  const [showSiteRecordForm, setShowSiteRecordForm] = useState(false);
+  const [creatingSiteRecord, setCreatingSiteRecord] = useState(false);
+
+  // 「ここトレ！」(photoモード)専用: スポット投稿モーダルの開閉状態
+  const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
+  // 「ここトレ！」(photoモード)専用: "photo_spots"コレクションのデータ(pro向けpinsとは別管理)
+  const [photoSpots, setPhotoSpots] = useState<PhotoSpot[]>([]);
+  const [loadingPhotoSpots, setLoadingPhotoSpots] = useState(true);
+  // 「ここトレ！」(photoモード)専用: 地図一覧ページの「詳細を見る」(/?spot=<id>)から
+  // 遷移してきた場合、そのスポットを自動選択するためのID。useSearchParams()は
+  // Suspense境界が必要になるため、CSRのuseEffectでクエリを直接読み取る。
+  const [initialPhotoSpotId, setInitialPhotoSpotId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (APP_MODE !== "photo" || typeof window === "undefined") return;
+    const spotId = new URLSearchParams(window.location.search).get("spot");
+    if (spotId) setInitialPhotoSpotId(spotId);
+  }, []);
+  const [siteRecordError, setSiteRecordError] = useState("");
 
   // グループ化フィルター選択状態
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
+
+  // 属性絞り込み(タグ/図面有無/最終更新日)。フリーワード検索(query)とは別枠。
+  const [attributeFilters, setAttributeFilters] = useState<PinAttributeFilters>(
+    DEFAULT_PIN_ATTRIBUTE_FILTERS
+  );
 
   // ハイドレーション完了フラグ（Portal用途のみ）
   const [mounted, setMounted] = useState(false);
@@ -178,14 +223,21 @@ export default function Home() {
   useEffect(() => {
     // ハイドレーション完了を示す
     setMounted(true);
-    // 前回のGPS追跡ON/OFF状態をlocalStorageから復元
-    try {
-      const stored = window.localStorage.getItem(GPS_TRACKING_STORAGE_KEY);
-      if (stored === "true") {
-        setGpsTracking(true);
+    // 前回のGPS追跡ON/OFF状態をlocalStorageから復元する処理:
+    // AUTO_REQUEST_LOCATION_ON_LOADがfalseの間は、これによってgpsTrackingが
+    // 勝手にtrueへ復元され、continuous watchPosition用のuseEffectが起動時に
+    // ブラウザの位置情報許可ポップアップを表示してしまうのを避けるため、
+    // 復元自体をスキップする(GPS追跡状態は常にOFFから開始)。
+    // localStorageの読み書きロジック自体は保持している。
+    if (AUTO_REQUEST_LOCATION_ON_LOAD) {
+      try {
+        const stored = window.localStorage.getItem(GPS_TRACKING_STORAGE_KEY);
+        if (stored === "true") {
+          setGpsTracking(true);
+        }
+      } catch (error) {
+        console.warn("GPS追跡状態の読み込みに失敗しました:", error);
       }
-    } catch (error) {
-      console.warn("GPS追跡状態の読み込みに失敗しました:", error);
     }
 
     // 自分の移動経路をlocalStorageから復元(リロード後も経路が消えないようにする)
@@ -303,6 +355,8 @@ export default function Home() {
     lng: number;
     category: FieldNoteCategory;
     comment: string;
+    tags?: string[];
+    contactInfo?: string;
   }) {
     if (!profile) throw new Error("プロフィール未取得のため投稿できません");
     await createFieldNote({
@@ -313,6 +367,8 @@ export default function Home() {
       comment: input.comment,
       lat: input.lat,
       lng: input.lng,
+      tags: input.tags,
+      contactInfo: input.contactInfo,
     });
   }
 
@@ -485,8 +541,11 @@ export default function Home() {
       const loc = await getLocationForGpsToggleOn();
       console.log("[GPS Debug][トグル] トグルON用の座標が確定しました:", loc);
       setUserLocation(loc);
-      setFlyTo(loc);
-      // 取得済みなので、continuousなwatchPosition側の初回自動センタリングは不要
+      // 地図の初期表示(東京中心)をGPS取得結果で勝手に動かさないよう、
+      // ここでの自動カメラ移動(setFlyTo)は無効化している。
+      // 位置情報の取得・保持ロジック自体は変更していない。
+      // setFlyTo(loc);
+      // 取得済みなので、continuousなwatchPosition側の初回自動センタリングも発生させない
       hasCenteredOnGpsRef.current = true;
 
       // 既存のwatchPositionが残っていれば完全に削除してから、
@@ -541,8 +600,18 @@ export default function Home() {
   // 初回位置取得: GPS追跡(継続監視)がOFFのままだと現在地が一切表示されないため、
   // ログイン後に一度だけ位置情報を取得して地図上の現在地ピンを初期表示する。
   // 二段階フォールバック: 高精度(5000ms)→失敗時は標準精度(8000ms)で再試行。
+  //
+  // AUTO_REQUEST_LOCATION_ON_LOADがfalseの間は、ブラウザの位置情報許可ポップアップを
+  // 起動時に勝手に表示させないため、navigator.geolocationの呼び出し自体を行わず、
+  // 常にデフォルト座標(東京)にフォールバックする。取得ロジックそのものは
+  // 下に残しており、フラグをtrueに戻すか明示的なユーザー操作から呼び出せば動作する。
   useEffect(() => {
     if (authLoading || !user || !profile) return;
+
+    if (!AUTO_REQUEST_LOCATION_ON_LOAD) {
+      setUserLocation((prev) => prev ?? DEFAULT_LOCATION);
+      return;
+    }
 
     if (
       typeof window === "undefined" ||
@@ -648,9 +717,11 @@ export default function Home() {
       dynamicSyncIntervalMsRef.current = intervalMsForSpeedKmh(speedKmh);
 
       setUserLocation(loc);
-      // 地図が動いて操作の邪魔にならないよう、ONにした直後の初回のみ中心移動する
+      // 地図の初期表示(東京中心)をGPS取得結果で勝手に動かさないよう、
+      // ここでの自動カメラ移動(setFlyTo)は無効化している。
+      // 位置情報の取得・保持ロジック(setUserLocation)自体は維持している。
       if (!hasCenteredOnGpsRef.current) {
-        setFlyTo(loc);
+        // setFlyTo(loc);
         hasCenteredOnGpsRef.current = true;
       }
 
@@ -723,6 +794,9 @@ export default function Home() {
       return;
     }
     if (!profile) return; // プロフィール未整備(管理者にアカウント設定を確認してもらう)
+    // photoモード("ここトレ！")では、pro向けの"pins"コレクションには一切アクセスしない
+    // (データ分離。photoSpots取得は別のuseEffectで"photo_spots"コレクションのみを見る)
+    if (APP_MODE === "photo") return;
 
     Promise.allSettled([
       getAllPins({
@@ -777,15 +851,9 @@ export default function Home() {
           incidentsData = [];
         }
 
-        // Calculate active dispatch count
-        const activeCount = dispatchRecords.filter(
-          (r) => r.status && r.status !== "完了"
-        ).length;
-
         setPins(pinsData);
         setIncidents(incidentsData);
         // breakingAlerts はクライアント側の useBreakingAlerts フックで自動管理
-        setActiveDispatchCount(activeCount);
       })
       .catch((error) => {
         console.error("Unexpected error loading data:", error);
@@ -794,166 +862,115 @@ export default function Home() {
       .finally(() => setLoading(false));
   }, [authLoading, user, profile, router]);
 
+  // 「ここトレ！」(photoモード)専用: "photo_spots"コレクションのみを取得する。
+  // pro向けの上のuseEffect("pins"コレクション)とは完全に独立しており、互いのデータには触れない。
+  useEffect(() => {
+    if (APP_MODE !== "photo") return;
+    if (authLoading) return;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+    if (!photoProfile) return;
+
+    setLoadingPhotoSpots(true);
+    getAllPhotoSpots()
+      .then(setPhotoSpots)
+      .catch((error) => {
+        console.error("ここトレ！: photo_spotsの取得に失敗しました", error);
+      })
+      .finally(() => setLoadingPhotoSpots(false));
+  }, [authLoading, user, photoProfile, router]);
+
   async function handleLogout() {
     await logout();
     router.push("/login");
   }
 
-  // 現在地(GPS)を取得するヘルパー。既に取得済みのuserLocationがあればそれを使い、
-  // なければその場でgetCurrentPositionを実行する。
-  function getLocationForQuickDispatch(): Promise<{ lat: number; lng: number }> {
-    if (userLocation) return Promise.resolve(userLocation);
-    return new Promise((resolve, reject) => {
-      if (typeof navigator === "undefined" || !navigator.geolocation) {
-        reject(new Error("この端末では位置情報を利用できません"));
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (error) => reject(error),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
-  }
-
-  // 「新規出動」モーダルで既存現場を選択した時の処理。
-  // 詳細フォームの入力を待たず、即座に「出動中」状態の記録を作成して
-  // GPS+チャットのライブ画面へ遷移する。
-  async function handleSelectExistingSite(pin: Pin) {
-    if (!profile || creatingDispatch) return;
-    setCreatingDispatch(true);
-    setNewSiteError("");
-    try {
-      const recordId = await createQuickDispatchRecord({
-        locationName: pin.name,
-        address: pin.address,
-        lat: pin.lat,
-        lng: pin.lng,
-        organizationId: profile.organizationId,
-        category: profile.category,
-        recordedBy: profile.name,
-      });
-      setShowNewDispatchModal(false);
-      router.push(`/dispatch/${recordId}/live`);
-    } catch (error) {
-      console.error("新規出動の作成に失敗しました:", error);
-      setNewSiteError("新規出動の作成に失敗しました。時間をおいて再度お試しください。");
-    } finally {
-      setCreatingDispatch(false);
-    }
-  }
-
-  // 「新規出動」モーダルで、既存の現場に該当がない場合(または初めての現場)の
-  // 新規現場登録+出動開始処理。住所/建物名が入力されていればそれを地名検索(geocode)する。
-  // 空欄の場合は「現場名」自体をジオコーディングして最も可能性の高い住所候補を自動設定し、
-  // 現在地(GPS)は検索に一致しなかった場合の最終フォールバックとしてのみ使う。
-  // 現場(ピン)と出動記録の両方をその場で作成し、詳細フォームの入力を待たず即座に
-  // ライブ画面へ遷移する。
-  async function handleCreateNewSite({
-    name,
-    addressQuery,
-  }: {
+  // ヘッダーの「＋現場記録」から開くSuperScout風モーダルの送信処理。
+  // 写真が指定されていれば先にFirebase Storageへアップロードし、
+  // そのURLを含めてfield_notesドキュメントを作成する。
+  async function handleCreateSiteRecord(input: {
     name: string;
-    addressQuery: string;
+    referenceId?: string;
+    address?: string;
+    addressNote?: string;
+    lat: number;
+    lng: number;
+    category: FieldNoteCategory;
+    tags: string[];
+    comment: string;
+    contactInfo?: string;
+    privateNote?: string;
+    imageFiles: File[];
+    drawingFiles: File[];
+    customFields: FieldNoteCustomField[];
   }) {
-    if (!profile || creatingDispatch) return;
-    setCreatingDispatch(true);
-    setNewSiteError("");
+    if (!profile || creatingSiteRecord) return;
+    setCreatingSiteRecord(true);
+    setSiteRecordError("");
     try {
-      let lat: number;
-      let lng: number;
-      let address: string;
+      const tempId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-      // 住所/建物名が未入力の場合は、現場名自体を検索クエリとしてジオコーディングを試みる
-      const query = addressQuery || name;
-      const results = await geocodeQuery(query);
-
-      if (results.length > 0) {
-        const top = results[0];
-        lat = top.lat;
-        lng = top.lng;
-        address = top.displayName;
-      } else if (addressQuery) {
-        // 住所/建物名を明示的に入力したのに見つからない場合はエラーとして知らせる
-        setNewSiteError("入力した住所/建物名から位置情報を取得できませんでした。表記を変えて再度お試しください。");
-        return;
-      } else {
-        // 現場名からも見つからない場合のみ、現在地(GPS)を最終フォールバックとして使う
-        const loc = await getLocationForQuickDispatch();
-        lat = loc.lat;
-        lng = loc.lng;
-        try {
-          address = (await reverseGeocode(lat, lng)) || "";
-        } catch (error) {
-          console.warn("住所の取得に失敗しました(現在地のみで続行します):", error);
-          address = "";
-        }
+      let images: string[] | undefined;
+      if (input.imageFiles.length > 0) {
+        images = await uploadFieldNoteImages(tempId, input.imageFiles);
       }
-
-      const pinId = await createQuickPin({
-        name,
-        address,
-        lat,
-        lng,
+      let drawings: FieldNoteDrawing[] | undefined;
+      if (input.drawingFiles.length > 0) {
+        drawings = await uploadFieldNoteDrawings(
+          tempId,
+          input.drawingFiles,
+          profile.name
+        );
+      }
+      await createFieldNote({
         organizationId: profile.organizationId,
-        category: profile.category,
-        recordedBy: profile.name,
+        authorUid: profile.uid,
+        authorName: profile.name,
+        category: input.category,
+        comment: input.comment,
+        lat: input.lat,
+        lng: input.lng,
+        tags: input.tags,
+        contactInfo: input.contactInfo,
+        images,
+        drawings,
+        name: input.name,
+        referenceId: input.referenceId,
+        address: input.address,
+        addressNote: input.addressNote,
+        privateNote: input.privateNote,
+        customFields: input.customFields,
       });
-
-      const recordId = await createQuickDispatchRecord({
-        locationName: name,
-        address,
-        lat,
-        lng,
-        organizationId: profile.organizationId,
-        category: profile.category,
-        recordedBy: profile.name,
-      });
-
-      // 新しく登録した現場を一覧にも即座に反映
-      setPins((prev) => [
-        {
-          id: pinId,
-          name,
-          address,
-          lat,
-          lng,
-          parkingInfo: "",
-          shootingSpots: "",
-          ipTransmissionInfo: "",
-          fpuInfo: "",
-          hazards: "",
-          photoUrls: [],
-          shootingPhotoUrls: [],
-          hazardPhotoUrls: [],
-          organizationId: profile.organizationId,
-          category: profile.category,
-          recordedBy: profile.name,
-          recordedAt: null,
-        },
-        ...prev,
-      ]);
-
-      setShowNewDispatchModal(false);
-      router.push(`/dispatch/${recordId}/live`);
+      setShowSiteRecordForm(false);
     } catch (error) {
-      console.error("新規現場の登録に失敗しました:", error);
-      setNewSiteError("新規現場の登録に失敗しました。位置情報の許可を確認のうえ、時間をおいて再度お試しください。");
+      console.error("現場記録の作成に失敗しました:", error);
+      setSiteRecordError("現場記録の作成に失敗しました。時間をおいて再度お試しください。");
     } finally {
-      setCreatingDispatch(false);
+      setCreatingSiteRecord(false);
     }
   }
 
   // 検索結果のメモ化 - 検索クエリまたはピン配列が変更された場合のみ再計算
   const filtered = useMemo(() => searchPins(pins, query), [pins, query]);
 
+  // 属性絞り込み(タグ/図面有無/最終更新日)適用 - フリーワード検索の結果にさらに絞り込む
+  const filteredByAttributes = useMemo(
+    () => filterPinsByAttributes(filtered, attributeFilters),
+    [filtered, attributeFilters]
+  );
+
   // ロケーションフィルター適用 - parentLocation が選択されている場合のみフィルタリング
   const filteredByLocation = useMemo(() => {
-    if (!selectedLocationFilter) return filtered;
-    return filtered.filter((pin) =>
+    if (!selectedLocationFilter) return filteredByAttributes;
+    return filteredByAttributes.filter((pin) =>
       getParentLocation(pin) === selectedLocationFilter
     );
-  }, [filtered, selectedLocationFilter]);
+  }, [filteredByAttributes, selectedLocationFilter]);
 
   // フィルター適用時に地図の中心座標を計算
   useEffect(() => {
@@ -1012,7 +1029,6 @@ export default function Home() {
     // 座標が有効か確認（null/undefined/不正な値を除外）
     if (pin.lat && pin.lng && typeof pin.lat === 'number' && typeof pin.lng === 'number') {
       setFlyTo({ lat: pin.lat, lng: pin.lng });
-      loadLocationInsights(pin.lat, pin.lng);
     } else {
       // 座標が無効な場合はマップをリセット
       setFlyTo(null);
@@ -1037,13 +1053,6 @@ export default function Home() {
     setSearchMarker(null);
     setRoadSuggestions([]);
     setStopSuggestions([]);
-  }
-
-  function handleReturnToPin() {
-    // 選択中のピンが存在する場合、その座標へ地図を移動
-    if (selectedPin && selectedPin.lat && selectedPin.lng) {
-      setFlyTo({ lat: selectedPin.lat, lng: selectedPin.lng });
-    }
   }
 
   function handlePinDeleted() {
@@ -1117,6 +1126,36 @@ export default function Home() {
     );
   }
 
+  // 「ここトレ！」(写真モード): ギャラリー中心のPC向け2カラムレイアウトに差し替える。
+  // 本体(pro)向けの既存レイアウト(出動記録・現場一覧など)はここでは使わない。
+  if (APP_MODE === "photo") {
+    // 投稿完了後、TOPギャラリー・地図にすぐ反映されるよう"photo_spots"を取り直す
+    async function refetchPhotoSpots() {
+      const spotsData = await getAllPhotoSpots();
+      setPhotoSpots(spotsData);
+    }
+
+    return (
+      <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 h-screen">
+        <div className="relative z-[9999] bg-white border-b border-gray-200 flex-shrink-0">
+          <HeaderNav
+            profile={toDisplayProfile(photoProfile)}
+            onLogout={handleLogout}
+            onToggleMenu={() => setMenuOpen(!menuOpen)}
+            onNewPhotoSpot={() => setShowPhotoUploadModal(true)}
+          />
+        </div>
+        <PhotoGalleryView spots={photoSpots} loading={loadingPhotoSpots} initialSpotId={initialPhotoSpotId} />
+        {showPhotoUploadModal && (
+          <PhotoUploadModal
+            onClose={() => setShowPhotoUploadModal(false)}
+            onCreated={refetchPhotoSpots}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 min-h-screen md:min-h-screen md:h-screen">
       {/* ========== DESKTOP LAYOUT (md+) ========== */}
@@ -1125,31 +1164,37 @@ export default function Home() {
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
-            activeDispatchCount={activeDispatchCount}
             onToggleMenu={() => setMenuOpen(!menuOpen)}
             gpsTracking={gpsTracking}
             gpsAcquiring={gpsAcquiring}
             onToggleGpsTracking={handleToggleGpsTracking}
-            onNewDispatch={() => setShowNewDispatchModal(true)}
-            myStatus={myStatus}
-            onChangeStatus={setMyStatus}
+            onNewSiteRecord={() => setShowSiteRecordForm(true)}
           />
-          <div className="border-t border-gray-100 relative z-40">
-            <SearchBar
-              onSearch={setQuery}
-              onSubmit={handleSubmit}
-              loading={geocoding}
-              onClear={() => {
-                setSearchMarker(null);
-                setSelectedPin(null);
-                setRoadSuggestions([]);
-                setStopSuggestions([]);
-                setGeocodeError("");
-              }}
-            />
-            {geocodeError && (
-              <p className="px-3 sm:px-4 pb-2 text-xs text-red-600">{geocodeError}</p>
-            )}
+          <div className="border-t border-gray-100 relative z-40 flex items-center">
+            <div className="flex-1 min-w-0">
+              <SearchBar
+                onSearch={setQuery}
+                onSubmit={handleSubmit}
+                loading={geocoding}
+                onClear={() => {
+                  setSearchMarker(null);
+                  setSelectedPin(null);
+                  setRoadSuggestions([]);
+                  setStopSuggestions([]);
+                  setGeocodeError("");
+                }}
+              />
+              {geocodeError && (
+                <p className="px-3 sm:px-4 pb-2 text-xs text-red-600">{geocodeError}</p>
+              )}
+            </div>
+            <div className="pr-3 sm:pr-4 flex-shrink-0">
+              <PinAttributeFilter
+                filters={attributeFilters}
+                onChange={setAttributeFilters}
+                matchCount={filteredByAttributes.length}
+              />
+            </div>
           </div>
         </div>
 
@@ -1176,16 +1221,10 @@ export default function Home() {
           {showDetailPanel && selectedPin && (
             <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-sm min-h-48">
               <div className="w-full">
-                <PinSidePanel
+                <PinDetail
                   pin={selectedPin}
                   onClose={handleCloseSidePanel}
                   onDeleted={handlePinDeleted}
-                  onReturnToPin={handleReturnToPin}
-                  roadSuggestions={roadSuggestions}
-                  loadingRoads={loadingRoads}
-                  stopSuggestions={stopSuggestions}
-                  loadingStops={loadingStops}
-                  onHoverRoad={setHoveredRoadKey}
                 />
               </div>
             </div>
@@ -1235,8 +1274,8 @@ export default function Home() {
               onSelectPin={handleSelectPin}
               selectedPin={selectedPin}
               showDetailPanel={showDetailPanel}
-              roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
-              stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
+              roadSuggestions={searchMarker ? roadSuggestions : []}
+              stopSuggestions={searchMarker ? stopSuggestions : []}
               hoveredRoadKey={hoveredRoadKey}
               incidents={incidents}
               breakingAlerts={breakingAlerts}
@@ -1244,8 +1283,6 @@ export default function Home() {
               lastKnownLocation={userLocation}
               crewMembers={crewMembers}
               onLocated={handleLocated}
-              showPins={isDispatchListOpen}
-              showLegend={showDetailPanel && !!selectedPin}
               dispatchListOpen={isDispatchListOpen}
               myProfile={profile ? { name: profile.name, category: profile.category, phone: profile.phone } : null}
               myStatus={myStatus}
@@ -1276,39 +1313,45 @@ export default function Home() {
           <HeaderNav
             profile={profile}
             onLogout={handleLogout}
-            activeDispatchCount={activeDispatchCount}
             onToggleMenu={() => setMenuOpen(!menuOpen)}
             gpsTracking={gpsTracking}
             gpsAcquiring={gpsAcquiring}
             onToggleGpsTracking={handleToggleGpsTracking}
-            onNewDispatch={() => setShowNewDispatchModal(true)}
-            myStatus={myStatus}
-            onChangeStatus={setMyStatus}
+            onNewSiteRecord={() => setShowSiteRecordForm(true)}
           />
         </header>
 
         {/* Search Bar - Below speed banner */}
-        <div className="shrink-0 w-full bg-white border-b border-gray-100 z-20 box-border">
-          <SearchBar
-            onSearch={setQuery}
-            onSubmit={handleSubmit}
-            loading={geocoding}
-            onClear={() => {
-              setSearchMarker(null);
-              setSelectedPin(null);
-              setRoadSuggestions([]);
-              setStopSuggestions([]);
-              setGeocodeError("");
-            }}
-          />
-          {geocodeError && (
-            <p className="px-3 pb-2 text-xs text-red-600">{geocodeError}</p>
-          )}
+        <div className="shrink-0 w-full bg-white border-b border-gray-100 z-20 box-border flex items-center">
+          <div className="flex-1 min-w-0">
+            <SearchBar
+              onSearch={setQuery}
+              onSubmit={handleSubmit}
+              loading={geocoding}
+              onClear={() => {
+                setSearchMarker(null);
+                setSelectedPin(null);
+                setRoadSuggestions([]);
+                setStopSuggestions([]);
+                setGeocodeError("");
+              }}
+            />
+            {geocodeError && (
+              <p className="px-3 pb-2 text-xs text-red-600">{geocodeError}</p>
+            )}
+          </div>
+          <div className="pr-3 flex-shrink-0">
+            <PinAttributeFilter
+              filters={attributeFilters}
+              onChange={setAttributeFilters}
+              matchCount={filteredByAttributes.length}
+            />
+          </div>
         </div>
 
         {/* Quick Location Filter - Below search bar */}
         <QuickLocationFilter
-          pins={filtered}
+          pins={filteredByAttributes}
           selectedFilter={selectedLocationFilter}
           onFilterChange={(location) => {
             setSelectedLocationFilter(location);
@@ -1329,8 +1372,8 @@ export default function Home() {
             searchMarker={searchMarker}
             onSelectPin={handleSelectPin}
             selectedPin={selectedPin}
-            roadSuggestions={selectedPin || searchMarker ? roadSuggestions : []}
-            stopSuggestions={selectedPin || searchMarker ? stopSuggestions : []}
+            roadSuggestions={searchMarker ? roadSuggestions : []}
+            stopSuggestions={searchMarker ? stopSuggestions : []}
             hoveredRoadKey={hoveredRoadKey}
             incidents={incidents}
             breakingAlerts={breakingAlerts}
@@ -1382,17 +1425,7 @@ export default function Home() {
             title={selectedPin.name}
             isPeekable={false}
           >
-            <PinSidePanel
-              pin={selectedPin}
-              onClose={handleCloseSidePanel}
-              onDeleted={handlePinDeleted}
-              onReturnToPin={handleReturnToPin}
-              roadSuggestions={roadSuggestions}
-              loadingRoads={loadingRoads}
-              stopSuggestions={stopSuggestions}
-              loadingStops={loadingStops}
-              onHoverRoad={setHoveredRoadKey}
-            />
+            <PinDetail pin={selectedPin} onDeleted={handlePinDeleted} />
           </BottomSheet>
         )}
 
@@ -1430,19 +1463,18 @@ export default function Home() {
         />
       )}
 
-      {/* 新規出動 - 現場選択・新規現場登録モーダル(PC・モバイル共通) */}
-      <NewDispatchModal
-        isOpen={showNewDispatchModal}
-        onClose={() => {
-          setShowNewDispatchModal(false);
-          setNewSiteError("");
-        }}
-        pins={pins}
-        onSelectExisting={handleSelectExistingSite}
-        onCreateNew={handleCreateNewSite}
-        submitting={creatingDispatch}
-        errorMessage={newSiteError}
-      />
+      {/* ＋現場記録 - SuperScout風の新規現場記録モーダル(PC・モバイル共通) */}
+      {showSiteRecordForm && (
+        <SiteRecordForm
+          submitting={creatingSiteRecord}
+          error={siteRecordError}
+          onSubmit={handleCreateSiteRecord}
+          onClose={() => {
+            setShowSiteRecordForm(false);
+            setSiteRecordError("");
+          }}
+        />
+      )}
     </div>
   );
 }
