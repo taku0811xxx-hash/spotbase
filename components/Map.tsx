@@ -428,7 +428,6 @@ type Props = {
   lastKnownLocation?: { lat: number; lng: number } | null; // 直近に取得済みの現在地(表示ON/OFF状態に関わらず常に渡す)。「現在地を表示」ボタン押下時、再取得を待たずに即座にflyToするためのキャッシュとして使う
   crewMembers?: CrewMember[]; // 報道クルー/スタッフの位置情報(ダミーデータ)
   showPins?: boolean; // 現場ピンを地図上に表示するか(現場一覧メニュー開閉と連動。省略時は常時表示)
-  showLegend?: boolean; // 駐車・駐停車の凡例ボックスを表示するか(詳細パネル表示時のみ等。省略時は常時表示)
   dispatchListOpen?: boolean; // 現場一覧メニューの開閉状態(地図幅が変わるためinvalidateSizeのトリガーに使う)
   onLocated?: (loc: { lat: number; lng: number }) => void; // 現在地表示ボタン押下時のコールバック
   myProfile?: { name: string; category: string; phone?: string } | null; // 自分の現在地マーカーのポップアップに表示するログインユーザー情報
@@ -1295,7 +1294,6 @@ export default function Map({
   crewMembers = [],
   onLocated,
   showPins = true,
-  showLegend = true,
   dispatchListOpen,
   myProfile = null,
   myStatus = "待機中",
@@ -1546,14 +1544,10 @@ export default function Map({
       {/* クルー移動経路の表示状態インフォメーションバー。
           「表示中」の告知と「非表示」操作を1つのコンパクトなバーに集約し、
           クルーポップアップ側には同じ操作の重複ボタンを置かない(二重表示防止)。
-          配置は地図右上(ズームコントロール/半径プリセット/凡例と被らない位置)。
-          凡例ボックス(showLegend時に同じ右上へ表示)と重なる場合のみ、その下へ
-          ずらして表示する。 */}
+          配置は地図右上(ズームコントロール/半径プリセットと被らない位置)。 */}
       {(activeRouteCrew || activeRouteCrewId === SELF_ROUTE_ID) && (
         <div
-          className={`absolute right-1.5 sm:right-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg px-2.5 sm:px-3 py-1.5 flex flex-col gap-1.5 pointer-events-auto max-w-[calc(100%-0.75rem)] sm:max-w-xs ${
-            showLegend ? "top-24 sm:top-32" : "top-1.5 sm:top-4"
-          }`}
+          className="absolute right-1.5 sm:right-4 top-1.5 sm:top-4 z-[2000] bg-slate-900/95 text-white rounded-lg shadow-lg px-2.5 sm:px-3 py-1.5 flex flex-col gap-1.5 pointer-events-auto max-w-[calc(100%-0.75rem)] sm:max-w-xs"
         >
           <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="text-[10px] sm:text-xs font-medium whitespace-nowrap truncate min-w-0">
@@ -1627,29 +1621,7 @@ export default function Map({
         />
       )}
 
-      {/* 凡例ボックス - 地図右上に配置
-          注意: Leaflet内部のレイヤー(タイルペイン z-200、オーバーレイ z-400、
-          ポップアップペイン z-700、ズームコントロール等 z-1000)は、この
-          凡例divの兄弟要素(.leaflet-containerの子)として同じスタッキング
-          コンテキストで競合するため、それらすべてを上回るz-indexが必須。
-          (.leaflet-containerはposition:relativeのみでz-indexを持たず、
-          新しいスタッキングコンテキストを作らないため) */}
-      {showLegend && (
-        <div className="absolute top-1.5 right-1.5 sm:top-4 sm:right-4 z-[2000] bg-white rounded sm:rounded-lg shadow-lg border border-gray-200 p-1 sm:p-3 w-auto max-w-none sm:max-w-xs pointer-events-auto">
-          <h3 className="text-[8px] sm:text-xs font-bold text-gray-900 mb-0.5 sm:mb-2 leading-tight whitespace-nowrap">駐車・駐停車</h3>
-          <div className="space-y-0.5 sm:space-y-1.5">
-            <div className="flex items-center gap-0.5 sm:gap-2">
-              <div className="w-2 h-1.5 sm:w-4 sm:h-3 rounded-sm sm:rounded flex-shrink-0" style={{ backgroundColor: '#2563eb' }}></div>
-              <span className="text-[7px] sm:text-xs text-gray-700 leading-tight whitespace-nowrap">駐車候補（広い道路）</span>
-            </div>
-            <div className="flex items-center gap-0.5 sm:gap-2">
-              <div className="w-2 h-1.5 sm:w-4 sm:h-3 rounded-sm sm:rounded flex-shrink-0" style={{ backgroundColor: '#f59e0b' }}></div>
-              <span className="text-[7px] sm:text-xs text-gray-700 leading-tight whitespace-nowrap">駐停車候補（短時間）</span>
-            </div>
-          </div>
-          <p className="text-[7px] sm:text-xs text-gray-500 mt-0.5 sm:mt-2 leading-tight whitespace-nowrap">現地で必ず確認してください</p>
-        </div>
-      )}
+      {/* 駐車・駐停車の凡例ボックス(地図右上)はUI整理方針により削除した。 */}
 
       {/* MobileDraftConfirmBubbleのポータル先。地図(MapContainer)の兄弟要素として
           配置することで、地図内部のtransformによるスタッキングコンテキストの

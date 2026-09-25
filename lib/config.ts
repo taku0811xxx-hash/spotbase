@@ -31,7 +31,7 @@ export const APP_MODE_META: Record<
   { title: string; description: string; titleTemplate: string }
 > = {
   pro: {
-    title: "SpotBase + 現場記録",
+    title: "SpotBase",
     description: "放送・報道クルー向け現場ロケハン情報管理",
     titleTemplate: "%s | SpotBase",
   },

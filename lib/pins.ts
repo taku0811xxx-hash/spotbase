@@ -103,6 +103,7 @@ export type Pin = {
   signalInfo?: string; // 旧項目(電波状況)。古いデータの表示互換用
   hazards: string; // 危険箇所・注意事項
   photoUrls: string[]; // 現場全体の写真
+  parkingPhotoUrls: string[]; // 駐車場所の写真
   shootingPhotoUrls: string[]; // 撮影ポイントの写真
   hazardPhotoUrls: string[]; // 危険箇所・注意事項の写真
   drawings?: PinDrawing[]; // 図面(配置図等、PDF/画像)のアップロード履歴
@@ -122,6 +123,7 @@ export type NewPinInput = Omit<
   Pin,
   | "id"
   | "photoUrls"
+  | "parkingPhotoUrls"
   | "shootingPhotoUrls"
   | "hazardPhotoUrls"
   | "drawings"
@@ -129,6 +131,7 @@ export type NewPinInput = Omit<
   | "signalInfo"
 > & {
   photos: File[];
+  parkingPhotos: File[];
   shootingPhotos: File[];
   hazardPhotos: File[];
   drawings: File[];
@@ -220,6 +223,11 @@ export async function createPin(input: NewPinInput): Promise<string> {
 
   // 先に画像をStorageにアップロードしてURLを集める(セクションごとにフォルダを分ける)
   const photoUrls = await uploadPhotos(pinRef.id, "general", input.photos);
+  const parkingPhotoUrls = await uploadPhotos(
+    pinRef.id,
+    "parking",
+    input.parkingPhotos
+  );
   const shootingPhotoUrls = await uploadPhotos(
     pinRef.id,
     "shooting",
@@ -247,6 +255,7 @@ export async function createPin(input: NewPinInput): Promise<string> {
     fpuInfo: input.fpuInfo,
     hazards: input.hazards,
     photoUrls,
+    parkingPhotoUrls,
     shootingPhotoUrls,
     hazardPhotoUrls,
     drawings,
@@ -285,6 +294,7 @@ export async function createQuickPin(input: QuickPinInput): Promise<string> {
     fpuInfo: "",
     hazards: "",
     photoUrls: [],
+    parkingPhotoUrls: [],
     shootingPhotoUrls: [],
     hazardPhotoUrls: [],
     organizationId: input.organizationId,
@@ -302,10 +312,11 @@ export async function createQuickPin(input: QuickPinInput): Promise<string> {
 
 export type UpdatePinInput = Omit<
   NewPinInput,
-  "photos" | "shootingPhotos" | "hazardPhotos" | "drawings"
+  "photos" | "parkingPhotos" | "shootingPhotos" | "hazardPhotos" | "drawings"
 > & {
   // 編集時は「追加する新しい写真/図面」だけを渡す(既存分は維持する)
   newPhotos: File[];
+  newParkingPhotos: File[];
   newShootingPhotos: File[];
   newHazardPhotos: File[];
   newDrawings: File[];
@@ -316,6 +327,11 @@ export async function updatePin(pinId: string, input: UpdatePinInput) {
   if (!existing) throw new Error("現場が見つかりません");
 
   const addedPhotoUrls = await uploadPhotos(pinId, "general", input.newPhotos);
+  const addedParkingPhotoUrls = await uploadPhotos(
+    pinId,
+    "parking",
+    input.newParkingPhotos
+  );
   const addedShootingPhotoUrls = await uploadPhotos(
     pinId,
     "shooting",
@@ -345,6 +361,10 @@ export async function updatePin(pinId: string, input: UpdatePinInput) {
     fpuInfo: input.fpuInfo,
     hazards: input.hazards,
     photoUrls: [...existing.photoUrls, ...addedPhotoUrls],
+    parkingPhotoUrls: [
+      ...(existing.parkingPhotoUrls ?? []),
+      ...addedParkingPhotoUrls,
+    ],
     shootingPhotoUrls: [
       ...existing.shootingPhotoUrls,
       ...addedShootingPhotoUrls,

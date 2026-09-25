@@ -154,7 +154,12 @@ function BasicInfoTab({ pin, isPhotoMode }: { pin: Pin; isPhotoMode: boolean }) 
 
   return (
     <div className="space-y-4">
-      <Field label="駐車場所" value={pin.parkingInfo} alt={pin.name} />
+      <Field
+        label="駐車場所"
+        value={pin.parkingInfo}
+        photoUrls={pin.parkingPhotoUrls}
+        alt={`${pin.name} 駐車場所`}
+      />
       <Field
         label="撮影ポイント"
         value={pin.shootingSpots}

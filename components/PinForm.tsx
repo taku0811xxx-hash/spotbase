@@ -322,6 +322,7 @@ export default function PinForm({
   const [hazards, setHazards] = useState(existingPin?.hazards ?? initialHazards ?? "");
 
   const [photos, setPhotos] = useState<File[]>([]);
+  const [parkingPhotos, setParkingPhotos] = useState<File[]>([]);
   const [shootingPhotos, setShootingPhotos] = useState<File[]>([]);
   const [hazardPhotos, setHazardPhotos] = useState<File[]>([]);
   const [drawings, setDrawings] = useState<File[]>([]);
@@ -457,6 +458,7 @@ export default function PinForm({
           category: existingPin.category,
           recordedBy: profile.name,
           newPhotos: photos,
+          newParkingPhotos: parkingPhotos,
           newShootingPhotos: shootingPhotos,
           newHazardPhotos: hazardPhotos,
           newDrawings: drawings,
@@ -477,6 +479,7 @@ export default function PinForm({
           fpuInfo,
           hazards,
           photos,
+          parkingPhotos,
           shootingPhotos,
           hazardPhotos,
           drawings,
@@ -718,7 +721,7 @@ export default function PinForm({
                     <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
                   </svg>
                 )}
-                {parkingGpsLoading ? "現在地を取得中..." : "現在地の住所を挿入"}
+                {parkingGpsLoading ? "現在地を取得中..." : "現在の駐車位置の位置情報を入力"}
               </button>
               <textarea
                 value={parkingInfo}
@@ -726,6 +729,12 @@ export default function PinForm({
                 placeholder="例: 敷地内に3台分あり。満車時は近くのコインパーキングを利用。実際の駐車スペースにいる時は上のボタンで現在地を追加できます"
                 className={inputClass}
                 rows={3}
+              />
+              <PhotoPicker
+                label="駐車場所の写真"
+                files={parkingPhotos}
+                onChange={setParkingPhotos}
+                existingUrls={existingPin?.parkingPhotoUrls}
               />
             </div>
           </Field>
