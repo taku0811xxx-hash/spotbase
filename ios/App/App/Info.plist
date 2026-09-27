@@ -5,9 +5,9 @@
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
+	<string>ja</string>
 	<key>CFBundleDisplayName</key>
-        <string>SpotBase</string>
+        <string>ここトレ！</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -30,6 +30,12 @@
 	<string>現在地および現場までの経路を表示するために位置情報を使用します。</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>スリープ中も移動経路を記録するために位置情報を使用します。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>撮影したスポット写真を投稿するためにカメラを使用します。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>保存されたスポット写真を投稿に選択するためにライブラリを使用します。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>写真を保存するためにライブラリを使用します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

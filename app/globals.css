@@ -19,6 +19,12 @@
   }
 }
 
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -41,6 +47,23 @@ body {
 header,
 .app-header {
   padding-top: max(12px, env(safe-area-inset-top));
+}
+
+/* 「ここトレ！」(photoモード)専用: 個別写真画面の地図に出すピンの吹き出し
+   (Leaflet Popup)を、初期状態の約半分のサイズにコンパクト化する。
+   PhotoSpotMap.tsxのPopupにclassName="kokotore-compact-popup"を付けて適用する。 */
+.kokotore-compact-popup .leaflet-popup-content-wrapper {
+  padding: 1px;
+  border-radius: 8px;
+}
+.kokotore-compact-popup .leaflet-popup-content {
+  margin: 6px 10px;
+  min-width: 0;
+  line-height: 1.3;
+}
+.kokotore-compact-popup .leaflet-popup-tip-container {
+  width: 20px;
+  height: 10px;
 }
 
 @keyframes toast-in {

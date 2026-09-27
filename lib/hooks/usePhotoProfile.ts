@@ -3,10 +3,11 @@
 // 「ここトレ！」(photoモード)専用: マイページの「表示名」「アイコン画像」の
 // 簡易プロフィール編集状態。SpotBase本体の実際のユーザープロフィール
 // (lib/userProfile.ts、Firestoreのusersコレクション・Admin SDK経由でのみ書き込み可能)
-// は変更せず、あくまで表示用の上書き情報をブラウザのlocalStorageに保存する
-// (usePhotoCasualAuth.tsと同じ設計方針)。
+// は変更せず、あくまで表示用の上書き情報を端末の永続ストレージ
+// (@capacitor/preferences。iOSのlocalStorage自動クリアに強い)に保存する。
 import { useCallback, useEffect, useState } from "react";
 import { compressImage } from "@/lib/imageCompression";
+import { readJson, writeJson } from "@/lib/photoStorage";
 
 const STORAGE_KEY = "kokotore_profile_override";
 const EVENT_NAME = "kokotore-profile-changed";
@@ -16,26 +17,16 @@ type ProfileOverride = {
   avatarDataUrl?: string;
 };
 
-function readOverride(): ProfileOverride {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ProfileOverride) : {};
-  } catch {
-    return {};
-  }
+function readOverride(): Promise<ProfileOverride> {
+  return readJson<ProfileOverride>(STORAGE_KEY, {});
 }
 
-function writeOverride(value: ProfileOverride) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-  } catch {
-    // 無視(プライベートブラウジング等でlocalStorageが使えない場合)
-  }
+async function writeOverride(value: ProfileOverride) {
+  await writeJson(STORAGE_KEY, value);
   window.dispatchEvent(new Event(EVENT_NAME));
 }
 
-// アイコン画像はlocalStorageの容量制限を考慮し、96x96程度まで縮小してから
+// アイコン画像は永続ストレージの容量制限を考慮し、96x96程度まで縮小してから
 // data URLとして保存する(compressImageのCanvas処理を流用)。
 async function fileToSmallDataUrl(file: File): Promise<string> {
   const { file: resized } = await compressImage(file, {
@@ -58,30 +49,32 @@ export function usePhotoProfile(defaultDisplayName: string) {
   const [override, setOverrideState] = useState<ProfileOverride>({});
 
   useEffect(() => {
-    setOverrideState(readOverride());
-    function handleChange() {
-      setOverrideState(readOverride());
+    let cancelled = false;
+    function load() {
+      readOverride().then((value) => {
+        if (!cancelled) setOverrideState(value);
+      });
     }
-    window.addEventListener(EVENT_NAME, handleChange);
-    window.addEventListener("storage", handleChange);
+    load();
+    window.addEventListener(EVENT_NAME, load);
     return () => {
-      window.removeEventListener(EVENT_NAME, handleChange);
-      window.removeEventListener("storage", handleChange);
+      cancelled = true;
+      window.removeEventListener(EVENT_NAME, load);
     };
   }, []);
 
   const displayName = override.displayName?.trim() || defaultDisplayName;
   const avatarDataUrl = override.avatarDataUrl ?? null;
 
-  const setDisplayName = useCallback((name: string) => {
-    const current = readOverride();
-    writeOverride({ ...current, displayName: name });
+  const setDisplayName = useCallback(async (name: string) => {
+    const current = await readOverride();
+    await writeOverride({ ...current, displayName: name });
   }, []);
 
   const setAvatarFile = useCallback(async (file: File) => {
     const dataUrl = await fileToSmallDataUrl(file);
-    const current = readOverride();
-    writeOverride({ ...current, avatarDataUrl: dataUrl });
+    const current = await readOverride();
+    await writeOverride({ ...current, avatarDataUrl: dataUrl });
   }, []);
 
   return { displayName, avatarDataUrl, setDisplayName, setAvatarFile };

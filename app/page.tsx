@@ -39,8 +39,11 @@ import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
 import PhotoGalleryView from "@/components/PhotoGalleryView";
 import PhotoUploadModal from "@/components/PhotoUploadModal";
+import AuthModal from "@/components/AuthModal";
+import PhotoHeaderNav from "@/components/PhotoHeaderNav";
+import PhotoBottomNav from "@/components/PhotoBottomNav";
 import { APP_MODE } from "@/lib/config";
-import { getAllPhotoSpots } from "@/lib/photoSpots";
+import { getPhotoSpotsPage, type PhotoSpotsPage } from "@/lib/photoSpots";
 import { toDisplayProfile } from "@/lib/photoAuth";
 import type { PhotoSpot } from "@/lib/types/photoSpot";
 import BottomSheet from "@/components/BottomSheet";
@@ -135,9 +138,13 @@ export default function Home() {
 
   // 「ここトレ！」(photoモード)専用: スポット投稿モーダルの開閉状態
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   // 「ここトレ！」(photoモード)専用: "photo_spots"コレクションのデータ(pro向けpinsとは別管理)
   const [photoSpots, setPhotoSpots] = useState<PhotoSpot[]>([]);
   const [loadingPhotoSpots, setLoadingPhotoSpots] = useState(true);
+  const [loadingMorePhotoSpots, setLoadingMorePhotoSpots] = useState(false);
+  const [photoSpotsCursor, setPhotoSpotsCursor] = useState<PhotoSpotsPage["cursor"]>(null);
+  const [hasMorePhotoSpots, setHasMorePhotoSpots] = useState(false);
   // 「ここトレ！」(photoモード)専用: 地図一覧ページの「詳細を見る」(/?spot=<id>)から
   // 遷移してきた場合、そのスポットを自動選択するためのID。useSearchParams()は
   // Suspense境界が必要になるため、CSRのuseEffectでクエリを直接読み取る。
@@ -789,14 +796,16 @@ export default function Home() {
 
   useEffect(() => {
     if (authLoading) return;
+    // photoモード("ここトレ！")では、pro向けの"pins"コレクションには一切アクセスしない
+    // (データ分離。photoSpots取得は別のuseEffectで"photo_spots"コレクションのみを見る)。
+    // ここでの!userリダイレクトはpro専用であり、photoモードのゲスト閲覧を妨げないよう
+    // モード判定を先に行う。
+    if (APP_MODE === "photo") return;
     if (!user) {
       router.push("/login");
       return;
     }
     if (!profile) return; // プロフィール未整備(管理者にアカウント設定を確認してもらう)
-    // photoモード("ここトレ！")では、pro向けの"pins"コレクションには一切アクセスしない
-    // (データ分離。photoSpots取得は別のuseEffectで"photo_spots"コレクションのみを見る)
-    if (APP_MODE === "photo") return;
 
     Promise.allSettled([
       getAllPins({
@@ -867,20 +876,38 @@ export default function Home() {
   useEffect(() => {
     if (APP_MODE !== "photo") return;
     if (authLoading) return;
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-    if (!photoProfile) return;
+    // 未ログインのゲストでもスポット一覧は閲覧できる(photo_spotsのFirestoreルールも
+    // 未ログイン読み取り許可済み)。ログイン要求は「いいね」等アクション単位で行う。
 
     setLoadingPhotoSpots(true);
-    getAllPhotoSpots()
-      .then(setPhotoSpots)
+    getPhotoSpotsPage()
+      .then((page) => {
+        setPhotoSpots(page.spots);
+        setPhotoSpotsCursor(page.cursor);
+        setHasMorePhotoSpots(page.hasMore);
+      })
       .catch((error) => {
         console.error("ここトレ！: photo_spotsの取得に失敗しました", error);
       })
       .finally(() => setLoadingPhotoSpots(false));
   }, [authLoading, user, photoProfile, router]);
+
+  // ギャラリー下端に到達した際に呼ばれる、次ページの追加読み込み
+  // (Firestoreの読み取り件数課金を抑えるため、初回は20件のみ取得し以降はスクロールに応じて取得)
+  async function loadMorePhotoSpots() {
+    if (loadingMorePhotoSpots || !hasMorePhotoSpots) return;
+    setLoadingMorePhotoSpots(true);
+    try {
+      const page = await getPhotoSpotsPage(20, photoSpotsCursor);
+      setPhotoSpots((prev) => [...prev, ...page.spots]);
+      setPhotoSpotsCursor(page.cursor);
+      setHasMorePhotoSpots(page.hasMore);
+    } catch (error) {
+      console.error("ここトレ！: photo_spotsの追加取得に失敗しました", error);
+    } finally {
+      setLoadingMorePhotoSpots(false);
+    }
+  }
 
   async function handleLogout() {
     await logout();
@@ -1108,7 +1135,12 @@ export default function Home() {
     );
   }
 
-  if (user && !profile) {
+  // このガードはpro向け("users"コレクション・profile)専用。photoモードでは
+  // profileは常にnull(photoProfileを使う別経路)のため、ここでAPP_MODEを
+  // 判定せずにuser && !profileだけで見ると、ログイン済みのphotoユーザー全員が
+  // 毎回このエラー画面に落ちてしまう(photo_users自動生成が完了していても
+  // 無関係にブロックされる)。
+  if (APP_MODE !== "photo" && user && !profile) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-100 p-4">
         <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-sm text-center space-y-3">
@@ -1129,29 +1161,43 @@ export default function Home() {
   // 「ここトレ！」(写真モード): ギャラリー中心のPC向け2カラムレイアウトに差し替える。
   // 本体(pro)向けの既存レイアウト(出動記録・現場一覧など)はここでは使わない。
   if (APP_MODE === "photo") {
-    // 投稿完了後、TOPギャラリー・地図にすぐ反映されるよう"photo_spots"を取り直す
+    // 投稿完了後、TOPギャラリー・地図にすぐ反映されるよう"photo_spots"を1ページ目から取り直す
     async function refetchPhotoSpots() {
-      const spotsData = await getAllPhotoSpots();
-      setPhotoSpots(spotsData);
+      const page = await getPhotoSpotsPage();
+      setPhotoSpots(page.spots);
+      setPhotoSpotsCursor(page.cursor);
+      setHasMorePhotoSpots(page.hasMore);
     }
 
     return (
-      <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 h-screen">
-        <div className="relative z-[9999] bg-white border-b border-gray-200 flex-shrink-0">
-          <HeaderNav
-            profile={toDisplayProfile(photoProfile)}
-            onLogout={handleLogout}
-            onToggleMenu={() => setMenuOpen(!menuOpen)}
-            onNewPhotoSpot={() => setShowPhotoUploadModal(true)}
-          />
+      <div className="w-full max-w-full overflow-x-hidden flex flex-col bg-gray-100 h-[100dvh]">
+        <div className="app-header relative z-[9999] bg-gradient-to-r from-blue-500 to-indigo-600 flex-shrink-0">
+          <PhotoHeaderNav />
         </div>
-        <PhotoGalleryView spots={photoSpots} loading={loadingPhotoSpots} initialSpotId={initialPhotoSpotId} />
+        <PhotoGalleryView
+          spots={photoSpots}
+          loading={loadingPhotoSpots}
+          initialSpotId={initialPhotoSpotId}
+          onLoadMore={loadMorePhotoSpots}
+          hasMore={hasMorePhotoSpots}
+          loadingMore={loadingMorePhotoSpots}
+        />
+        <PhotoBottomNav
+          onNewPhotoSpot={() => {
+            if (!user) {
+              setShowAuthModal(true);
+              return;
+            }
+            setShowPhotoUploadModal(true);
+          }}
+        />
         {showPhotoUploadModal && (
           <PhotoUploadModal
             onClose={() => setShowPhotoUploadModal(false)}
             onCreated={refetchPhotoSpots}
           />
         )}
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
       </div>
     );
   }

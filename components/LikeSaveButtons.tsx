@@ -2,12 +2,12 @@
 
 // 「ここトレ！」(photoモード)専用: 「いいね」「保存」ボタン。
 // ギャラリーカード・詳細ビュー両方から使う共通コンポーネント。
-// 未ログイン(簡易ログイン状態)の場合はAuthModalを開いて登録を促し、
-// 登録完了後に元のアクション(いいね/保存)をそのまま続行する。
+// 未ログインの場合はAuthModalを開いて会員登録・ログインを促し、アクションは中断する
+// (モーダルのボタンから/login・/signupへ遷移する)。
 // Instagram風に、黒透過の小さな丸ボタン + Heart/Bookmarkのラインアイコンで統一する。
 import { useState } from "react";
 import { Heart, Bookmark, BookmarkCheck } from "lucide-react";
-import { usePhotoCasualAuth } from "@/lib/hooks/usePhotoCasualAuth";
+import { useAuth } from "@/components/AuthProvider";
 import { usePhotoInteractions, photoKey } from "@/lib/hooks/usePhotoInteractions";
 import AuthModal from "@/components/AuthModal";
 
@@ -21,16 +21,15 @@ type Props = {
 };
 
 export default function LikeSaveButtons({ spotId, url, size = "sm", stopPropagation = false }: Props) {
-  const { isLoggedIn } = usePhotoCasualAuth();
+  const { user } = useAuth();
   const { likeCount, liked, saved, toggleLike, toggleSave } = usePhotoInteractions(photoKey(spotId, url));
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState<"like" | "save" | null>(null);
+
   const [pulseKey, setPulseKey] = useState<"like" | "save" | null>(null);
 
   function runOrPromptAuth(action: "like" | "save", e: React.MouseEvent) {
     if (stopPropagation) e.stopPropagation();
-    if (!isLoggedIn) {
-      setPendingAction(action);
+    if (!user) {
       setShowAuthModal(true);
       return;
     }
@@ -38,12 +37,6 @@ export default function LikeSaveButtons({ spotId, url, size = "sm", stopPropagat
     else toggleSave();
     setPulseKey(action);
     window.setTimeout(() => setPulseKey(null), 300);
-  }
-
-  function handleAuthenticated() {
-    if (pendingAction === "like") toggleLike();
-    if (pendingAction === "save") toggleSave();
-    setPendingAction(null);
   }
 
   // Instagram風: ボタン自体は黒透過(bg-black/40)の小さな丸型、アイコンは約半分のサイズに縮小
@@ -82,15 +75,7 @@ export default function LikeSaveButtons({ spotId, url, size = "sm", stopPropagat
         </button>
       </div>
 
-      {showAuthModal && (
-        <AuthModal
-          onClose={() => {
-            setShowAuthModal(false);
-            setPendingAction(null);
-          }}
-          onAuthenticated={handleAuthenticated}
-        />
-      )}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
     </>
   );
 }

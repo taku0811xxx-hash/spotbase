@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { login, requestPasswordReset } from "@/lib/auth";
 import { APP_MODE } from "@/lib/config";
 import Logo from "@/components/Logo";
+import PhotoBottomNav from "@/components/PhotoBottomNav";
 
 function authErrorMessage(err: unknown): string {
   const code = (err as { code?: string })?.code ?? "";
@@ -24,6 +25,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // 新規登録画面で「このメールアドレスは既に登録されています」となった場合に
+  // /login?email=... で遷移してくることがあるため、その値をメール欄へ引き継ぐ。
+  // useSearchParams()はSuspense境界が必要になるため、CSRのuseEffectで直接読み取る。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const emailFromQuery = new URLSearchParams(window.location.search).get("email");
+    if (emailFromQuery) setEmail(emailFromQuery);
+  }, []);
 
   const [resetMode, setResetMode] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -68,14 +78,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div
+      className={`min-h-screen bg-gray-50 flex items-center justify-center p-4 ${
+        APP_MODE === "photo" ? "pb-20" : ""
+      }`}
+    >
       <div className="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="bg-gray-900 py-6 flex justify-center">
           <Logo className="text-white" size="lg" />
         </div>
         <div className="p-8">
           <p className="text-sm text-gray-500 text-center mb-6">
-            現場情報を蓄積・共有するアプリ
+            {APP_MODE === "photo" ? "撮りたい写真が必ず見つかる" : "現場情報を蓄積、共有するアプリ"}
           </p>
 
           {!resetMode ? (
@@ -186,6 +200,9 @@ export default function LoginPage() {
           )}
         </div>
       </div>
+      {APP_MODE === "photo" && (
+        <PhotoBottomNav onNewPhotoSpot={() => router.push("/")} />
+      )}
     </div>
   );
 }

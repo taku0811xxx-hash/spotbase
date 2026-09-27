@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getUserProfile, type UserProfile } from "@/lib/userProfile";
-import { getPhotoUserProfile, type PhotoUserProfile } from "@/lib/photoAuth";
+import { getOrCreatePhotoUserProfile, type PhotoUserProfile } from "@/lib/photoAuth";
 import { APP_MODE } from "@/lib/config";
 
 type AuthContextValue = {
@@ -14,6 +14,9 @@ type AuthContextValue = {
   // 「ここトレ！」(photo)専用の会員プロフィール("photo_users"コレクション)。
   // proモードでは常にnull(取得自体を行わない)。
   photoProfile: PhotoUserProfile | null;
+  // photo_usersの取得・自動生成(getOrCreatePhotoUserProfile)がFirestoreの
+  // セキュリティルール等で失敗した場合のエラーメッセージ。photoモード専用。
+  photoProfileError: string | null;
   loading: boolean;
 };
 
@@ -21,6 +24,7 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
   photoProfile: null,
+  photoProfileError: null,
   loading: true,
 });
 
@@ -28,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoProfile, setPhotoProfile] = useState<PhotoUserProfile | null>(null);
+  const [photoProfileError, setPhotoProfileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,12 +42,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (APP_MODE === "photo") {
           // 「ここトレ！」ではSpotBase本体の"users"コレクション(Admin SDK経由でしか
           // 書き込めない)は参照せず、自己登録可能な"photo_users"のみを見る。
+          // SpotBase本体(pro)で既にFirebase Authアカウントを持つユーザーが
+          // ここトレ！に来た場合、"photo_users"側のプロフィールがまだ存在しない
+          // ことがあるため、無ければ自動生成してそのまま使えるようにする。
           try {
-            const p = await getPhotoUserProfile(firebaseUser.uid);
+            console.log("[Auth] checking photo_users for:", firebaseUser.uid);
+            const p = await getOrCreatePhotoUserProfile(firebaseUser);
             setPhotoProfile(p);
+            setPhotoProfileError(null);
           } catch (err) {
-            console.error(err);
+            console.error("[Auth] photo_users取得・自動生成に失敗しました:", err);
             setPhotoProfile(null);
+            setPhotoProfileError(
+              "ユーザー情報の取得に失敗しました。しばらくしてから再度お試しください。"
+            );
           }
           setProfile(null);
         } else {
@@ -65,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, photoProfile, loading }}>
+    <AuthContext.Provider value={{ user, profile, photoProfile, photoProfileError, loading }}>
       {children}
     </AuthContext.Provider>
   );

@@ -188,8 +188,17 @@ export default function PhotoUploadModal({ onClose, onCreated }: Props) {
       onCreated();
       onClose();
     } catch (e) {
-      console.error(e);
-      setError("投稿に失敗しました。時間をおいて再度お試しください");
+      const code = (e as { code?: string })?.code;
+      console.error("Upload Error:", { code, error: e });
+      if (code === "storage/unauthorized" || code === "permission-denied") {
+        setError("権限がないため投稿できませんでした。再度ログインしてからお試しください");
+      } else if (code === "storage/canceled") {
+        setError("アップロードが中断されました。もう一度お試しください");
+      } else if (e instanceof Error && e.message) {
+        setError(e.message);
+      } else {
+        setError("投稿に失敗しました。時間をおいて再度お試しください");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -209,7 +218,7 @@ export default function PhotoUploadModal({ onClose, onCreated }: Props) {
           </button>
         </div>
 
-        <div className="p-5 space-y-6">
+        <div className="p-5 pb-24 space-y-6">
           {/* STEP1: 写真アップロード(最優先ステップ) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -336,7 +345,7 @@ export default function PhotoUploadModal({ onClose, onCreated }: Props) {
                     setPosition(pos);
                     setPositionSource("manual");
                   }}
-                  heightClassName="h-56"
+                  heightClassName="h-52"
                 />
               </div>
 

@@ -72,8 +72,8 @@ export default function PhotoSpotMap({ spot }: Props) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <Marker position={[spot.lat, spot.lng]} icon={spotIcon} ref={spotMarkerRef}>
-          <Popup>
-            <div className="text-sm">
+          <Popup className="kokotore-compact-popup">
+            <div className="text-xs leading-tight">
               <p className="font-semibold">{spot.name}</p>
               <p className="text-gray-500">{spot.address}</p>
             </div>
@@ -82,14 +82,14 @@ export default function PhotoSpotMap({ spot }: Props) {
         {showParking &&
           parkingLotsWithPosition.map((lot, i) => (
             <Marker key={`${lot.name}-${i}`} position={[lot.lat, lot.lng]} icon={parkingIcon}>
-              <Popup>
-                <div className="text-sm">
+              <Popup className="kokotore-compact-popup">
+                <div className="text-xs leading-tight">
                   <p className="font-semibold">🚗 {lot.name}</p>
                   <p className="text-gray-500">
                     {lot.distance}
                     {lot.capacity && ` ・ ${lot.capacity}`}
                   </p>
-                  {lot.note && <p className="text-amber-700 text-xs mt-1">⚠ {lot.note}</p>}
+                  {lot.note && <p className="text-amber-700 text-[10px] mt-1">⚠ {lot.note}</p>}
                 </div>
               </Popup>
             </Marker>

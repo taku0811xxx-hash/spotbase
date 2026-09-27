@@ -3,7 +3,7 @@
 // 完全に独立しており、Firebase Authのユーザー自体は共有インフラ(lib/firebase.ts)を
 // 使うが、プロフィールは"photo_users"コレクションにのみ保存する
 // (組織/分類の概念を持たない、パブリックな会員登録)。
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import type { UserProfile, UserCategory } from "./userProfile";
@@ -90,4 +90,36 @@ export async function getPhotoUserProfile(uid: string): Promise<PhotoUserProfile
     displayName: data.displayName,
     createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
   };
+}
+
+// メールアドレスの@より前の部分を、表示名未設定時のフォールバックに使う
+function displayNameFromEmail(email: string | null | undefined): string {
+  return email?.split("@")[0] || "ゲスト";
+}
+
+// SpotBase本体(pro)で既にFirebase Authアカウントを持つユーザーが「ここトレ！」に
+// 来た場合、"photo_users"に自分のプロフィールドキュメントがまだ存在しないことがある
+// (proとphotoは同じFirebase Authユーザーを共有するが、プロフィールコレクションは
+// 完全に分離しているため)。この場合にログインをエラーにせず、既存のFirebase Auth
+// ユーザー情報(表示名・メールアドレス)から"photo_users/{uid}"を自動生成し、
+// そのままここトレ！を使い始められるようにする。
+// setDoc(Firestore書き込み)がセキュリティルール等で失敗した場合は、呼び出し元
+// (AuthProvider)がエラー内容をトーストで表示できるよう、そのまま例外を投げる。
+export async function getOrCreatePhotoUserProfile(user: User): Promise<PhotoUserProfile> {
+  const existing = await getPhotoUserProfile(user.uid);
+  if (existing) return existing;
+
+  const displayName = user.displayName || displayNameFromEmail(user.email) || "ゲスト";
+  const email = user.email || "";
+
+  await setDoc(doc(db, PHOTO_USERS_COLLECTION, user.uid), {
+    email,
+    displayName,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  console.log("[Auth] photo_users generated for:", user.uid);
+
+  return { uid: user.uid, email, displayName, createdAt: null };
 }

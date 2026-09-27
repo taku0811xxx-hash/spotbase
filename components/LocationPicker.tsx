@@ -75,6 +75,20 @@ function DraggableMarker({
   );
 }
 
+// モーダル内など、マウント直後はまだレイアウトが確定していない(あるいは
+// 一瞬0サイズになる)コンテナにLeafletを置くと、Leafletが初回計測したサイズを
+// 内部にキャッシュしてしまい、タイルが正しい範囲に収まらず画面全体に
+// はみ出して見えることがある。マウント後に明示的にinvalidateSize()を呼び、
+// 実際のコンテナサイズへ再計算させる。
+function InvalidateSizeOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    const id = window.setTimeout(() => map.invalidateSize(), 100);
+    return () => window.clearTimeout(id);
+  }, [map]);
+  return null;
+}
+
 export default function LocationPicker({
   value,
   onChange,
@@ -84,6 +98,7 @@ export default function LocationPicker({
   return (
     <div
       className={`relative z-0 w-full rounded-lg overflow-hidden border border-gray-300 ${heightClassName}`}
+      style={{ maxHeight: "40vh" }}
     >
       <MapContainer
         center={value ?? { lat: 35.681, lng: 139.767 }}
@@ -98,6 +113,7 @@ export default function LocationPicker({
         <ClickHandler onChange={onChange} />
         {value && <DraggableMarker position={value} draggable={draggable} onChange={onChange} />}
         <FlyToValue value={value} />
+        <InvalidateSizeOnMount />
       </MapContainer>
     </div>
   );

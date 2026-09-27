@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
+import PhotoAuthErrorToast from "@/components/PhotoAuthErrorToast";
 import { APP_MODE, APP_MODE_META } from "@/lib/config";
 
 // ブラウザタブのタイトル・検索エンジン向け説明文もAPP_MODEに応じて切り替える。
@@ -43,7 +44,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         />
       </head>
       <body className={`min-h-full flex flex-col ${APP_MODE === "photo" ? "font-rounded" : ""}`}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          {APP_MODE === "photo" && <PhotoAuthErrorToast />}
+        </AuthProvider>
       </body>
     </html>
   );
