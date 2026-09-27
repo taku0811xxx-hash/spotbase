@@ -23,24 +23,62 @@ type Props = {
   onClose: () => void;
   onCreated: () => void; // 投稿完了後、呼び出し元でギャラリーを再取得させるためのコールバック
   // 呼び出し元(フッターの「投稿」)で既に端末の写真アルバムから選択済みの画像。
-  // 指定された場合、モーダル表示直後にSTEP1の選択処理へ自動投入する。
+  // 指定された場合、モーダル表示直後に自動的に取り込む。
   initialFiles?: File[];
+};
+
+// 写真1枚ごとの撮影場所・撮影設定(Exif由来、または手入力)。
+// カルーセルで表示中の写真を切り替えると、この単位でフォーム表示も切り替わる。
+type PhotoData = {
+  position: { lat: number; lng: number } | null;
+  positionSource: "exif" | "manual" | null;
+  camera: string;
+  lens: string;
+  fNumber: string;
+  exposureTime: string;
+  iso: string;
+  focalLength: string;
+  timeOfDay: PhotoSpotTimeOfDay | "";
+  autoFilled: boolean;
 };
 
 type PreviewPhoto = {
   file: File;
   url: string;
+  exifChecking: boolean;
+  data: PhotoData;
 };
 
+function emptyPhotoData(): PhotoData {
+  return {
+    position: null,
+    positionSource: null,
+    camera: "",
+    lens: "",
+    fNumber: "",
+    exposureTime: "",
+    iso: "",
+    focalLength: "",
+    timeOfDay: "",
+    autoFilled: false,
+  };
+}
+
 // 「ここトレ！」は"スポット登録"ではなく"写真の投稿"を主軸とするPhoto-Firstな
-// フローにする: STEP1で写真を選ぶと、その写真のEXIF GPS情報があれば撮影場所を
+// フローにする: 写真を選ぶと、その写真のEXIF GPS情報があれば撮影場所を
 // 自動セットし、なければ「この位置で撮影した」と地図タップで手動設定する
-// STEP2に進む。スポット名等はあくまで写真に添える補足情報という位置づけ。
+// ステップに進む。スポット名等はあくまで写真に添える補足情報という位置づけ。
+//
+// PhotoSpot(Firestore)のスキーマは投稿1件につき撮影場所/撮影設定を1組しか
+// 持たないため、複数枚を選んだ場合は「現在カルーセルに表示中の写真」のデータを
+// 投稿全体の代表値として送信する(各写真ごとのプレビュー・編集はUI上のみ)。
 export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: Props) {
   const { photoProfile } = useAuth();
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
-  const [dragOver, setDragOver] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const suppressScrollSync = useRef(false);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -49,18 +87,6 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [address, setAddress] = useState("");
-  const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
-  const [positionSource, setPositionSource] = useState<"exif" | "manual" | null>(null);
-  const [checkingExif, setCheckingExif] = useState(false);
-  const [exifAutoFilled, setExifAutoFilled] = useState(false);
-
-  const [camera, setCamera] = useState("");
-  const [lens, setLens] = useState("");
-  const [fNumber, setFNumber] = useState("");
-  const [exposureTime, setExposureTime] = useState("");
-  const [iso, setIso] = useState("");
-  const [focalLength, setFocalLength] = useState("");
-  const [timeOfDay, setTimeOfDay] = useState<PhotoSpotTimeOfDay | "">("");
 
   const [accessNote, setAccessNote] = useState("");
   const [subjectTags, setSubjectTags] = useState<PhotoSpotSubjectTag[]>([]);
@@ -75,51 +101,69 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const currentPhoto: PreviewPhoto | undefined = photos[currentIndex];
+
+  function updatePhotoData(index: number, patch: Partial<PhotoData>) {
+    setPhotos((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, data: { ...p.data, ...patch } } : p))
+    );
+  }
+
+  // 新しく選んだ写真を追加する(既存の写真は保持したまま末尾に追加)。
+  // 各写真ごとに個別にExifを解析し、対応するインデックスのデータだけを更新する。
   async function addFiles(files: FileList | File[]) {
     const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
-    const next = imageFiles.map((file) => ({ file, url: URL.createObjectURL(file) }));
-    const isFirstBatch = photos.length === 0;
-    setPhotos((prev) => [...prev, ...next]);
 
-    // 最初の1枚のExif(カメラ・レンズ・撮影設定・撮影時間帯・GPS位置)を解析し、
-    // 対応するフォーム項目が未入力の場合のみ自動反映する(SNS保存画像等、
-    // Exifが失われている場合は何も反映されず、そのまま手入力できる)。
-    if (isFirstBatch) {
-      setCheckingExif(true);
-      try {
-        const parsed = await parseExif(imageFiles[0]);
-        if (parsed.camera) setCamera((v) => v || parsed.camera!);
-        if (parsed.lens) setLens((v) => v || parsed.lens!);
-        if (parsed.fNumber != null) setFNumber((v) => v || String(parsed.fNumber));
-        if (parsed.exposureTime) setExposureTime((v) => v || parsed.exposureTime!);
-        if (parsed.iso != null) setIso((v) => v || String(parsed.iso));
-        if (parsed.focalLength) setFocalLength((v) => v || parsed.focalLength!);
-        if (parsed.timeOfDay) setTimeOfDay((v) => v || parsed.timeOfDay!);
-        if (parsed.position && !position) {
-          setPosition(parsed.position);
-          setPositionSource("exif");
-        }
-        setExifAutoFilled(
-          Boolean(
-            parsed.camera ||
-              parsed.lens ||
-              parsed.fNumber != null ||
-              parsed.exposureTime ||
-              parsed.iso != null ||
-              parsed.focalLength ||
-              parsed.timeOfDay ||
-              parsed.position
-          )
+    const startIndex = photos.length;
+    const next: PreviewPhoto[] = imageFiles.map((file) => ({
+      file,
+      url: URL.createObjectURL(file),
+      exifChecking: true,
+      data: emptyPhotoData(),
+    }));
+    setPhotos((prev) => [...prev, ...next]);
+    // 新しく追加した写真(の先頭)をファーストビューに表示する
+    setCurrentIndex(startIndex);
+
+    await Promise.all(
+      imageFiles.map(async (file, offset) => {
+        const targetIndex = startIndex + offset;
+        const parsed = await parseExif(file);
+        setPhotos((prev) =>
+          prev.map((p, i) => {
+            if (i !== targetIndex) return p;
+            const data: PhotoData = { ...p.data };
+            if (parsed.camera) data.camera = parsed.camera;
+            if (parsed.lens) data.lens = parsed.lens;
+            if (parsed.fNumber != null) data.fNumber = String(parsed.fNumber);
+            if (parsed.exposureTime) data.exposureTime = parsed.exposureTime;
+            if (parsed.iso != null) data.iso = String(parsed.iso);
+            if (parsed.focalLength) data.focalLength = parsed.focalLength;
+            if (parsed.timeOfDay) data.timeOfDay = parsed.timeOfDay;
+            if (parsed.position) {
+              data.position = parsed.position;
+              data.positionSource = "exif";
+            }
+            data.autoFilled = Boolean(
+              parsed.camera ||
+                parsed.lens ||
+                parsed.fNumber != null ||
+                parsed.exposureTime ||
+                parsed.iso != null ||
+                parsed.focalLength ||
+                parsed.timeOfDay ||
+                parsed.position
+            );
+            return { ...p, exifChecking: false, data };
+          })
         );
-      } finally {
-        setCheckingExif(false);
-      }
-    }
+      })
+    );
   }
 
   // フッターの「投稿」タップで既に選択済みの画像がある場合、モーダルを開いた
-  // 直後に自動的に取り込む(STEP1のクリック操作を待たない)
+  // 直後に自動的に取り込む(手動でのタップ操作を待たない)
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
       addFiles(initialFiles);
@@ -127,12 +171,45 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // currentIndexが変わったら(スワイプ以外の理由、例えば追加直後)カルーセルをその位置へ揃える
+  useEffect(() => {
+    const el = carouselRef.current;
+    if (!el) return;
+    const width = el.clientWidth;
+    suppressScrollSync.current = true;
+    el.scrollTo({ left: currentIndex * width, behavior: "smooth" });
+    window.setTimeout(() => {
+      suppressScrollSync.current = false;
+    }, 400);
+  }, [currentIndex, photos.length]);
+
+  // ユーザーが横スワイプしてカルーセルの表示中の写真が変わったら、
+  // 場所・撮影設定パネルの表示対象をそのインデックスへ切り替える
+  function handleCarouselScroll() {
+    if (suppressScrollSync.current) return;
+    const el = carouselRef.current;
+    if (!el || el.clientWidth === 0) return;
+    const index = Math.round(el.scrollLeft / el.clientWidth);
+    if (index !== currentIndex && index >= 0 && index < photos.length) {
+      setCurrentIndex(index);
+    }
+  }
+
   function removePhoto(index: number) {
     setPhotos((prev) => {
       const target = prev[index];
       if (target) URL.revokeObjectURL(target.url);
       return prev.filter((_, i) => i !== index);
     });
+    setCurrentIndex((prev) => Math.max(0, Math.min(prev, photos.length - 2)));
+  }
+
+  // 「写真を変更」: 現在の選択を全て破棄し、新たに選び直す
+  function handleReplaceAll() {
+    photos.forEach((p) => URL.revokeObjectURL(p.url));
+    setPhotos([]);
+    setCurrentIndex(0);
+    fileInputRef.current?.click();
   }
 
   async function handleAddressSearch() {
@@ -151,8 +228,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
 
   function selectAddressResult(result: GeocodeResult) {
     setAddress(result.displayName);
-    setPosition({ lat: result.lat, lng: result.lng });
-    setPositionSource("manual");
+    updatePhotoData(currentIndex, { position: { lat: result.lat, lng: result.lng }, positionSource: "manual" });
     setAddressResults([]);
     setAddressQuery(result.displayName);
   }
@@ -163,7 +239,8 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
       setError("まずは写真を選択してください");
       return;
     }
-    if (!position) {
+    const activeData = currentPhoto?.data;
+    if (!activeData?.position) {
       setError("この写真を撮影した場所を地図でタップして設定してください");
       return;
     }
@@ -175,23 +252,23 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
         name: name.trim() || "無題の写真",
         description: description.trim() || undefined,
         address: address.trim() || addressQuery.trim(),
-        lat: position.lat,
-        lng: position.lng,
+        lat: activeData.position.lat,
+        lng: activeData.position.lng,
         accessNote: accessNote.trim() || undefined,
         subjectTags: subjectTags.length > 0 ? subjectTags : undefined,
         equipmentTags: equipmentTags.length > 0 ? equipmentTags : undefined,
         isFree,
         allowCommercial,
         cameraGear: {
-          camera: camera.trim() || undefined,
-          lens: lens.trim() || undefined,
+          camera: activeData.camera.trim() || undefined,
+          lens: activeData.lens.trim() || undefined,
         },
         exif: {
-          fNumber: fNumber.trim() ? Number(fNumber) : undefined,
-          exposureTime: exposureTime.trim() || undefined,
-          iso: iso.trim() ? Number(iso) : undefined,
-          focalLength: focalLength.trim() || undefined,
-          timeOfDay: timeOfDay || undefined,
+          fNumber: activeData.fNumber.trim() ? Number(activeData.fNumber) : undefined,
+          exposureTime: activeData.exposureTime.trim() || undefined,
+          iso: activeData.iso.trim() ? Number(activeData.iso) : undefined,
+          focalLength: activeData.focalLength.trim() || undefined,
+          timeOfDay: activeData.timeOfDay || undefined,
         },
         photos: photos.map((p) => p.file),
         postedBy: photoProfile.uid,
@@ -231,68 +308,94 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
         </div>
 
         <div className="p-5 pb-24 space-y-6">
-          {/* STEP1: 写真アップロード(最優先ステップ) */}
+          {/* 写真プレビュー: 選択済みならカルーセルをファーストビューに直接表示する */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
-                1
-              </span>
-              まずは写真を選ぶ(複数選択可)
-            </label>
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
-              }}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-                dragOver ? "border-orange-400 bg-orange-50" : "border-gray-300 hover:border-gray-400"
-              }`}
-            >
-              <p className="text-sm text-gray-500">
-                クリックして選択、またはドラッグ＆ドロップ
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files) addFiles(e.target.files);
-                  e.target.value = "";
-                }}
-              />
-            </div>
-            {photos.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mt-3">
-                {photos.map((p, i) => (
-                  <div key={p.url} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.url} alt="" className="w-full h-full object-cover" />
+            {photos.length > 0 ? (
+              <>
+                <div
+                  ref={carouselRef}
+                  onScroll={handleCarouselScroll}
+                  className="flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory rounded-xl bg-gray-100"
+                  style={{
+                    touchAction: "pan-x",
+                    overscrollBehaviorX: "contain",
+                    overscrollBehaviorY: "none",
+                    scrollbarWidth: "none",
+                  }}
+                >
+                  {photos.map((p, i) => (
+                    <div key={p.url} className="relative w-full flex-shrink-0 snap-center h-64">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt="" className="w-full h-full object-contain bg-gray-100" />
+                      <button
+                        onClick={() => removePhoto(i)}
+                        className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center"
+                        aria-label="この写真を削除"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {photos.length > 1 && (
+                  <div className="flex justify-center gap-1.5 mt-2">
+                    {photos.map((p, i) => (
+                      <button
+                        key={p.url}
+                        onClick={() => setCurrentIndex(i)}
+                        aria-label={`${i + 1}枚目を表示`}
+                        className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                          i === currentIndex ? "bg-orange-500" : "bg-gray-300"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <p className="text-xs text-gray-400">
+                    {photos.length}枚選択中(スワイプで切り替え・{currentIndex + 1}枚目を編集中)
+                  </p>
+                  <div className="flex gap-2 flex-shrink-0">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removePhoto(i);
-                      }}
-                      className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs font-semibold text-orange-600 hover:text-orange-700 border border-orange-200 rounded-full px-3 py-1.5"
                     >
-                      ×
+                      ＋ 枚数追加
+                    </button>
+                    <button
+                      onClick={handleReplaceAll}
+                      className="text-xs font-semibold text-gray-500 hover:text-gray-700 border border-gray-200 rounded-full px-3 py-1.5"
+                    >
+                      写真を変更
                     </button>
                   </div>
-                ))}
+                </div>
+              </>
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors border-gray-300 hover:border-gray-400"
+              >
+                <p className="text-sm text-gray-500">タップして写真を選択(複数選択可)</p>
               </div>
             )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
           </div>
 
           {/* 写真が選ばれるまでは、場所・撮影データ入力を表示しない(Photo-First) */}
-          {photos.length > 0 && (
+          {currentPhoto && (
             <>
               {/* STEP2: 撮影場所の設定(写真から自動セット、なければ地図タップ) */}
               <div>
@@ -300,18 +403,18 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
                     2
                   </span>
-                  撮影した場所
+                  撮影した場所{photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
                 </label>
 
-                {checkingExif && (
+                {currentPhoto.exifChecking && (
                   <p className="text-xs text-gray-400 mb-2">写真のExif情報を解析しています...</p>
                 )}
-                {!checkingExif && positionSource === "exif" && (
+                {!currentPhoto.exifChecking && currentPhoto.data.positionSource === "exif" && (
                   <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2 mb-2">
                     写真の位置情報(Exif)から撮影場所を自動セットしました。ズレている場合は地図をタップして修正できます。
                   </p>
                 )}
-                {!checkingExif && !position && (
+                {!currentPhoto.exifChecking && !currentPhoto.data.position && (
                   <p className="text-xs text-gray-500 mb-2">
                     写真に位置情報が見つかりませんでした(SNS保存画像等はExifが失われていることがあります)。地図をタップして「この位置で撮影した」場所を選んでください。
                   </p>
@@ -352,10 +455,9 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   地図をタップ/クリックして「この位置で撮影した」場所を設定・微調整できます
                 </p>
                 <LocationPicker
-                  value={position}
+                  value={currentPhoto.data.position}
                   onChange={(pos) => {
-                    setPosition(pos);
-                    setPositionSource("manual");
+                    updatePhotoData(currentIndex, { position: pos, positionSource: "manual" });
                   }}
                   heightClassName="h-52"
                 />
@@ -367,9 +469,9 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
                     3
                   </span>
-                  撮影設定・機材メモ(任意)
+                  撮影設定・機材メモ(任意){photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
                 </label>
-                {exifAutoFilled && (
+                {currentPhoto.data.autoFilled && (
                   <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2 mb-2">
                     写真のExifから自動入力しました。内容が異なる場合はそのまま編集してください。
                   </p>
@@ -377,43 +479,43 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="text"
-                    value={camera}
-                    onChange={(e) => setCamera(e.target.value)}
+                    value={currentPhoto.data.camera}
+                    onChange={(e) => updatePhotoData(currentIndex, { camera: e.target.value })}
                     placeholder="カメラ機種"
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <input
                     type="text"
-                    value={lens}
-                    onChange={(e) => setLens(e.target.value)}
+                    value={currentPhoto.data.lens}
+                    onChange={(e) => updatePhotoData(currentIndex, { lens: e.target.value })}
                     placeholder="レンズ"
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <input
                     type="text"
-                    value={fNumber}
-                    onChange={(e) => setFNumber(e.target.value)}
+                    value={currentPhoto.data.fNumber}
+                    onChange={(e) => updatePhotoData(currentIndex, { fNumber: e.target.value })}
                     placeholder="F値(例: 2.8)"
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <input
                     type="text"
-                    value={exposureTime}
-                    onChange={(e) => setExposureTime(e.target.value)}
+                    value={currentPhoto.data.exposureTime}
+                    onChange={(e) => updatePhotoData(currentIndex, { exposureTime: e.target.value })}
                     placeholder="シャッタースピード(例: 1/250)"
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <input
                     type="text"
-                    value={iso}
-                    onChange={(e) => setIso(e.target.value)}
+                    value={currentPhoto.data.iso}
+                    onChange={(e) => updatePhotoData(currentIndex, { iso: e.target.value })}
                     placeholder="ISO感度"
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <input
                     type="text"
-                    value={focalLength}
-                    onChange={(e) => setFocalLength(e.target.value)}
+                    value={currentPhoto.data.focalLength}
+                    onChange={(e) => updatePhotoData(currentIndex, { focalLength: e.target.value })}
                     placeholder="焦点距離(例: 35mm)"
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
@@ -422,9 +524,13 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   {TIME_OF_DAY_OPTIONS.map((t) => (
                     <button
                       key={t}
-                      onClick={() => setTimeOfDay(timeOfDay === t ? "" : t)}
+                      onClick={() =>
+                        updatePhotoData(currentIndex, {
+                          timeOfDay: currentPhoto.data.timeOfDay === t ? "" : t,
+                        })
+                      }
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                        timeOfDay === t
+                        currentPhoto.data.timeOfDay === t
                           ? "bg-orange-500 border-orange-500 text-white"
                           : "border-gray-300 text-gray-600 hover:bg-gray-50"
                       }`}
