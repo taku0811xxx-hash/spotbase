@@ -10,7 +10,7 @@ import {
   type PhotoSpotSubjectTag,
   type PhotoSpotTimeOfDay,
 } from "@/lib/types/photoSpot";
-import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
+import { geocodeQuery, reverseGeocode, type GeocodeResult } from "@/lib/geocode";
 import { parseExif } from "@/lib/exifParser";
 import { useAuth } from "@/components/AuthProvider";
 import { Capacitor } from "@capacitor/core";
@@ -34,6 +34,7 @@ type Props = {
 type PhotoData = {
   position: { lat: number; lng: number } | null;
   positionSource: "exif" | "manual" | null;
+  address: string; // 場所名(位置情報から逆ジオコーディングで自動入力、または手動入力・検索結果選択)
   camera: string;
   lens: string;
   fNumber: string;
@@ -55,6 +56,7 @@ function emptyPhotoData(): PhotoData {
   return {
     position: null,
     positionSource: null,
+    address: "",
     camera: "",
     lens: "",
     fNumber: "",
@@ -86,10 +88,8 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
-  const [addressQuery, setAddressQuery] = useState("");
   const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
-  const [address, setAddress] = useState("");
 
   const [accessNote, setAccessNote] = useState("");
   const [subjectTags, setSubjectTags] = useState<PhotoSpotSubjectTag[]>([]);
@@ -172,6 +172,19 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
             return { ...p, exifChecking: false, data };
           })
         );
+
+        // 写真のExifに位置情報があれば、逆ジオコーディングで場所名を推測し
+        // 場所名欄へ自動セットする(ユーザーが既に入力済みの場合は上書きしない)。
+        if (parsed.position) {
+          const placeName = await reverseGeocode(parsed.position.lat, parsed.position.lng);
+          if (placeName) {
+            setPhotos((prev) =>
+              prev.map((p, i) =>
+                i === targetIndex && !p.data.address ? { ...p, data: { ...p.data, address: placeName } } : p
+              )
+            );
+          }
+        }
       })
     );
   }
@@ -232,11 +245,12 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   }
 
   async function handleAddressSearch() {
-    if (!addressQuery.trim()) return;
+    const query = currentPhoto?.data.address.trim();
+    if (!query) return;
     setSearchingAddress(true);
     setError("");
     try {
-      const results = await geocodeQuery(addressQuery);
+      const results = await geocodeQuery(query);
       setAddressResults(results);
     } catch {
       setError("住所検索に失敗しました");
@@ -246,10 +260,24 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   }
 
   function selectAddressResult(result: GeocodeResult) {
-    setAddress(result.displayName);
-    updatePhotoData(currentIndex, { position: { lat: result.lat, lng: result.lng }, positionSource: "manual" });
+    updatePhotoData(currentIndex, {
+      address: result.displayName,
+      position: { lat: result.lat, lng: result.lng },
+      positionSource: "manual",
+    });
     setAddressResults([]);
-    setAddressQuery(result.displayName);
+  }
+
+  // 地図タップ等で手動設定した位置に、まだ場所名が入力されていなければ
+  // 逆ジオコーディングで場所名を自動セットする。
+  async function handleManualPositionChange(index: number, pos: { lat: number; lng: number }) {
+    updatePhotoData(index, { position: pos, positionSource: "manual" });
+    const placeName = await reverseGeocode(pos.lat, pos.lng);
+    if (placeName) {
+      setPhotos((prev) =>
+        prev.map((p, i) => (i === index && !p.data.address ? { ...p, data: { ...p.data, address: placeName } } : p))
+      );
+    }
   }
 
   async function handleSubmit() {
@@ -268,9 +296,9 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     setError("");
     try {
       await createPhotoSpot({
-        name: name.trim() || "無題の写真",
+        name: name.trim() || activeData.address.trim() || "無題の写真",
         description: description.trim() || undefined,
-        address: address.trim() || addressQuery.trim(),
+        address: activeData.address.trim(),
         lat: activeData.position.lat,
         lng: activeData.position.lng,
         accessNote: accessNote.trim() || undefined,
@@ -470,13 +498,14 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </p>
                 )}
 
+                <label className="block text-xs font-semibold text-gray-500 mb-1">場所名</label>
                 <div className="flex gap-2 mb-2">
                   <input
                     type="text"
-                    value={addressQuery}
-                    onChange={(e) => setAddressQuery(e.target.value)}
+                    value={currentPhoto.data.address}
+                    onChange={(e) => updatePhotoData(currentIndex, { address: e.target.value })}
                     onKeyDown={(e) => e.key === "Enter" && handleAddressSearch()}
-                    placeholder="住所・地名で検索(任意)"
+                    placeholder="場所名・住所(位置情報から自動入力されます)"
                     className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <button
@@ -506,9 +535,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                 </p>
                 <LocationPicker
                   value={currentPhoto.data.position}
-                  onChange={(pos) => {
-                    updatePhotoData(currentIndex, { position: pos, positionSource: "manual" });
-                  }}
+                  onChange={(pos) => handleManualPositionChange(currentIndex, pos)}
                   heightClassName="h-52"
                 />
               </div>
