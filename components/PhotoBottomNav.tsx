@@ -13,6 +13,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { Home, Map, PlusCircle, User } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+
+// Capacitorのwebpath(blob: URL等)から実際のFileオブジェクトを取り出す。
+// PhotoUploadModal側のEXIF解析・アップロード処理はFileを前提にしているため。
+async function webPathToFile(webPath: string, fileName: string): Promise<File> {
+  const res = await fetch(webPath);
+  const blob = await res.blob();
+  return new File([blob], fileName, { type: blob.type || "image/jpeg" });
+}
 
 // バー自体の高さ(約64px) + セーフエリア分、コンテンツ側で確保すべき下部余白のクラス。
 // 各ページのスクロール領域の末尾に付与する。
@@ -30,9 +40,30 @@ export default function PhotoBottomNav({ onRequestUpload, onFilesSelected }: Pro
   const pathname = usePathname();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleNewPhotoSpotClick() {
+  async function handleNewPhotoSpotClick() {
     if (!onRequestUpload()) return;
-    // 中間画面を挟まず、即座に端末の写真アルバムを開く
+
+    // アプリ(Capacitor)環境では、<input type="file">だとiOSの仕様で
+    // 「写真を撮影/ライブラリ」の選択肢(アクションシート)が出てしまうため、
+    // Capacitor Cameraプラグインでソースをライブラリに固定して直接開く。
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const photo = await Camera.getPhoto({
+          source: CameraSource.Photos,
+          resultType: CameraResultType.Uri,
+          quality: 90,
+        });
+        if (!photo.webPath) return;
+        const file = await webPathToFile(photo.webPath, `photo-${Date.now()}.jpeg`);
+        onFilesSelected([file]);
+      } catch {
+        // ユーザーがライブラリ選択をキャンセルした場合はここに来る。
+        // 元の画面にとどまるだけでよいので何もしない。
+      }
+      return;
+    }
+
+    // Webブラウザ環境では従来通り<input type="file">を使う
     fileInputRef.current?.click();
   }
 
