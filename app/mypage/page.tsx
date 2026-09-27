@@ -18,6 +18,8 @@ import { buildPhotoSpotRecommendations, mostUsedCamera } from "@/lib/photoSpotRe
 import PhotoHeaderNav from "@/components/PhotoHeaderNav";
 import PhotoBottomNav, { PHOTO_BOTTOM_NAV_SAFE_PADDING_CLASS } from "@/components/PhotoBottomNav";
 import PhotoUploadModal from "@/components/PhotoUploadModal";
+import PhotoSpotDetailModal from "@/components/PhotoSpotDetailModal";
+import LikeSaveButtons from "@/components/LikeSaveButtons";
 import AuthModal from "@/components/AuthModal";
 import ProfileEditModal from "@/components/ProfileEditModal";
 
@@ -36,6 +38,7 @@ export default function MyPage() {
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
   const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
+  const [selectedSpot, setSelectedSpot] = useState<PhotoSpot | null>(null);
   const { displayName, avatarDataUrl, setAvatarFile } = usePhotoProfile(
     photoProfile?.displayName ?? "ゲスト",
     photoProfile?.photoURL
@@ -201,11 +204,11 @@ export default function MyPage() {
               tab === "posts" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
           >
-            撮影履歴・投稿アルバム
+            撮影アルバム
           </button>
           <button
             onClick={() => setTab("saved")}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
               tab === "saved" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
           >
@@ -230,13 +233,17 @@ export default function MyPage() {
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {myPosts.flatMap((spot) =>
                 spot.photoUrls.map((url, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <button
                     key={`${spot.id}-${i}`}
-                    src={url}
-                    alt={spot.name}
-                    className="w-full aspect-square object-cover rounded-lg"
-                  />
+                    onClick={() => setSelectedSpot(spot)}
+                    className="relative aspect-square rounded-lg overflow-hidden"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={spot.name} className="w-full h-full object-cover" />
+                    <div className="absolute bottom-1 right-1">
+                      <LikeSaveButtons spotId={spot.id} url={url} size="sm" stopPropagation />
+                    </div>
+                  </button>
                 ))
               )}
             </div>
@@ -317,6 +324,17 @@ export default function MyPage() {
         <ProfileEditModal
           defaultDisplayName={photoProfile?.displayName ?? "ゲスト"}
           onClose={() => setShowProfileEditModal(false)}
+        />
+      )}
+      {selectedSpot && (
+        <PhotoSpotDetailModal
+          spot={selectedSpot}
+          onClose={() => setSelectedSpot(null)}
+          onUpdated={async () => {
+            const latest = await getAllPhotoSpots();
+            setSpots(latest);
+            setSelectedSpot(latest.find((s) => s.id === selectedSpot.id) ?? null);
+          }}
         />
       )}
     </div>

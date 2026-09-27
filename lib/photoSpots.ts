@@ -13,6 +13,7 @@ import {
   setDoc,
   startAfter,
   Timestamp,
+  updateDoc,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -166,6 +167,45 @@ export async function createPhotoSpot(input: NewPhotoSpotInput): Promise<string>
   }
 
   return spotRef.id;
+}
+
+export type PhotoSpotUpdateInput = {
+  name?: string;
+  description?: string;
+  accessNote?: string;
+  subjectTags?: PhotoSpotSubjectTag[];
+  equipmentTags?: PhotoSpotEquipmentTag[];
+  isFree?: boolean;
+  allowCommercial?: boolean;
+};
+
+// マイページの投稿詳細から、キャプション・タグ等の補足情報のみを更新する
+// (写真・撮影場所・EXIFは投稿後の編集対象外。差し替えたい場合は新規投稿する運用)。
+// firestore.rulesでは投稿者本人(postedBy)のみupdateを許可している。
+export async function updatePhotoSpot(spotId: string, input: PhotoSpotUpdateInput): Promise<void> {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) {
+    throw new Error("ログイン状態が確認できません。再度ログインしてください。");
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (input.name !== undefined) updates.name = input.name;
+  if (input.description !== undefined) updates.description = input.description;
+  if (input.accessNote !== undefined) updates.accessNote = input.accessNote;
+  if (input.subjectTags !== undefined) updates.subjectTags = input.subjectTags;
+  if (input.equipmentTags !== undefined) updates.equipmentTags = input.equipmentTags;
+  if (input.isFree !== undefined) updates.isFree = input.isFree;
+  if (input.allowCommercial !== undefined) updates.allowCommercial = input.allowCommercial;
+  if (input.isFree !== undefined || input.allowCommercial !== undefined) {
+    // licenseTypeはisFree/allowCommercialから導出される表示用バッジのため、
+    // どちらかを変更した場合は既存値との組み合わせがずれないようここでも再計算する。
+    // (呼び出し元は変更後の最終値を両方渡すこと)
+    if (input.isFree !== undefined && input.allowCommercial !== undefined) {
+      updates.licenseType = deriveLicenseType(input.isFree, input.allowCommercial);
+    }
+  }
+
+  await updateDoc(doc(db, PHOTO_SPOTS_COLLECTION, spotId), updates);
 }
 
 type PhotoSpotDoc = Omit<PhotoSpot, "id" | "postedAt"> & { postedAt: Timestamp | null };

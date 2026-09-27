@@ -22,7 +22,9 @@ type Props = {
 
 export default function LikeSaveButtons({ spotId, url, size = "sm", stopPropagation = false }: Props) {
   const { user } = useAuth();
-  const { likeCount, liked, saved, toggleLike, toggleSave } = usePhotoInteractions(photoKey(spotId, url));
+  const { likeCount, liked, saved, saveCount, toggleLike, toggleSave } = usePhotoInteractions(
+    photoKey(spotId, url)
+  );
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const [pulseKey, setPulseKey] = useState<"like" | "save" | null>(null);
@@ -72,6 +74,7 @@ export default function LikeSaveButtons({ spotId, url, size = "sm", stopPropagat
           ) : (
             <Bookmark size={iconPx} strokeWidth={2} className="text-white" />
           )}
+          {saveCount > 0 && <span className="text-[10px] font-semibold text-white pr-0.5">{saveCount}</span>}
         </button>
       </div>
 

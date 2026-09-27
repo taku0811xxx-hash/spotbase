@@ -9,6 +9,7 @@ import { readJson, writeJson } from "@/lib/photoStorage";
 const LIKES_KEY = "kokotore_likes"; // { [photoKey]: number }
 const LIKED_BY_ME_KEY = "kokotore_liked_by_me"; // string[]
 const SAVED_KEY = "kokotore_saved"; // string[]
+const SAVE_COUNTS_KEY = "kokotore_save_counts"; // { [photoKey]: number }
 const EVENT_NAME = "kokotore-interactions-changed";
 
 export function photoKey(spotId: string, url: string): string {
@@ -19,16 +20,19 @@ export function usePhotoInteractions(key: string) {
   const [likeCount, setLikeCount] = useState(0);
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveCount, setSaveCount] = useState(0);
 
   const refresh = useCallback(async () => {
-    const [likes, likedByMe, savedList] = await Promise.all([
+    const [likes, likedByMe, savedList, saveCounts] = await Promise.all([
       readJson<Record<string, number>>(LIKES_KEY, {}),
       readJson<string[]>(LIKED_BY_ME_KEY, []),
       readJson<string[]>(SAVED_KEY, []),
+      readJson<Record<string, number>>(SAVE_COUNTS_KEY, {}),
     ]);
     setLikeCount(likes[key] ?? 0);
     setLiked(likedByMe.includes(key));
     setSaved(savedList.includes(key));
+    setSaveCount(saveCounts[key] ?? 0);
   }, [key]);
 
   useEffect(() => {
@@ -54,14 +58,19 @@ export function usePhotoInteractions(key: string) {
   }, [key]);
 
   const toggleSave = useCallback(async () => {
-    const savedList = await readJson<string[]>(SAVED_KEY, []);
+    const [savedList, saveCounts] = await Promise.all([
+      readJson<string[]>(SAVED_KEY, []),
+      readJson<Record<string, number>>(SAVE_COUNTS_KEY, {}),
+    ]);
     const isSaved = savedList.includes(key);
     const next = isSaved ? savedList.filter((k) => k !== key) : [...savedList, key];
-    await writeJson(SAVED_KEY, next);
+    const nextCount = Math.max(0, (saveCounts[key] ?? 0) + (isSaved ? -1 : 1));
+    saveCounts[key] = nextCount;
+    await Promise.all([writeJson(SAVED_KEY, next), writeJson(SAVE_COUNTS_KEY, saveCounts)]);
     window.dispatchEvent(new Event(EVENT_NAME));
   }, [key]);
 
-  return { likeCount, liked, saved, toggleLike, toggleSave };
+  return { likeCount, liked, saved, saveCount, toggleLike, toggleSave };
 }
 
 // マイページ/保存一覧で使う: 保存済みキー(spotId:url)の一覧を取得する
