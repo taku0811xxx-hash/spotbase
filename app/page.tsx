@@ -138,6 +138,7 @@ export default function Home() {
 
   // 「ここトレ！」(photoモード)専用: スポット投稿モーダルの開閉状態
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
+  const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
   const [showAuthModal, setShowAuthModal] = useState(false);
   // 「ここトレ！」(photoモード)専用: "photo_spots"コレクションのデータ(pro向けpinsとは別管理)
   const [photoSpots, setPhotoSpots] = useState<PhotoSpot[]>([]);
@@ -1183,16 +1184,21 @@ export default function Home() {
           loadingMore={loadingMorePhotoSpots}
         />
         <PhotoBottomNav
-          onNewPhotoSpot={() => {
+          onRequestUpload={() => {
             if (!user) {
               setShowAuthModal(true);
-              return;
+              return false;
             }
+            return true;
+          }}
+          onFilesSelected={(files) => {
+            setPhotoUploadInitialFiles(files);
             setShowPhotoUploadModal(true);
           }}
         />
         {showPhotoUploadModal && (
           <PhotoUploadModal
+            initialFiles={photoUploadInitialFiles}
             onClose={() => setShowPhotoUploadModal(false)}
             onCreated={refetchPhotoSpots}
           />

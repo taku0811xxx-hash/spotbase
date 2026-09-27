@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { createPhotoSpot } from "@/lib/photoSpots";
 import {
@@ -22,6 +22,9 @@ const TIME_OF_DAY_OPTIONS: PhotoSpotTimeOfDay[] = ["早朝", "昼", "夕景", "�
 type Props = {
   onClose: () => void;
   onCreated: () => void; // 投稿完了後、呼び出し元でギャラリーを再取得させるためのコールバック
+  // 呼び出し元(フッターの「投稿」)で既に端末の写真アルバムから選択済みの画像。
+  // 指定された場合、モーダル表示直後にSTEP1の選択処理へ自動投入する。
+  initialFiles?: File[];
 };
 
 type PreviewPhoto = {
@@ -33,7 +36,7 @@ type PreviewPhoto = {
 // フローにする: STEP1で写真を選ぶと、その写真のEXIF GPS情報があれば撮影場所を
 // 自動セットし、なければ「この位置で撮影した」と地図タップで手動設定する
 // STEP2に進む。スポット名等はあくまで写真に添える補足情報という位置づけ。
-export default function PhotoUploadModal({ onClose, onCreated }: Props) {
+export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: Props) {
   const { photoProfile } = useAuth();
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -114,6 +117,15 @@ export default function PhotoUploadModal({ onClose, onCreated }: Props) {
       }
     }
   }
+
+  // フッターの「投稿」タップで既に選択済みの画像がある場合、モーダルを開いた
+  // 直後に自動的に取り込む(STEP1のクリック操作を待たない)
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0) {
+      addFiles(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function removePhoto(index: number) {
     setPhotos((prev) => {

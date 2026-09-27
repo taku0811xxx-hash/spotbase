@@ -35,6 +35,7 @@ export default function MyPage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
+  const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
   const { displayName, avatarDataUrl, setAvatarFile } = usePhotoProfile(
     photoProfile?.displayName ?? "ゲスト",
     photoProfile?.photoURL
@@ -291,11 +292,15 @@ export default function MyPage() {
       </div>
 
       <PhotoBottomNav
-        onNewPhotoSpot={() => {
+        onRequestUpload={() => {
           if (!user) {
             setShowAuthModal(true);
-            return;
+            return false;
           }
+          return true;
+        }}
+        onFilesSelected={(files) => {
+          setPhotoUploadInitialFiles(files);
           setShowPhotoUploadModal(true);
         }}
       />
@@ -303,6 +308,7 @@ export default function MyPage() {
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
       {showPhotoUploadModal && (
         <PhotoUploadModal
+          initialFiles={photoUploadInitialFiles}
           onClose={() => setShowPhotoUploadModal(false)}
           onCreated={refetchPhotoSpots}
         />

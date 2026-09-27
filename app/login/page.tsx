@@ -201,7 +201,13 @@ export default function LoginPage() {
         </div>
       </div>
       {APP_MODE === "photo" && (
-        <PhotoBottomNav onNewPhotoSpot={() => router.push("/")} />
+        <PhotoBottomNav
+          onRequestUpload={() => {
+            router.push("/");
+            return false;
+          }}
+          onFilesSelected={() => {}}
+        />
       )}
     </div>
   );

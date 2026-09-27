@@ -163,7 +163,13 @@ export default function PhotoSignUpPage() {
           </form>
         </div>
       </div>
-      <PhotoBottomNav onNewPhotoSpot={() => router.push("/")} />
+      <PhotoBottomNav
+        onRequestUpload={() => {
+          router.push("/");
+          return false;
+        }}
+        onFilesSelected={() => {}}
+      />
     </div>
   );
 }

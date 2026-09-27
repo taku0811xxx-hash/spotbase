@@ -29,6 +29,7 @@ export default function PhotoSpotsMapPage() {
   // 写真をクリックした際に地図をその撮影場所へflyToし、該当ピンを強調表示するためのID
   const [focusedSpotId, setFocusedSpotId] = useState<string | undefined>(undefined);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
+  const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // /map?spot=<id> で遷移してきた場合、そのスポットを初期フォーカスにする。
@@ -99,16 +100,21 @@ export default function PhotoSpotsMapPage() {
         )}
       </div>
       <PhotoBottomNav
-        onNewPhotoSpot={() => {
+        onRequestUpload={() => {
           if (!user) {
             setShowAuthModal(true);
-            return;
+            return false;
           }
+          return true;
+        }}
+        onFilesSelected={(files) => {
+          setPhotoUploadInitialFiles(files);
           setShowPhotoUploadModal(true);
         }}
       />
       {showPhotoUploadModal && (
         <PhotoUploadModal
+          initialFiles={photoUploadInitialFiles}
           onClose={() => setShowPhotoUploadModal(false)}
           onCreated={refetchPhotoSpots}
         />
