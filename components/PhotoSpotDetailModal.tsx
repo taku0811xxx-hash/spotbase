@@ -43,7 +43,9 @@ export default function PhotoSpotDetailModal({ spot, onClose, onUpdated }: Props
     setError("");
     try {
       await updatePhotoSpot(spot.id, {
-        name: name.trim() || spot.address.trim() || "無題の写真",
+        // タイトル未入力時は場所名を代替表示に使う。場所名も無ければ空欄のままにする
+        // (「無題の写真」等の固定文言は表示しない)。
+        name: name.trim() || spot.address.trim(),
         description: description.trim(),
         accessNote: accessNote.trim(),
         subjectTags,
