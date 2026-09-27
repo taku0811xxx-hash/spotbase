@@ -35,7 +35,10 @@ export default function MyPage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
-  const { displayName, avatarDataUrl, setAvatarFile } = usePhotoProfile(photoProfile?.displayName ?? "ゲスト");
+  const { displayName, avatarDataUrl, setAvatarFile } = usePhotoProfile(
+    photoProfile?.displayName ?? "ゲスト",
+    photoProfile?.photoURL
+  );
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
 

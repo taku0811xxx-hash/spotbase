@@ -45,7 +45,9 @@ async function fileToSmallDataUrl(file: File): Promise<string> {
 }
 
 // defaultDisplayName: 上書きが未設定の場合に使う、実プロフィール(profile.name)由来の初期値
-export function usePhotoProfile(defaultDisplayName: string) {
+// defaultAvatarUrl: 同様に、ローカルでアイコンを未設定の場合に使う
+// photoProfile.photoURL(Firebase Authのuser.photoURLを引き継いだもの)由来の初期値
+export function usePhotoProfile(defaultDisplayName: string, defaultAvatarUrl?: string | null) {
   const [override, setOverrideState] = useState<ProfileOverride>({});
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export function usePhotoProfile(defaultDisplayName: string) {
   }, []);
 
   const displayName = override.displayName?.trim() || defaultDisplayName;
-  const avatarDataUrl = override.avatarDataUrl ?? null;
+  const avatarDataUrl = override.avatarDataUrl ?? defaultAvatarUrl ?? null;
 
   const setDisplayName = useCallback(async (name: string) => {
     const current = await readOverride();

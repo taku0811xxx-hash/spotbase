@@ -14,12 +14,16 @@ export type PhotoUserProfile = {
   uid: string;
   email: string;
   displayName: string;
+  // Firebase Authのuser.photoURL(Google等の外部プロバイダ由来)を引き継いだもの。
+  // 現状メール+パスワードのみのためほぼnullだが、将来の拡張に備えて保持する。
+  photoURL: string | null;
   createdAt: string | null;
 };
 
 type PhotoUserDoc = {
   email: string;
   displayName: string;
+  photoURL?: string | null;
   createdAt: Timestamp | null;
 };
 
@@ -57,10 +61,17 @@ export async function signUpPhotoUser(
   await setDoc(doc(db, PHOTO_USERS_COLLECTION, credential.user.uid), {
     email,
     displayName: trimmedName,
+    photoURL: credential.user.photoURL ?? null,
     createdAt: serverTimestamp(),
   });
 
-  return { uid: credential.user.uid, email, displayName: trimmedName, createdAt: null };
+  return {
+    uid: credential.user.uid,
+    email,
+    displayName: trimmedName,
+    photoURL: credential.user.photoURL ?? null,
+    createdAt: null,
+  };
 }
 
 // HeaderNav/UserStatusPanelはSpotBase本体のUserProfile(組織/分類ベース)を
@@ -88,6 +99,7 @@ export async function getPhotoUserProfile(uid: string): Promise<PhotoUserProfile
     uid,
     email: data.email,
     displayName: data.displayName,
+    photoURL: data.photoURL ?? null,
     createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
   };
 }
@@ -97,29 +109,54 @@ function displayNameFromEmail(email: string | null | undefined): string {
   return email?.split("@")[0] || "ゲスト";
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // SpotBase本体(pro)で既にFirebase Authアカウントを持つユーザーが「ここトレ！」に
 // 来た場合、"photo_users"に自分のプロフィールドキュメントがまだ存在しないことがある
 // (proとphotoは同じFirebase Authユーザーを共有するが、プロフィールコレクションは
 // 完全に分離しているため)。この場合にログインをエラーにせず、既存のFirebase Auth
-// ユーザー情報(表示名・メールアドレス)から"photo_users/{uid}"を自動生成し、
+// ユーザー情報(表示名・メールアドレス・photoURL)から"photo_users/{uid}"を自動生成し、
 // そのままここトレ！を使い始められるようにする。
-// setDoc(Firestore書き込み)がセキュリティルール等で失敗した場合は、呼び出し元
-// (AuthProvider)がエラー内容をトーストで表示できるよう、そのまま例外を投げる。
+//
+// ネットワークの瞬断やFirestoreへの初回接続タイミング等による一時的な失敗で
+// 「アカウントのプロフィール情報が見つかりませんでした」に直行してしまわないよう、
+// 生成処理自体を短い間隔を空けて最大3回まで自動リトライする。それでも失敗した
+// 場合のみ、呼び出し元(AuthProvider)がエラー内容をトーストで表示できるよう
+// そのまま例外を投げる。
 export async function getOrCreatePhotoUserProfile(user: User): Promise<PhotoUserProfile> {
-  const existing = await getPhotoUserProfile(user.uid);
-  if (existing) return existing;
+  const RETRY_DELAYS_MS = [0, 500, 1500];
+  let lastError: unknown = null;
 
-  const displayName = user.displayName || displayNameFromEmail(user.email) || "ゲスト";
-  const email = user.email || "";
+  for (const delay of RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      console.warn(`[Auth] photo_usersの取得・生成に失敗したため${delay}ms後に再試行します:`, lastError);
+      await wait(delay);
+    }
+    try {
+      const existing = await getPhotoUserProfile(user.uid);
+      if (existing) return existing;
 
-  await setDoc(doc(db, PHOTO_USERS_COLLECTION, user.uid), {
-    email,
-    displayName,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+      const displayName = user.displayName || displayNameFromEmail(user.email) || "ゲスト";
+      const email = user.email || "";
+      const photoURL = user.photoURL ?? null;
 
-  console.log("[Auth] photo_users generated for:", user.uid);
+      await setDoc(doc(db, PHOTO_USERS_COLLECTION, user.uid), {
+        email,
+        displayName,
+        photoURL,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-  return { uid: user.uid, email, displayName, createdAt: null };
+      console.log("[Auth] photo_users generated for:", user.uid);
+
+      return { uid: user.uid, email, displayName, photoURL, createdAt: null };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 }
