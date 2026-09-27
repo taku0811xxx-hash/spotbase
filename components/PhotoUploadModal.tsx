@@ -13,6 +13,8 @@ import {
 import { geocodeQuery, type GeocodeResult } from "@/lib/geocode";
 import { parseExif } from "@/lib/exifParser";
 import { useAuth } from "@/components/AuthProvider";
+import { Capacitor } from "@capacitor/core";
+import { pickPhotosFromLibrary } from "@/lib/nativePhotoPicker";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む(app/page.tsxと同様)
 const LocationPicker = dynamic(() => import("@/components/LocationPicker"), { ssr: false });
@@ -79,6 +81,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const fileInputRef = useRef<HTMLInputElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
   const suppressScrollSync = useRef(false);
+  const replaceOnNextPickRef = useRef(false);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -109,20 +112,31 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     );
   }
 
-  // 新しく選んだ写真を追加する(既存の写真は保持したまま末尾に追加)。
+  // 新しく選んだ写真を取り込む。既定では既存の写真を保持したまま末尾に追加するが、
+  // replaceExisting指定時は現在の選択を全て破棄してから取り込む(「写真を変更」用)。
   // 各写真ごとに個別にExifを解析し、対応するインデックスのデータだけを更新する。
-  async function addFiles(files: FileList | File[]) {
+  async function addFiles(files: FileList | File[], options?: { replaceExisting?: boolean }) {
     const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
 
-    const startIndex = photos.length;
     const next: PreviewPhoto[] = imageFiles.map((file) => ({
       file,
       url: URL.createObjectURL(file),
       exifChecking: true,
       data: emptyPhotoData(),
     }));
-    setPhotos((prev) => [...prev, ...next]);
+    // setPhotosの更新関数内でstartIndexを確定させる(stateのクロージャの古さに
+    // 依存しないようにするため。特にreplaceExisting時はここで確実に0になる)。
+    let startIndex = 0;
+    setPhotos((prev) => {
+      if (options?.replaceExisting) {
+        prev.forEach((p) => URL.revokeObjectURL(p.url));
+        startIndex = 0;
+        return next;
+      }
+      startIndex = prev.length;
+      return [...prev, ...next];
+    });
     // 新しく追加した写真(の先頭)をファーストビューに表示する
     setCurrentIndex(startIndex);
 
@@ -204,11 +218,16 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     setCurrentIndex((prev) => Math.max(0, Math.min(prev, photos.length - 2)));
   }
 
-  // 「写真を変更」: 現在の選択を全て破棄し、新たに選び直す
-  function handleReplaceAll() {
-    photos.forEach((p) => URL.revokeObjectURL(p.url));
-    setPhotos([]);
-    setCurrentIndex(0);
+  // 「＋枚数追加」「写真を変更」ボタン: アプリ(Capacitor)環境では複数選択対応の
+  // FilePickerを直接開き、Webブラウザ環境では従来通り<input type="file">を開く。
+  // replaceExisting指定時は取り込み時に既存の選択を破棄する(「写真を変更」用)。
+  async function handleOpenPicker(options?: { replaceExisting?: boolean }) {
+    if (Capacitor.isNativePlatform()) {
+      const files = await pickPhotosFromLibrary();
+      if (files.length > 0) await addFiles(files, options);
+      return;
+    }
+    replaceOnNextPickRef.current = Boolean(options?.replaceExisting);
     fileInputRef.current?.click();
   }
 
@@ -359,13 +378,13 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </p>
                   <div className="flex gap-2 flex-shrink-0">
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => handleOpenPicker()}
                       className="text-xs font-semibold text-orange-600 hover:text-orange-700 border border-orange-200 rounded-full px-3 py-1.5"
                     >
                       ＋ 枚数追加
                     </button>
                     <button
-                      onClick={handleReplaceAll}
+                      onClick={() => handleOpenPicker({ replaceExisting: true })}
                       className="text-xs font-semibold text-gray-500 hover:text-gray-700 border border-gray-200 rounded-full px-3 py-1.5"
                     >
                       写真を変更
@@ -375,7 +394,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
               </>
             ) : (
               <div
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => handleOpenPicker()}
                 className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors border-gray-300 hover:border-gray-400"
               >
                 <p className="text-sm text-gray-500">タップして写真を選択(複数選択可)</p>
@@ -388,7 +407,8 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
               multiple
               className="hidden"
               onChange={(e) => {
-                if (e.target.files) addFiles(e.target.files);
+                if (e.target.files) addFiles(e.target.files, { replaceExisting: replaceOnNextPickRef.current });
+                replaceOnNextPickRef.current = false;
                 e.target.value = "";
               }}
             />

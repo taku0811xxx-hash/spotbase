@@ -24,6 +24,7 @@
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
     "@capacitor/preferences": "^8.0.1",
+    "@capawesome/capacitor-file-picker": "^8.1.0",
     "@turf/nearest-point-on-line": "^7.4.0",
     "@turf/turf": "^7.4.0",
     "capacitor-native-settings": "^8.2.0",
