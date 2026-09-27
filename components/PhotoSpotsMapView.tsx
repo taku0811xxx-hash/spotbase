@@ -7,7 +7,7 @@
 // 狭いエリアに写真ピンが密集するとポップアップが押し合って選べなくなるため、
 // react-leaflet-cluster(内部でleaflet.markercluster)でクラスタリングし、
 // ズームインすると自動的に個別ピンへ分解される。
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import Link from "next/link";
 import { MapContainer, TileLayer, Marker, Popup, ZoomControl, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
@@ -47,6 +47,48 @@ type Props = {
   onMarkerClick?: (spotId: string) => void;
 };
 
+const TOKYO_STATION: [number, number] = [35.6812, 139.7671];
+
+// ピンが1つも無い場合のデフォルト中心・ズーム(広域表示)
+const EMPTY_MAP_ZOOM = 11;
+// ピンが密集しているエリアを中心に表示する際のズーム(概ね半径20km程度が収まる値)
+const DENSITY_FOCUSED_ZOOM = 11;
+
+// 投稿ピンの分布から、最も密集しているエリアの重心を計算する。
+// 経度・緯度とも約0.2度(概ね20km四方)刻みのグリッドでビニングし、
+// 最も件数の多いセル内の平均座標を「重心」として採用する簡易クラスタリング。
+function computeDensityCenter(spots: PhotoSpot[]): [number, number] | null {
+  if (spots.length === 0) return null;
+
+  const CELL_SIZE_DEG = 0.2;
+  const bins = new Map<string, { lat: number; lng: number }[]>();
+  for (const s of spots) {
+    const key = `${Math.floor(s.lat / CELL_SIZE_DEG)}:${Math.floor(s.lng / CELL_SIZE_DEG)}`;
+    const bin = bins.get(key);
+    if (bin) bin.push({ lat: s.lat, lng: s.lng });
+    else bins.set(key, [{ lat: s.lat, lng: s.lng }]);
+  }
+
+  let densestBin: { lat: number; lng: number }[] = [];
+  for (const bin of bins.values()) {
+    if (bin.length > densestBin.length) densestBin = bin;
+  }
+
+  const lat = densestBin.reduce((sum, p) => sum + p.lat, 0) / densestBin.length;
+  const lng = densestBin.reduce((sum, p) => sum + p.lng, 0) / densestBin.length;
+  return [lat, lng];
+}
+
+// MapContainer配下でLeafletのMapインスタンスを取得し、外側(このファイルの
+// マーカーclickハンドラ)から参照できるようrefへ格納するためだけの子コンポーネント。
+function MapInstanceCapture({ mapRef }: { mapRef: MutableRefObject<L.Map | null> }) {
+  const map = useMap();
+  useEffect(() => {
+    mapRef.current = map;
+  }, [map, mapRef]);
+  return null;
+}
+
 // ポップアップに表示する主要な撮影設定(F値/SS/ISO)を短い文字列に整形する
 function formatSettings(spot: PhotoSpot): string | null {
   const exif = spot.exif;
@@ -72,9 +114,12 @@ function FlyToFocusedSpot({ spots, focusedSpotId }: { spots: PhotoSpot[]; focuse
 }
 
 export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick }: Props) {
-  const center: [number, number] =
-    spots.length > 0 ? [spots[0].lat, spots[0].lng] : [35.6812, 139.7671]; // 東京駅付近をデフォルト中心に
+  // 初期表示: ピンが1つも無ければ東京駅付近を広域表示、ある場合は最も密集している
+  // エリアの重心を中心に、半径約20km程度が収まるズームで表示する。
+  const center = computeDensityCenter(spots) ?? TOKYO_STATION;
+  const initialZoom = spots.length > 0 ? DENSITY_FOCUSED_ZOOM : EMPTY_MAP_ZOOM;
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
+  const mapRef = useRef<L.Map | null>(null);
 
   // フォーカス対象のピンが決まったら、移動後にポップアップも自動で開く
   useEffect(() => {
@@ -88,7 +133,7 @@ export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick 
   return (
     <MapContainer
       center={center}
-      zoom={11}
+      zoom={initialZoom}
       className="w-full h-full"
       scrollWheelZoom
       zoomControl={false}
@@ -100,6 +145,7 @@ export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick 
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      <MapInstanceCapture mapRef={mapRef} />
       <FlyToFocusedSpot spots={spots} focusedSpotId={focusedSpotId} />
       {/* 近接ピンの自動集約: 一定ズーム未満では複数ピンを「N件」の丸いクラスタにまとめ、
           ズームインすると自動的に個別ピンへ分解される */}
@@ -117,7 +163,16 @@ export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick 
                 markerRefs.current[spot.id] = m;
               }}
               eventHandlers={{
-                click: () => onMarkerClick?.(spot.id),
+                // ピンタップ時、その位置が画面中央に来るようスムーズに移動する。
+                // 呼び出し元がfocusedSpotIdを渡していない場合(例: マイページの
+                // マイ撮影マップ)でも動くよう、ここで直接flyToする。
+                click: () => {
+                  const map = mapRef.current;
+                  if (map) {
+                    map.flyTo([spot.lat, spot.lng], Math.max(map.getZoom(), 16), { duration: 0.8 });
+                  }
+                  onMarkerClick?.(spot.id);
+                },
               }}
             >
               <Popup>
