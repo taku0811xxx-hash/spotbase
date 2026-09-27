@@ -313,8 +313,8 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   }
 
   return (
-    <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
+    <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4 overflow-x-hidden">
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden shadow-xl">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-2xl">
           <h2 className="text-lg font-bold text-gray-900">写真を投稿</h2>
           <button
@@ -326,35 +326,65 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
           </button>
         </div>
 
-        <div className="p-5 pb-24 space-y-6">
+        <div className="p-5 pb-24 space-y-6 w-full max-w-full overflow-x-hidden" style={{ touchAction: "pan-y" }}>
           {/* 写真プレビュー: 選択済みならカルーセルをファーストビューに直接表示する */}
-          <div>
+          <div className="w-full max-w-full">
             {photos.length > 0 ? (
               <>
-                <div
-                  ref={carouselRef}
-                  onScroll={handleCarouselScroll}
-                  className="flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory rounded-xl bg-gray-100"
-                  style={{
-                    touchAction: "pan-x",
-                    overscrollBehaviorX: "contain",
-                    overscrollBehaviorY: "none",
-                    scrollbarWidth: "none",
-                  }}
-                >
-                  {photos.map((p, i) => (
-                    <div key={p.url} className="relative w-full flex-shrink-0 snap-center h-64">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.url} alt="" className="w-full h-full object-contain bg-gray-100" />
-                      <button
-                        onClick={() => removePhoto(i)}
-                        className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center"
-                        aria-label="この写真を削除"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                <div className="relative w-full max-w-full">
+                  <div
+                    ref={carouselRef}
+                    onScroll={handleCarouselScroll}
+                    className="flex w-full max-w-full overflow-x-auto overflow-y-hidden snap-x snap-mandatory rounded-xl bg-gray-100"
+                    style={{
+                      touchAction: "pan-x",
+                      overscrollBehaviorX: "contain",
+                      overscrollBehaviorY: "none",
+                      scrollbarWidth: "none",
+                    }}
+                  >
+                    {photos.map((p, i) => (
+                      <div key={p.url} className="relative w-full min-w-0 flex-shrink-0 snap-center h-64">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={p.url}
+                          alt=""
+                          className="block w-full h-full object-contain bg-gray-100"
+                        />
+                        <button
+                          onClick={() => removePhoto(i)}
+                          className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center"
+                          aria-label="この写真を削除"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 前後の写真へ切り替える左右矢印(2枚目以降が存在する場合のみ表示) */}
+                  {photos.length > 1 && (
+                    <>
+                      {currentIndex > 0 && (
+                        <button
+                          onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+                          aria-label="前の写真"
+                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg"
+                        >
+                          ‹
+                        </button>
+                      )}
+                      {currentIndex < photos.length - 1 && (
+                        <button
+                          onClick={() => setCurrentIndex((i) => Math.min(photos.length - 1, i + 1))}
+                          aria-label="次の写真"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg"
+                        >
+                          ›
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {photos.length > 1 && (
