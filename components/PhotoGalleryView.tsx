@@ -12,6 +12,7 @@ import LikeSaveButtons from "@/components/LikeSaveButtons";
 import { PHOTO_BOTTOM_NAV_SAFE_PADDING_CLASS } from "@/components/PhotoBottomNav";
 import { getLicenseBadges, canDownloadFree } from "@/lib/photoSpotLicense";
 import { Download } from "lucide-react";
+import AroundLocations from "@/components/AroundLocations";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む。
 // pro向けのcomponents/Map.tsxとは別の、photoSpot専用の軽量な地図コンポーネント。
@@ -393,6 +394,8 @@ export default function PhotoGalleryView({
                     </p>
                   )}
                 </div>
+
+                <AroundLocations spotId={selected.spot.id} lat={selected.spot.lat} lng={selected.spot.lng} />
 
                 {/* 🚗 周辺の駐車場・アクセス */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 flex-shrink-0">

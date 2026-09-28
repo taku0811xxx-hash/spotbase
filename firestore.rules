@@ -97,6 +97,24 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    match /photo_quick_memos/{docId} {
+      // 「ここトレ！」の自分用クイックメモ(パーキング/カフェの打刻)。本人だけが読み書きできる。
+      allow read, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type in ['parking', 'cafe'];
+      allow update: if false;
+    }
+
+    match /photo_around_locations/{docId} {
+      // スポットの周辺情報(駐車場・カフェ)。個人を特定できる項目を持たない匿名データで、
+      // 誰でも閲覧でき、ログインユーザーが作成のみ可能(更新・削除は不可)。
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['spotId', 'type', 'lat', 'lng', 'createdAt'])
+        && request.resource.data.type in ['parking', 'cafe'];
+      allow update, delete: if false;
+    }
+
     match /photo_spots/{spotId} {
       // 「ここトレ！」専用の撮影スポット投稿。組織非依存のパブリックな写真共有として、
       // 未ログインのゲストを含め誰でも閲覧・投稿でき、編集/削除は投稿者本人のみ可能。

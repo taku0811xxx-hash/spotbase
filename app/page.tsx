@@ -38,6 +38,7 @@ import SearchLocationPanel from "@/components/SearchLocationPanel";
 import Logo from "@/components/Logo";
 import HeaderNav from "@/components/HeaderNav";
 import PhotoGalleryView from "@/components/PhotoGalleryView";
+import QuickMemoButton from "@/components/QuickMemoButton";
 import PhotoUploadModal from "@/components/PhotoUploadModal";
 import AuthModal from "@/components/AuthModal";
 import PhotoHeaderNav from "@/components/PhotoHeaderNav";
@@ -1175,6 +1176,7 @@ export default function Home() {
         <div className="app-header relative z-[9999] bg-gradient-to-r from-blue-500 to-indigo-600 flex-shrink-0">
           <PhotoHeaderNav />
         </div>
+        <QuickMemoButton onRequestLogin={() => setShowAuthModal(true)} />
         <PhotoGalleryView
           spots={filterVisibleSpots(photoSpots, user?.uid)}
           loading={loadingPhotoSpots}

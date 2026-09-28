@@ -5,6 +5,7 @@
 // Step3: 機材チェックリスト → Step4: タイムスケジュール+Googleマップナビ。
 import { useEffect, useMemo, useState } from "react";
 import { Calendar, Camera, CheckSquare, Clock, ChevronLeft, Navigation, Square } from "lucide-react";
+import AroundLocations from "@/components/AroundLocations";
 import { useAuth } from "@/components/AuthProvider";
 import { getAllPhotoSpots, getPhotoSpotPhotos, filterVisibleSpots } from "@/lib/photoSpots";
 import { useSavedPhotoKeys } from "@/lib/hooks/usePhotoInteractions";
@@ -257,6 +258,7 @@ export default function PlanView() {
             ))}
             <p className="text-[10px] text-gray-400">現地への移動時間を考慮し、余裕を持って出発してください。</p>
           </div>
+          <AroundLocations spotId={selected.id} lat={selected.lat} lng={selected.lng} />
           <a
             href={navUrl(selected)}
             target="_blank"

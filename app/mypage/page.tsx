@@ -24,6 +24,7 @@ import PhotoSpotDetailModal from "@/components/PhotoSpotDetailModal";
 import LikeSaveButtons from "@/components/LikeSaveButtons";
 import AuthModal from "@/components/AuthModal";
 import ProfileEditModal from "@/components/ProfileEditModal";
+import QuickMemoList from "@/components/QuickMemoList";
 import FeedbackModal from "@/components/FeedbackModal";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
@@ -36,7 +37,7 @@ export default function MyPage() {
 
   const [spots, setSpots] = useState<PhotoSpot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"posts" | "saved" | "map">("posts");
+  const [tab, setTab] = useState<"posts" | "saved" | "map" | "memo">("posts");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -228,10 +229,20 @@ export default function MyPage() {
           >
             マイ撮影マップ
           </button>
+          <button
+            onClick={() => setTab("memo")}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+              tab === "memo" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            自分メモ
+          </button>
         </div>
 
         {loading ? (
           <p className="text-sm text-gray-400 text-center py-10">読み込み中...</p>
+        ) : tab === "memo" ? (
+          <QuickMemoList />
         ) : tab === "posts" ? (
           myPosts.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-10">まだ投稿がありません</p>
