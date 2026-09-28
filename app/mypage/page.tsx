@@ -6,6 +6,7 @@
 // pro向けのlib/pins.tsには一切依存しない。
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
@@ -242,6 +243,14 @@ export default function MyPage() {
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={photo.url} alt={photo.locationName || spot.name} className="w-full h-full object-cover" />
+                    {spot.visibility === "private" && (
+                      <div
+                        className="absolute top-1 left-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center"
+                        title="自分のみ(非公開)"
+                      >
+                        <Lock size={11} strokeWidth={2} />
+                      </div>
+                    )}
                     <div className="absolute bottom-1 right-1">
                       <LikeSaveButtons spotId={spot.id} url={photo.url} size="sm" stopPropagation />
                     </div>

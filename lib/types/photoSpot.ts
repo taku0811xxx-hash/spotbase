@@ -69,10 +69,16 @@ export type PhotoSpotPhotoItem = {
   otherInfo?: string; // 例: "トイレあり、駅から徒歩10分"
 };
 
+// 公開範囲。private: 自分だけの撮影ログ・備忘録(他ユーザーの地図・検索には
+// 一切表示しない)/ public: みんなの検索地図にも表示する。
+// このフィールドが存在しない旧データはpublic相当として扱う(後方互換)。
+export type PhotoSpotVisibility = "private" | "public";
+
 export type PhotoSpot = {
   id: string;
   name: string; // スポット名・おすすめの撮影ポイント
   description?: string; // 説明・構図のコツなど
+  visibility?: PhotoSpotVisibility;
   // 以下4項目(address/lat/lng/photoUrls)と cameraGear/exif は、投稿の代表値
   // (先頭の写真のデータ)を保持する後方互換フィールド。地図のピン配置・
   // クラスタリング・ギャラリーのサムネイル表示など、投稿単位で1組の位置/

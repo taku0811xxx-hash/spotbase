@@ -26,6 +26,24 @@ const spotIcon = L.icon({
   popupAnchor: [1, -34],
 });
 
+// 非公開(自分のみ)の投稿のピン。マイページの「マイ撮影マップ」で自分の
+// 非公開メモと公開投稿を見分けられるよう、鍵マークを重ねたアイコンにする。
+const privateSpotIcon = L.divIcon({
+  className: "",
+  html: `<div style="position: relative; width: 25px; height: 41px;">
+    <img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png" style="width: 25px; height: 41px;" />
+    <div style="
+      position: absolute; top: -3px; right: -5px; width: 16px; height: 16px;
+      background: #374151; border-radius: 9999px; display: flex;
+      align-items: center; justify-content: center; border: 2px solid white;
+      font-size: 9px; line-height: 1;
+    ">🔒</div>
+  </div>`,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+});
+
 // 選択中(フォーカス中)のピンを見分けやすくする強調スタイル
 const activeSpotIcon = L.divIcon({
   className: "",
@@ -276,7 +294,7 @@ export default function PhotoSpotsMapView({
             <Marker
               key={spot.id}
               position={[spot.lat, spot.lng]}
-              icon={isFocused ? activeSpotIcon : spotIcon}
+              icon={isFocused ? activeSpotIcon : spot.visibility === "private" ? privateSpotIcon : spotIcon}
               ref={(m) => {
                 markerRefs.current[spot.id] = m;
               }}
@@ -303,7 +321,10 @@ export default function PhotoSpotsMapView({
                       className="w-full h-24 object-cover rounded-md mb-1.5"
                     />
                   )}
-                  <p className="text-sm font-semibold text-gray-900 truncate">{spot.name}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {spot.visibility === "private" && "🔒 "}
+                    {spot.name}
+                  </p>
                   {settings && <p className="text-xs text-gray-500">{settings}</p>}
                   <Link
                     href={`/?spot=${spot.id}`}

@@ -28,6 +28,7 @@ import type {
   PhotoSpotLicenseType,
   PhotoSpotPhotoItem,
   PhotoSpotSubjectTag,
+  PhotoSpotVisibility,
 } from "./types/photoSpot";
 import { DUMMY_PHOTO_SPOTS } from "./dummyPhotoSpots";
 
@@ -55,6 +56,9 @@ export type NewPhotoSpotInput = {
   name: string;
   description?: string;
   photos: NewPhotoSpotPhotoInput[]; // 1枚以上必須。先頭の写真の位置情報等が投稿全体の代表値として使われる
+  // 公開範囲。private: 自分だけの備忘録(他ユーザーには一切表示しない)/
+  // public: みんなの検索地図にも表示する
+  visibility: PhotoSpotVisibility;
   accessNote?: string;
   subjectTags?: PhotoSpotSubjectTag[];
   equipmentTags?: PhotoSpotEquipmentTag[];
@@ -192,6 +196,7 @@ export async function createPhotoSpot(input: NewPhotoSpotInput): Promise<string>
       lng: primary.lng,
       photoUrls,
       photos,
+      visibility: input.visibility,
       ...(primary.cameraGear ? { cameraGear: primary.cameraGear } : {}),
       ...(primary.exif ? { exif: primary.exif } : {}),
       accessNote: input.accessNote ?? "",
@@ -276,6 +281,16 @@ export function getPhotoSpotPhotos(spot: PhotoSpot): PhotoSpotPhotoItem[] {
     cameraGear: spot.cameraGear,
     exif: spot.exif,
   }));
+}
+
+// 「他ユーザーの地図・検索」向けに表示してよいスポットだけを絞り込む。
+// visibility === 'private' の投稿は、投稿者本人が見ている場合のみ表示し、
+// それ以外(他ユーザー・未ログインのゲスト)には一切見せない。
+// visibilityフィールドが無い旧データはpublic相当として扱う(後方互換)。
+// firestore.rules側でも同様の判定を行い読み取り自体を拒否しているため、
+// これは主にUI側での二重の安全策(および同一ユーザーの端末内フィルタ)として機能する。
+export function filterVisibleSpots(spots: PhotoSpot[], viewerUid: string | null | undefined): PhotoSpot[] {
+  return spots.filter((spot) => spot.visibility !== "private" || spot.postedBy === viewerUid);
 }
 
 export type PhotoNearbyInfoUpdate = {

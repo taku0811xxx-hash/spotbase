@@ -8,7 +8,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { APP_MODE } from "@/lib/config";
-import { getAllPhotoSpots } from "@/lib/photoSpots";
+import { filterVisibleSpots, getAllPhotoSpots } from "@/lib/photoSpots";
 import type { PhotoSpot } from "@/lib/types/photoSpot";
 import { EMPTY_PHOTO_SPOT_FILTERS, matchesPhotoSpotFilters, type PhotoSpotFilters } from "@/lib/photoSpotFilters";
 import PhotoHeaderNav from "@/components/PhotoHeaderNav";
@@ -59,8 +59,9 @@ export default function PhotoSpotsMapPage() {
   }, [authLoading, user, photoProfile, router]);
 
   const filteredSpots = useMemo(
-    () => spots.filter((spot) => matchesPhotoSpotFilters(spot, filters)),
-    [spots, filters]
+    () =>
+      filterVisibleSpots(spots, user?.uid).filter((spot) => matchesPhotoSpotFilters(spot, filters)),
+    [spots, filters, user?.uid]
   );
 
   async function refetchPhotoSpots() {

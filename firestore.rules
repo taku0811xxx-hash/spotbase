@@ -92,8 +92,12 @@ service cloud.firestore {
 
     match /photo_spots/{spotId} {
       // 「ここトレ！」専用の撮影スポット投稿。組織非依存のパブリックな写真共有として、
-      // サインインしていれば誰でも閲覧・投稿でき、編集/削除は投稿者本人のみ可能。
-      allow read: if true;
+      // 未ログインのゲストを含め誰でも閲覧・投稿でき、編集/削除は投稿者本人のみ可能。
+      // ただしvisibility: 'private'(自分だけの撮影ログ・備忘録)の投稿は、
+      // 投稿者本人以外(他ユーザー・未ログインのゲスト)からは読み取れない。
+      // フィールド自体が存在しない旧データはpublic相当として扱う。
+      allow read: if resource.data.get('visibility', 'public') != 'private'
+        || (isSignedIn() && resource.data.postedBy == request.auth.uid);
       allow create: if isSignedIn() && request.resource.data.postedBy == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.postedBy == request.auth.uid;
     }

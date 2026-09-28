@@ -10,6 +10,7 @@ import {
   type PhotoSpotEquipmentTag,
   type PhotoSpotSubjectTag,
   type PhotoSpotTimeOfDay,
+  type PhotoSpotVisibility,
 } from "@/lib/types/photoSpot";
 import { geocodeQueryPoi, reverseGeocodePoi, type PoiGeocodeResult } from "@/lib/geocode";
 import { parseExif } from "@/lib/exifParser";
@@ -110,6 +111,9 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const [equipmentTags, setEquipmentTags] = useState<PhotoSpotEquipmentTag[]>([]);
   const [isFree, setIsFree] = useState(false);
   const [allowCommercial, setAllowCommercial] = useState(false);
+  // 公開範囲。デフォルトは「自分のみ(非公開)」にして投稿の心理的ハードルを
+  // 下げ、全体公開したい場合のみ明示的に切り替えてもらう。
+  const [visibility, setVisibility] = useState<PhotoSpotVisibility>("private");
 
   function toggleTag<T>(list: T[], setList: (v: T[]) => void, value: T) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -353,6 +357,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
         equipmentTags: equipmentTags.length > 0 ? equipmentTags : undefined,
         isFree,
         allowCommercial,
+        visibility,
         // 写真ごとの位置情報・撮影条件をそれぞれ個別に紐付けて保存する
         photos: photos.map((p) => ({
           file: p.file,
@@ -736,6 +741,41 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </span>
                   写真についての補足(任意)
                 </label>
+
+                {/* 公開設定: 自分だけの備忘録として使いたい場合の心理的ハードルを
+                    下げるため、デフォルトは「自分のみ(非公開)」にしている。 */}
+                <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500">公開設定</p>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      checked={visibility === "private"}
+                      onChange={() => setVisibility("private")}
+                      className="mt-0.5"
+                    />
+                    <span className="text-sm text-gray-700">
+                      自分のみ(非公開メモ)
+                      <span className="block text-xs text-gray-400">
+                        自分だけの撮影ログ・備忘録として保存します(他のユーザーの地図には表示されません)
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      checked={visibility === "public"}
+                      onChange={() => setVisibility("public")}
+                      className="mt-0.5"
+                    />
+                    <span className="text-sm text-gray-700">
+                      全体公開
+                      <span className="block text-xs text-gray-400">みんなの検索地図にも表示します</span>
+                    </span>
+                  </label>
+                </div>
+
                 <input
                   type="text"
                   value={name}

@@ -43,7 +43,7 @@ import AuthModal from "@/components/AuthModal";
 import PhotoHeaderNav from "@/components/PhotoHeaderNav";
 import PhotoBottomNav from "@/components/PhotoBottomNav";
 import { APP_MODE } from "@/lib/config";
-import { getPhotoSpotsPage, type PhotoSpotsPage } from "@/lib/photoSpots";
+import { filterVisibleSpots, getPhotoSpotsPage, type PhotoSpotsPage } from "@/lib/photoSpots";
 import { toDisplayProfile } from "@/lib/photoAuth";
 import type { PhotoSpot } from "@/lib/types/photoSpot";
 import BottomSheet from "@/components/BottomSheet";
@@ -1176,7 +1176,7 @@ export default function Home() {
           <PhotoHeaderNav />
         </div>
         <PhotoGalleryView
-          spots={photoSpots}
+          spots={filterVisibleSpots(photoSpots, user?.uid)}
           loading={loadingPhotoSpots}
           initialSpotId={initialPhotoSpotId}
           onLoadMore={loadMorePhotoSpots}
