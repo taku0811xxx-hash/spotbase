@@ -1,10 +1,14 @@
 "use client";
 
-// 「ここトレ！」マイページ専用: 自分の投稿アルバムのサムネイルをタップした際に開く
-// 詳細ダイアログ。閲覧に加え、投稿者本人であればキャプション・タグ等の補足情報を
-// その場で編集できる(写真・撮影場所・EXIFは編集対象外。差し替えは新規投稿で行う運用)。
+// 「ここトレ！」マイページ専用: 自分の撮影アルバムの写真カード(1枚)をタップした際に
+// 開く詳細ダイアログ。同じスポットに複数枚投稿されていても、この詳細は常に
+// タップされた1枚の写真を中心に表示する(プレビュー・いいね/保存数はその写真単位)。
+// キャプション・タグ等の補足情報は投稿者本人であればその場で編集できる
+// (写真・撮影場所・EXIFはPhotoSpot1件につき1組しか保持しないスキーマのため
+// 編集対象外。差し替えは新規投稿で行う運用)。
 import { useState } from "react";
-import { Pencil, X } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Aperture, Calendar, Camera, Gauge, Pencil, Ruler, Timer, X } from "lucide-react";
 import { updatePhotoSpot } from "@/lib/photoSpots";
 import {
   PHOTO_SPOT_EQUIPMENT_TAGS,
@@ -15,13 +19,25 @@ import {
 } from "@/lib/types/photoSpot";
 import LikeSaveButtons from "@/components/LikeSaveButtons";
 
+// LeafletはSSR非対応なのでクライアント側のみで読み込む
+const PhotoSpotMap = dynamic(() => import("@/components/PhotoSpotMap"), { ssr: false });
+
 type Props = {
   spot: PhotoSpot;
+  // 詳細を開いた対象の写真(同じスポットに複数枚あっても、この1枚を中心に表示する)
+  photoUrl: string;
   onClose: () => void;
   onUpdated: () => void; // 更新後、呼び出し元でギャラリーを再取得させるためのコールバック
 };
 
-export default function PhotoSpotDetailModal({ spot, onClose, onUpdated }: Props) {
+function formatShotAt(shotAt: string | undefined): string | null {
+  if (!shotAt) return null;
+  const date = new Date(shotAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString("ja-JP", { dateStyle: "medium", timeStyle: "short" });
+}
+
+export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -63,6 +79,17 @@ export default function PhotoSpotDetailModal({ spot, onClose, onUpdated }: Props
     }
   }
 
+  const exif = spot.exif;
+  const shotAtLabel = formatShotAt(exif?.shotAt);
+  const exifRows = [
+    { icon: Camera, label: [spot.cameraGear?.camera, spot.cameraGear?.lens].filter(Boolean).join(" / ") },
+    { icon: Aperture, label: exif?.fNumber != null ? `F${exif.fNumber}` : null },
+    { icon: Timer, label: exif?.exposureTime ? `SS ${exif.exposureTime}` : null },
+    { icon: Gauge, label: exif?.iso != null ? `ISO ${exif.iso}` : null },
+    { icon: Ruler, label: exif?.focalLength ? exif.focalLength : null },
+    { icon: Calendar, label: shotAtLabel ?? (exif?.timeOfDay || null) },
+  ].filter((row) => row.label);
+
   return (
     <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
@@ -85,17 +112,13 @@ export default function PhotoSpotDetailModal({ spot, onClose, onUpdated }: Props
         </div>
 
         <div className="p-5 space-y-4">
-          {/* 写真ギャラリー + 写真ごとのいいね/保存数 */}
-          <div className="grid grid-cols-2 gap-2">
-            {spot.photoUrls.map((url, i) => (
-              <div key={url} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt={`${spot.name} ${i + 1}`} className="w-full h-full object-cover" />
-                <div className="absolute bottom-1.5 right-1.5">
-                  <LikeSaveButtons spotId={spot.id} url={url} size="sm" />
-                </div>
-              </div>
-            ))}
+          {/* この写真のプレビュー(枠内に収まるようobject-contain) + いいね/保存数 */}
+          <div className="relative w-full h-64 rounded-lg overflow-hidden bg-gray-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoUrl} alt={spot.name} className="w-full h-full object-contain bg-gray-100" />
+            <div className="absolute bottom-2 right-2">
+              <LikeSaveButtons spotId={spot.id} url={photoUrl} size="md" />
+            </div>
           </div>
 
           {editing ? (
@@ -193,7 +216,7 @@ export default function PhotoSpotDetailModal({ spot, onClose, onUpdated }: Props
               {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {spot.description && <p className="text-sm text-gray-700">{spot.description}</p>}
               <p className="text-xs text-gray-400">{spot.address}</p>
               {spot.accessNote && (
@@ -213,6 +236,29 @@ export default function PhotoSpotDetailModal({ spot, onClose, onUpdated }: Props
                   ))}
                 </div>
               )}
+
+              {/* 撮影条件(EXIF)をアイコン付きで表示 */}
+              {exifRows.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1.5">撮影条件</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {exifRows.map(({ icon: Icon, label }, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                        <Icon size={13} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                        <span className="truncate">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 位置情報マップ(この写真の撮影場所を中央に表示) */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">撮影場所</p>
+                <div className="h-48 rounded-lg overflow-hidden border border-gray-200">
+                  <PhotoSpotMap spot={spot} />
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -38,7 +38,9 @@ export default function MyPage() {
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
   const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
-  const [selectedSpot, setSelectedSpot] = useState<PhotoSpot | null>(null);
+  // 撮影アルバムでタップされた写真1枚(と、それが属するスポット)。
+  // 同じスポットに複数枚投稿されていても、詳細はタップされたその1枚を中心に表示する。
+  const [selectedPhoto, setSelectedPhoto] = useState<{ spot: PhotoSpot; url: string } | null>(null);
   const { displayName, avatarDataUrl, setAvatarFile } = usePhotoProfile(
     photoProfile?.displayName ?? "ゲスト",
     photoProfile?.photoURL
@@ -235,7 +237,7 @@ export default function MyPage() {
                 spot.photoUrls.map((url, i) => (
                   <button
                     key={`${spot.id}-${i}`}
-                    onClick={() => setSelectedSpot(spot)}
+                    onClick={() => setSelectedPhoto({ spot, url })}
                     className="relative aspect-square rounded-lg overflow-hidden"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -326,14 +328,16 @@ export default function MyPage() {
           onClose={() => setShowProfileEditModal(false)}
         />
       )}
-      {selectedSpot && (
+      {selectedPhoto && (
         <PhotoSpotDetailModal
-          spot={selectedSpot}
-          onClose={() => setSelectedSpot(null)}
+          spot={selectedPhoto.spot}
+          photoUrl={selectedPhoto.url}
+          onClose={() => setSelectedPhoto(null)}
           onUpdated={async () => {
             const latest = await getAllPhotoSpots();
             setSpots(latest);
-            setSelectedSpot(latest.find((s) => s.id === selectedSpot.id) ?? null);
+            const updatedSpot = latest.find((s) => s.id === selectedPhoto.spot.id);
+            setSelectedPhoto(updatedSpot ? { spot: updatedSpot, url: selectedPhoto.url } : null);
           }}
         />
       )}
