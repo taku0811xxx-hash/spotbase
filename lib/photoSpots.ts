@@ -41,6 +41,9 @@ export type NewPhotoSpotPhotoInput = {
   lat: number;
   lng: number;
   locationName: string;
+  // POI優先ジオコーディング(lib/geocode.ts)で取得できた場合の正式住所。
+  // 手動ピン設定のみで住所が解決できなかった場合はundefinedのまま。
+  address?: string;
   cameraGear?: PhotoSpotCameraGear;
   exif?: PhotoSpotExif;
 };
@@ -164,19 +167,21 @@ export async function createPhotoSpot(input: NewPhotoSpotInput): Promise<string>
     lat: p.lat,
     lng: p.lng,
     locationName: p.locationName,
+    ...(p.address ? { address: p.address } : {}),
     ...(p.cameraGear ? { cameraGear: omitUndefined(p.cameraGear) } : {}),
     ...(p.exif ? { exif: omitUndefined(p.exif) } : {}),
   }));
   // 先頭の写真を投稿全体の代表値として使う(地図のピン配置・クラスタリング・
   // ギャラリーサムネイル等、投稿単位で1組の位置/撮影条件しか必要としない
-  // 既存箇所向けの後方互換フィールド)。
+  // 既存箇所向けの後方互換フィールド)。addressは正式住所が取れていればそれを、
+  // 無ければ場所名(施設名等)をそのまま使う。
   const primary = photos[0];
 
   try {
     await setDoc(spotRef, {
       name: input.name,
       description: input.description ?? "",
-      address: primary.locationName,
+      address: primary.address || primary.locationName,
       lat: primary.lat,
       lng: primary.lng,
       photoUrls,
@@ -261,6 +266,7 @@ export function getPhotoSpotPhotos(spot: PhotoSpot): PhotoSpotPhotoItem[] {
     lat: spot.lat,
     lng: spot.lng,
     locationName: spot.address,
+    address: spot.address,
     cameraGear: spot.cameraGear,
     exif: spot.exif,
   }));

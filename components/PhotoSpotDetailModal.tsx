@@ -235,6 +235,9 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
             <div className="space-y-4">
               {spot.description && <p className="text-sm text-gray-700">{spot.description}</p>}
               <p className="text-xs text-gray-400">{photo.locationName}</p>
+              {photo.address && photo.address !== photo.locationName && (
+                <p className="text-[11px] text-gray-300">{photo.address}</p>
+              )}
               {spot.accessNote && (
                 <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{spot.accessNote}</p>
               )}
@@ -274,7 +277,13 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
                 <p className="text-xs font-semibold text-gray-500 mb-1.5">撮影場所</p>
                 <div className="h-48 md:h-40 rounded-lg overflow-hidden border border-gray-200">
                   <PhotoSpotMap
-                    spot={{ ...spot, lat: photo.lat, lng: photo.lng, address: photo.locationName, parkingLots: undefined }}
+                    spot={{
+                      ...spot,
+                      lat: photo.lat,
+                      lng: photo.lng,
+                      address: photo.address || photo.locationName,
+                      parkingLots: undefined,
+                    }}
                   />
                 </div>
               </div>

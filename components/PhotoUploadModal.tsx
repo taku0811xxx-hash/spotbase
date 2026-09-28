@@ -10,7 +10,7 @@ import {
   type PhotoSpotSubjectTag,
   type PhotoSpotTimeOfDay,
 } from "@/lib/types/photoSpot";
-import { geocodeQuery, reverseGeocode, type GeocodeResult } from "@/lib/geocode";
+import { geocodeQueryPoi, reverseGeocodePoi, type PoiGeocodeResult } from "@/lib/geocode";
 import { parseExif } from "@/lib/exifParser";
 import { useAuth } from "@/components/AuthProvider";
 import { Capacitor } from "@capacitor/core";
@@ -34,7 +34,12 @@ type Props = {
 type PhotoData = {
   position: { lat: number; lng: number } | null;
   positionSource: "exif" | "manual" | null;
-  address: string; // 場所名(位置情報から逆ジオコーディングで自動入力、または手動入力・検索結果選択)
+  // 場所名(施設名・POI名を優先。位置情報からの逆ジオコーディング自動入力、
+  // または手動入力・検索結果選択で決まる。ユーザーが自由に編集できる主フィールド)
+  locationName: string;
+  // 正式な住所。POI優先ジオコーディングで取得できた場合のみ裏で保持する
+  // (Firestoreへは photos[].address として保存され、locationNameとは区別する)
+  formalAddress: string;
   camera: string;
   lens: string;
   fNumber: string;
@@ -56,7 +61,8 @@ function emptyPhotoData(): PhotoData {
   return {
     position: null,
     positionSource: null,
-    address: "",
+    locationName: "",
+    formalAddress: "",
     camera: "",
     lens: "",
     fNumber: "",
@@ -88,7 +94,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
-  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
+  const [addressResults, setAddressResults] = useState<PoiGeocodeResult[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
 
   const [accessNote, setAccessNote] = useState("");
@@ -173,14 +179,17 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
           })
         );
 
-        // 写真のExifに位置情報があれば、逆ジオコーディングで場所名を推測し
-        // 場所名欄へ自動セットする(ユーザーが既に入力済みの場合は上書きしない)。
+        // 写真のExifに位置情報があれば、施設名(POI)優先の逆ジオコーディングで
+        // 場所名を推測し場所名欄へ自動セットする(ユーザーが既に入力済みの
+        // 場合は上書きしない)。正式住所も裏で一緒に保持しておく。
         if (parsed.position) {
-          const placeName = await reverseGeocode(parsed.position.lat, parsed.position.lng);
-          if (placeName) {
+          const place = await reverseGeocodePoi(parsed.position.lat, parsed.position.lng);
+          if (place) {
             setPhotos((prev) =>
               prev.map((p, i) =>
-                i === targetIndex && !p.data.address ? { ...p, data: { ...p.data, address: placeName } } : p
+                i === targetIndex && !p.data.locationName
+                  ? { ...p, data: { ...p.data, locationName: place.locationName, formalAddress: place.address } }
+                  : p
               )
             );
           }
@@ -244,24 +253,27 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     fileInputRef.current?.click();
   }
 
+  // 場所名欄に入力された施設名・地名(例: 「井の頭恩賜公園」)で検索し、
+  // 位置情報・正式住所の候補を取得する(順ジオコーディング)。
   async function handleAddressSearch() {
-    const query = currentPhoto?.data.address.trim();
+    const query = currentPhoto?.data.locationName.trim();
     if (!query) return;
     setSearchingAddress(true);
     setError("");
     try {
-      const results = await geocodeQuery(query);
+      const results = await geocodeQueryPoi(query);
       setAddressResults(results);
     } catch {
-      setError("住所検索に失敗しました");
+      setError("場所の検索に失敗しました");
     } finally {
       setSearchingAddress(false);
     }
   }
 
-  function selectAddressResult(result: GeocodeResult) {
+  function selectAddressResult(result: PoiGeocodeResult) {
     updatePhotoData(currentIndex, {
-      address: result.displayName,
+      locationName: result.locationName,
+      formalAddress: result.address,
       position: { lat: result.lat, lng: result.lng },
       positionSource: "manual",
     });
@@ -269,13 +281,17 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   }
 
   // 地図タップ等で手動設定した位置に、まだ場所名が入力されていなければ
-  // 逆ジオコーディングで場所名を自動セットする。
+  // 施設名(POI)優先の逆ジオコーディングで場所名を自動セットする。
   async function handleManualPositionChange(index: number, pos: { lat: number; lng: number }) {
     updatePhotoData(index, { position: pos, positionSource: "manual" });
-    const placeName = await reverseGeocode(pos.lat, pos.lng);
-    if (placeName) {
+    const place = await reverseGeocodePoi(pos.lat, pos.lng);
+    if (place) {
       setPhotos((prev) =>
-        prev.map((p, i) => (i === index && !p.data.address ? { ...p, data: { ...p.data, address: placeName } } : p))
+        prev.map((p, i) =>
+          i === index && !p.data.locationName
+            ? { ...p, data: { ...p.data, locationName: place.locationName, formalAddress: place.address } }
+            : p
+        )
       );
     }
   }
@@ -305,7 +321,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
       await createPhotoSpot({
         // タイトル未入力時は代表(先頭)の写真の場所名を代替表示に使う。それも
         // 無ければ空欄のままにする(「無題の写真」等の固定文言は表示しない)。
-        name: name.trim() || photos[0].data.address.trim(),
+        name: name.trim() || photos[0].data.locationName.trim(),
         description: description.trim() || undefined,
         accessNote: accessNote.trim() || undefined,
         subjectTags: subjectTags.length > 0 ? subjectTags : undefined,
@@ -317,7 +333,8 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
           file: p.file,
           lat: p.data.position!.lat,
           lng: p.data.position!.lng,
-          locationName: p.data.address.trim(),
+          locationName: p.data.locationName.trim(),
+          address: p.data.formalAddress.trim() || undefined,
           cameraGear: {
             camera: p.data.camera.trim() || undefined,
             lens: p.data.lens.trim() || undefined,
@@ -511,13 +528,13 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                 )}
 
                 <label className="block text-xs font-semibold text-gray-500 mb-1">場所名</label>
-                <div className="flex gap-2 mb-2">
+                <div className="flex gap-2 mb-1">
                   <input
                     type="text"
-                    value={currentPhoto.data.address}
-                    onChange={(e) => updatePhotoData(currentIndex, { address: e.target.value })}
+                    value={currentPhoto.data.locationName}
+                    onChange={(e) => updatePhotoData(currentIndex, { locationName: e.target.value })}
                     onKeyDown={(e) => e.key === "Enter" && handleAddressSearch()}
-                    placeholder="場所名・住所(位置情報から自動入力されます)"
+                    placeholder="施設名・場所名(例: 井の頭恩賜公園。位置情報から自動入力されます)"
                     className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <button
@@ -528,15 +545,20 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                     {searchingAddress ? "検索中..." : "検索"}
                   </button>
                 </div>
+                {/* 裏で保持している正式住所(取得できた場合のみ表示。参考情報) */}
+                {currentPhoto.data.formalAddress && (
+                  <p className="text-[11px] text-gray-400 mb-2 truncate">{currentPhoto.data.formalAddress}</p>
+                )}
                 {addressResults.length > 0 && (
-                  <ul className="border border-gray-200 rounded-lg mb-2 divide-y divide-gray-100 max-h-32 overflow-y-auto">
+                  <ul className="border border-gray-200 rounded-lg mb-2 divide-y divide-gray-100 max-h-40 overflow-y-auto">
                     {addressResults.map((r, i) => (
                       <li key={i}>
                         <button
                           onClick={() => selectAddressResult(r)}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50"
                         >
-                          {r.displayName}
+                          <p className="text-xs font-medium text-gray-800 truncate">{r.locationName}</p>
+                          <p className="text-[11px] text-gray-400 truncate">{r.address}</p>
                         </button>
                       </li>
                     ))}

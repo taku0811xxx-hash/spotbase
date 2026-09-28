@@ -53,7 +53,13 @@ export type PhotoSpotPhotoItem = {
   url: string; // 画像URL
   lat: number; // この写真固有の撮影位置(緯度)
   lng: number; // 同経度
-  locationName: string; // この写真固有の場所名・住所
+  // この写真固有の場所名。施設名・POI名(例: "井の頭恩賜公園")を優先し、
+  // 取得できない場合のみ住所にフォールバックする(lib/geocode.tsのPOI優先
+  // ジオコーディング参照)。ユーザーが自由に編集できる表示用の主フィールド。
+  locationName: string;
+  // この写真固有の正式な住所(都道府県〜番地)。locationNameがPOI名の場合に、
+  // 裏で保持しておく補足情報。逆引き/検索で取得できた場合のみ設定される。
+  address?: string;
   cameraGear?: PhotoSpotCameraGear; // この写真固有の撮影機材
   exif?: PhotoSpotExif; // この写真固有の撮影設定(Exif由来、または手入力)
 };
