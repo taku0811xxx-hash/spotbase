@@ -94,7 +94,7 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
 
   return (
     <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
+      <div className="bg-white rounded-2xl w-full max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto shadow-xl">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-2xl">
           <h2 className="text-lg font-bold text-gray-900 truncate pr-2">
             {editing ? "投稿を編集" : spot.name || photo.locationName}
@@ -115,20 +115,28 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* この写真のプレビュー(枠内に収まるようobject-contain) + いいね/保存数 */}
-          <div className="relative w-full h-64 rounded-lg overflow-hidden bg-gray-100">
+        {/* PC/Web版(md以上)は写真をメインにした2カラム(約65:35)、モバイルは
+            従来通り縦積み(写真→補足情報)にする */}
+        <div className="p-5 md:grid md:grid-cols-12 md:gap-6">
+        <div className="md:col-span-8">
+          {/* この写真のプレビュー: モバイルは固定高さの枠にobject-containで収め、
+              PC/Web版は枠を写真の実アスペクト比に合わせて可変させ、黒帯余白を
+              最小限にしつつ画面内で最大限大きく表示する(max-h-[70vh]で上限のみ設定)。
+              いいね/保存数は写真の右下に重ねて表示する。 */}
+          <div className="relative w-full h-64 md:h-auto md:max-h-[70vh] rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={photo.url}
               alt={photo.locationName || spot.name}
-              className="w-full h-full object-contain bg-gray-100"
+              className="w-full h-full md:w-auto md:h-auto md:max-w-full md:max-h-[70vh] object-contain"
             />
             <div className="absolute bottom-2 right-2">
               <LikeSaveButtons spotId={spot.id} url={photo.url} size="md" />
             </div>
           </div>
+        </div>
 
+        <div className="md:col-span-4 mt-4 md:mt-0 space-y-4">
           {editing ? (
             <div className="space-y-3">
               <div>
@@ -249,7 +257,7 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
               {exifRows.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-1.5">撮影条件</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
                     {exifRows.map(({ icon: Icon, label }, i) => (
                       <div key={i} className="flex items-center gap-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-2.5 py-1.5">
                         <Icon size={13} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
@@ -264,7 +272,7 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
                   スポット全体に紐づく情報で写真ごとの位置とはずれうるため非表示にする) */}
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1.5">撮影場所</p>
-                <div className="h-48 rounded-lg overflow-hidden border border-gray-200">
+                <div className="h-48 md:h-40 rounded-lg overflow-hidden border border-gray-200">
                   <PhotoSpotMap
                     spot={{ ...spot, lat: photo.lat, lng: photo.lng, address: photo.locationName, parkingLots: undefined }}
                   />
@@ -272,6 +280,7 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
               </div>
             </div>
           )}
+        </div>
         </div>
 
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-4 flex justify-end gap-2 rounded-b-2xl">
