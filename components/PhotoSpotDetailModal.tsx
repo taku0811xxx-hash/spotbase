@@ -8,7 +8,7 @@
 // 編集対象外。差し替えは新規投稿で行う運用)。
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { Aperture, Calendar, Camera, Car, Gauge, Info as InfoIcon, Pencil, Ruler, Timer, Utensils, X } from "lucide-react";
+import { Aperture, Calendar, Camera, Car, Gauge, Info as InfoIcon, Pencil, Plus, Ruler, Timer, Utensils, X } from "lucide-react";
 import { updatePhotoSpot } from "@/lib/photoSpots";
 import {
   PHOTO_SPOT_EQUIPMENT_TAGS,
@@ -19,6 +19,8 @@ import {
   type PhotoSpotSubjectTag,
 } from "@/lib/types/photoSpot";
 import LikeSaveButtons from "@/components/LikeSaveButtons";
+import PhotoNearbyInfoSheet from "@/components/PhotoNearbyInfoSheet";
+import { useAuth } from "@/components/AuthProvider";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const PhotoSpotMap = dynamic(() => import("@/components/PhotoSpotMap"), { ssr: false });
@@ -40,7 +42,10 @@ function formatShotAt(shotAt: string | undefined): string | null {
 }
 
 export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }: Props) {
+  const { photoProfile } = useAuth();
+  const isOwnPost = Boolean(photoProfile && photoProfile.uid === spot.postedBy);
   const [editing, setEditing] = useState(false);
+  const [showNearbyInfoSheet, setShowNearbyInfoSheet] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -277,18 +282,35 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
                 </div>
               )}
 
-              {/* 周辺情報(駐車場・飲食店・その他補足をアイコン付きで表示) */}
-              {nearbyInfoRows.length > 0 && (
+              {/* 周辺情報(駐車場・飲食店・その他補足をアイコン付きで表示)。
+                  自分の投稿の場合、現地で駐車/食事したタイミングなどに手軽に
+                  追記・修正できるよう、あとからクイック追加できるボタンを添える。 */}
+              {(nearbyInfoRows.length > 0 || isOwnPost) && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-1.5">周辺情報</p>
-                  <div className="space-y-1.5">
-                    {nearbyInfoRows.map(({ icon: Icon, label }, i) => (
-                      <div key={i} className="flex items-start gap-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-2.5 py-1.5">
-                        <Icon size={13} strokeWidth={2} className="text-gray-400 flex-shrink-0 mt-0.5" />
-                        <span>{label}</span>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <p className="text-xs font-semibold text-gray-500">周辺情報</p>
+                    {isOwnPost && (
+                      <button
+                        onClick={() => setShowNearbyInfoSheet(true)}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 border border-orange-200 rounded-full px-2.5 py-1"
+                      >
+                        <Plus size={11} strokeWidth={2} />
+                        周辺情報を追加・編集
+                      </button>
+                    )}
                   </div>
+                  {nearbyInfoRows.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {nearbyInfoRows.map(({ icon: Icon, label }, i) => (
+                        <div key={i} className="flex items-start gap-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                          <Icon size={13} strokeWidth={2} className="text-gray-400 flex-shrink-0 mt-0.5" />
+                          <span>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400">まだ周辺情報が登録されていません</p>
+                  )}
                 </div>
               )}
 
@@ -338,6 +360,15 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
           )}
         </div>
       </div>
+
+      {showNearbyInfoSheet && (
+        <PhotoNearbyInfoSheet
+          spot={spot}
+          photo={photo}
+          onClose={() => setShowNearbyInfoSheet(false)}
+          onSaved={onUpdated}
+        />
+      )}
     </div>
   );
 }

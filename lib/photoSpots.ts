@@ -278,6 +278,43 @@ export function getPhotoSpotPhotos(spot: PhotoSpot): PhotoSpotPhotoItem[] {
   }));
 }
 
+export type PhotoNearbyInfoUpdate = {
+  parkingInfo?: string;
+  diningInfo?: string;
+};
+
+// 投稿済みスポットの、特定の写真に紐づく周辺情報(駐車場・飲食店メモ)だけを
+// あとから部分更新する(現地で駐車した/食事したタイミングでの追記用)。
+// PhotoSpotPhotoItemは配列内の要素のためFirestoreのフィールドパス更新では
+// 狙った1件だけを書き換えられず、photos配列全体を作り直して書き込む。
+// 旧データ(photosフィールドが無い投稿)はgetPhotoSpotPhotosの後方互換フォールバック
+// を通すことで、この更新をきっかけに正式なphotos配列へ自然に移行する。
+export async function updatePhotoNearbyInfo(
+  spot: PhotoSpot,
+  photoUrl: string,
+  patch: PhotoNearbyInfoUpdate
+): Promise<void> {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) {
+    throw new Error("ログイン状態が確認できません。再度ログインしてください。");
+  }
+  if (currentUid !== spot.postedBy) {
+    throw new Error("この投稿を編集する権限がありません。");
+  }
+
+  const photos = getPhotoSpotPhotos(spot).map((p) => {
+    if (p.url !== photoUrl) return omitUndefined(p) as PhotoSpotPhotoItem;
+    const merged: PhotoSpotPhotoItem = {
+      ...p,
+      parkingInfo: patch.parkingInfo !== undefined ? patch.parkingInfo.trim() || undefined : p.parkingInfo,
+      diningInfo: patch.diningInfo !== undefined ? patch.diningInfo.trim() || undefined : p.diningInfo,
+    };
+    return omitUndefined(merged) as PhotoSpotPhotoItem;
+  });
+
+  await updateDoc(doc(db, PHOTO_SPOTS_COLLECTION, spot.id), { photos });
+}
+
 type PhotoSpotDoc = Omit<PhotoSpot, "id" | "postedAt"> & { postedAt: Timestamp | null };
 
 // 一覧取得: 「ここトレ！」はSpotBase本体の組織モデルとは独立した
