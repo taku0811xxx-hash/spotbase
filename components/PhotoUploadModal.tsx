@@ -2,23 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Car, Copy, Info as InfoIcon, Utensils } from "lucide-react";
-import {
-  DINING_INFO_CHIPS,
-  PARKING_INFO_CHIPS,
-  SHOOTING_ENV_CHIPS,
-  splitChipsAndText,
-  toggleChipInValue,
-} from "@/lib/nearbyInfoChips";
+import { Copy } from "lucide-react";
 import { createPhotoSpot } from "@/lib/photoSpots";
-import {
-  PHOTO_SPOT_EQUIPMENT_TAGS,
-  PHOTO_SPOT_SUBJECT_TAGS,
-  type PhotoSpotEquipmentTag,
-  type PhotoSpotSubjectTag,
-  type PhotoSpotTimeOfDay,
-  type PhotoSpotVisibility,
-} from "@/lib/types/photoSpot";
+import type { PhotoSpotTimeOfDay, PhotoSpotVisibility } from "@/lib/types/photoSpot";
 import { geocodeQueryPoi, reverseGeocodePoi, type PoiGeocodeResult } from "@/lib/geocode";
 import { parseExif } from "@/lib/exifParser";
 import { useAuth } from "@/components/AuthProvider";
@@ -28,15 +14,6 @@ import { pickPhotosFromLibrary } from "@/lib/nativePhotoPicker";
 // LeafletはSSR非対応なのでクライアント側のみで読み込む(app/page.tsxと同様)
 const LocationPicker = dynamic(() => import("@/components/LocationPicker"), { ssr: false });
 
-// 保存する値(PhotoSpotExif.timeOfDayの型)は変えず、ボタンの表示ラベルだけ
-// より具体的な言い回しにする(早朝/朝焼け 等)。
-const TIME_OF_DAY_OPTIONS: { value: PhotoSpotTimeOfDay; label: string }[] = [
-  { value: "早朝", label: "早朝/朝焼け" },
-  { value: "昼", label: "日中/順光" },
-  { value: "夕景", label: "夕方/夕景" },
-  { value: "夜景", label: "夜景/星空" },
-];
-
 type Props = {
   onClose: () => void;
   onCreated: () => void; // 投稿完了後、呼び出し元でギャラリーを再取得させるためのコールバック
@@ -45,8 +22,11 @@ type Props = {
   initialFiles?: File[];
 };
 
-// 写真1枚ごとの撮影場所・撮影設定(Exif由来、または手入力)。
-// カルーセルで表示中の写真を切り替えると、この単位でフォーム表示も切り替わる。
+// 写真1枚ごとの撮影場所・撮影設定。投稿コストを最小化するため、UI上で
+// ユーザーが直接入力する項目は「場所名(位置情報)」「写真のメモ・補足」
+// 「周辺情報・アクセス」の3つに絞り込んでいる。カメラ機種・レンズ・F値・
+// シャッタースピード・ISO・焦点距離・撮影日時・時間帯はEXIFから自動抽出して
+// 裏で保持するのみで、個別の編集フィールドは設けない。
 type PhotoData = {
   position: { lat: number; lng: number } | null;
   positionSource: "exif" | "manual" | null;
@@ -56,10 +36,11 @@ type PhotoData = {
   // 正式な住所。POI優先ジオコーディングで取得できた場合のみ裏で保持する
   // (Firestoreへは photos[].address として保存され、locationNameとは区別する)
   formalAddress: string;
-  // 周辺情報(フリーテキスト。任意)
-  parkingInfo: string;
-  diningInfo: string;
-  otherInfo: string;
+  // この写真についての自由記述メモ・補足(1つの入力欄のみ)
+  memo: string;
+  // 周辺情報・アクセス(駐車場・飲食店など。1つの入力欄のみ)
+  nearbyInfo: string;
+  // 以下はEXIFから自動抽出して裏で保持するだけの値(編集UIは設けない)
   camera: string;
   lens: string;
   fNumber: string;
@@ -67,8 +48,7 @@ type PhotoData = {
   iso: string;
   focalLength: string;
   timeOfDay: PhotoSpotTimeOfDay | "";
-  shotAt: string; // 撮影日時(EXIFのDateTimeOriginal由来のISO文字列。任意)
-  autoFilled: boolean;
+  shotAt: string; // 撮影日時(EXIFのDateTimeOriginal由来のISO文字列)
 };
 
 type PreviewPhoto = {
@@ -84,9 +64,8 @@ function emptyPhotoData(): PhotoData {
     positionSource: null,
     locationName: "",
     formalAddress: "",
-    parkingInfo: "",
-    diningInfo: "",
-    otherInfo: "",
+    memo: "",
+    nearbyInfo: "",
     camera: "",
     lens: "",
     fNumber: "",
@@ -95,18 +74,17 @@ function emptyPhotoData(): PhotoData {
     focalLength: "",
     timeOfDay: "",
     shotAt: "",
-    autoFilled: false,
   };
 }
 
 // 「ここトレ！」は"スポット登録"ではなく"写真の投稿"を主軸とするPhoto-Firstな
 // フローにする: 写真を選ぶと、その写真のEXIF GPS情報があれば撮影場所を
 // 自動セットし、なければ「この位置で撮影した」と地図タップで手動設定する
-// ステップに進む。スポット名等はあくまで写真に添える補足情報という位置づけ。
+// ステップに進む。
 //
-// PhotoSpot(Firestore)のスキーマは投稿1件につき撮影場所/撮影設定を1組しか
-// 持たないため、複数枚を選んだ場合は「現在カルーセルに表示中の写真」のデータを
-// 投稿全体の代表値として送信する(各写真ごとのプレビュー・編集はUI上のみ)。
+// PhotoSpot(Firestore)のスキーマは投稿1件につきタイトル/説明を1組しか
+// 持たないため、複数枚を選んだ場合は「先頭の写真」の場所名を投稿タイトルの
+// 代替表示に使う(各写真ごとの場所・メモ・周辺情報はphotos配列に個別保存)。
 export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: Props) {
   const { photoProfile } = useAuth();
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
@@ -116,24 +94,14 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
   const suppressScrollSync = useRef(false);
   const replaceOnNextPickRef = useRef(false);
 
-  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
   const [addressResults, setAddressResults] = useState<PoiGeocodeResult[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
 
-  const [accessNote, setAccessNote] = useState("");
-  const [subjectTags, setSubjectTags] = useState<PhotoSpotSubjectTag[]>([]);
-  const [equipmentTags, setEquipmentTags] = useState<PhotoSpotEquipmentTag[]>([]);
-  const [isFree, setIsFree] = useState(false);
-  const [allowCommercial, setAllowCommercial] = useState(false);
   // 公開範囲。デフォルトは「自分のみ(非公開)」にして投稿の心理的ハードルを
   // 下げ、全体公開したい場合のみ明示的に切り替えてもらう。
   const [visibility, setVisibility] = useState<PhotoSpotVisibility>("private");
-
-  function toggleTag<T>(list: T[], setList: (v: T[]) => void, value: T) {
-    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
-  }
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -194,16 +162,6 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
               data.position = parsed.position;
               data.positionSource = "exif";
             }
-            data.autoFilled = Boolean(
-              parsed.camera ||
-                parsed.lens ||
-                parsed.fNumber != null ||
-                parsed.exposureTime ||
-                parsed.iso != null ||
-                parsed.focalLength ||
-                parsed.timeOfDay ||
-                parsed.position
-            );
             return { ...p, exifChecking: false, data };
           })
         );
@@ -336,9 +294,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
       positionSource: first.data.positionSource,
       locationName: first.data.locationName,
       formalAddress: first.data.formalAddress,
-      parkingInfo: first.data.parkingInfo,
-      diningInfo: first.data.diningInfo,
-      otherInfo: first.data.otherInfo,
+      nearbyInfo: first.data.nearbyInfo,
     });
   }
 
@@ -365,26 +321,21 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     setError("");
     try {
       await createPhotoSpot({
-        // タイトル未入力時は代表(先頭)の写真の場所名を代替表示に使う。それも
-        // 無ければ空欄のままにする(「無題の写真」等の固定文言は表示しない)。
-        name: name.trim() || photos[0].data.locationName.trim(),
+        // タイトルは代表(先頭)の写真の場所名をそのまま使う(専用の入力欄は
+        // 設けない)。場所名も無ければ空欄のままにする(「無題の写真」等の
+        // 固定文言は表示しない)。
+        name: photos[0].data.locationName.trim(),
         description: description.trim() || undefined,
-        accessNote: accessNote.trim() || undefined,
-        subjectTags: subjectTags.length > 0 ? subjectTags : undefined,
-        equipmentTags: equipmentTags.length > 0 ? equipmentTags : undefined,
-        isFree,
-        allowCommercial,
         visibility,
-        // 写真ごとの位置情報・撮影条件をそれぞれ個別に紐付けて保存する
+        // 写真ごとの位置情報・メモ・周辺情報・撮影条件をそれぞれ個別に紐付けて保存する
         photos: photos.map((p) => ({
           file: p.file,
           lat: p.data.position!.lat,
           lng: p.data.position!.lng,
           locationName: p.data.locationName.trim(),
           address: p.data.formalAddress.trim() || undefined,
-          parkingInfo: p.data.parkingInfo.trim() || undefined,
-          diningInfo: p.data.diningInfo.trim() || undefined,
-          otherInfo: p.data.otherInfo.trim() || undefined,
+          memo: p.data.memo.trim() || undefined,
+          otherInfo: p.data.nearbyInfo.trim() || undefined,
           cameraGear: {
             camera: p.data.camera.trim() || undefined,
             lens: p.data.lens.trim() || undefined,
@@ -552,17 +503,56 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
             />
           </div>
 
-          {/* 写真が選ばれるまでは、場所・撮影データ入力を表示しない(Photo-First) */}
+          {/* 写真が選ばれるまでは、以降の入力を表示しない(Photo-First) */}
           {currentPhoto && (
             <>
-              {/* STEP2: 撮影場所の設定(写真から自動セット、なければ地図タップ) */}
+              {/* 1. 公開設定: フォーム上部に配置。自分だけの備忘録として使いたい
+                  場合の心理的ハードルを下げるため、デフォルトは「自分のみ(非公開)」。 */}
+              <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
+                    1
+                  </span>
+                  公開設定
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="visibility"
+                    checked={visibility === "private"}
+                    onChange={() => setVisibility("private")}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm text-gray-700">
+                    自分のみ(非公開メモ)
+                    <span className="block text-xs text-gray-400">
+                      自分だけの撮影ログ・備忘録として保存します(他のユーザーの地図には表示されません)
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="visibility"
+                    checked={visibility === "public"}
+                    onChange={() => setVisibility("public")}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm text-gray-700">
+                    全体公開
+                    <span className="block text-xs text-gray-400">みんなの検索地図にも表示します</span>
+                  </span>
+                </label>
+              </div>
+
+              {/* 2. 場所名・位置情報(写真から自動セット、なければ地図タップ) */}
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <label className="block text-sm font-semibold text-gray-700">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
                       2
                     </span>
-                    撮影した場所{photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
+                    場所名・位置情報{photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
                   </label>
                   {/* 複数枚投稿時、2枚目以降は1枚目の場所・周辺情報をワンタップで
                       転記できる(転記後も自由に上書き修正可能) */}
@@ -572,7 +562,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                       className="flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 border border-orange-200 rounded-full px-2.5 py-1 flex-shrink-0"
                     >
                       <Copy size={11} strokeWidth={2} />
-                      1枚目の場所・情報をコピー
+                      1枚目の情報をコピー
                     </button>
                   )}
                 </div>
@@ -591,7 +581,6 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </p>
                 )}
 
-                <label className="block text-xs font-semibold text-gray-500 mb-1">場所名</label>
                 <div className="flex gap-2 mb-1">
                   <input
                     type="text"
@@ -636,260 +625,35 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   onChange={(pos) => handleManualPositionChange(currentIndex, pos)}
                   heightClassName="h-52"
                 />
-
-                {/* 周辺情報(駐車場・飲食店・撮影環境。ワンタップのプリセットチップ+
-                    任意のフリーテキスト。チップはタップでトグル選択でき、選択内容は
-                    そのままparkingInfo等のテキストへ合成される(lib/nearbyInfoChips)) */}
-                <div className="mt-3 space-y-3">
-                  <p className="text-xs font-semibold text-gray-500">周辺情報(任意)</p>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <Car size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-[11px] font-semibold text-gray-500">駐車場</span>
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {PARKING_INFO_CHIPS.map((chip) => {
-                        const selected = splitChipsAndText(currentPhoto.data.parkingInfo, PARKING_INFO_CHIPS).selected.includes(
-                          chip
-                        );
-                        return (
-                          <button
-                            key={chip}
-                            type="button"
-                            onClick={() =>
-                              updatePhotoData(currentIndex, {
-                                parkingInfo: toggleChipInValue(currentPhoto.data.parkingInfo, chip, PARKING_INFO_CHIPS),
-                              })
-                            }
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                              selected
-                                ? "bg-orange-500 border-orange-500 text-white"
-                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                            }`}
-                          >
-                            {chip}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <input
-                      type="text"
-                      value={currentPhoto.data.parkingInfo}
-                      onChange={(e) => updatePhotoData(currentIndex, { parkingInfo: e.target.value })}
-                      placeholder="補足(例: 公園東側のタイムズが使いやすい)"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <Utensils size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-[11px] font-semibold text-gray-500">周辺飲食店</span>
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {DINING_INFO_CHIPS.map((chip) => {
-                        const selected = splitChipsAndText(currentPhoto.data.diningInfo, DINING_INFO_CHIPS).selected.includes(
-                          chip
-                        );
-                        return (
-                          <button
-                            key={chip}
-                            type="button"
-                            onClick={() =>
-                              updatePhotoData(currentIndex, {
-                                diningInfo: toggleChipInValue(currentPhoto.data.diningInfo, chip, DINING_INFO_CHIPS),
-                              })
-                            }
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                              selected
-                                ? "bg-pink-500 border-pink-500 text-white"
-                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                            }`}
-                          >
-                            {chip}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <input
-                      type="text"
-                      value={currentPhoto.data.diningInfo}
-                      onChange={(e) => updatePhotoData(currentIndex, { diningInfo: e.target.value })}
-                      placeholder="補足(例: 徒歩3分にカフェあり)"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <InfoIcon size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-[11px] font-semibold text-gray-500">撮影環境</span>
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {SHOOTING_ENV_CHIPS.map((chip) => {
-                        const selected = splitChipsAndText(currentPhoto.data.otherInfo, SHOOTING_ENV_CHIPS).selected.includes(
-                          chip
-                        );
-                        return (
-                          <button
-                            key={chip}
-                            type="button"
-                            onClick={() =>
-                              updatePhotoData(currentIndex, {
-                                otherInfo: toggleChipInValue(currentPhoto.data.otherInfo, chip, SHOOTING_ENV_CHIPS),
-                              })
-                            }
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                              selected
-                                ? "bg-gray-700 border-gray-700 text-white"
-                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                            }`}
-                          >
-                            {chip}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <input
-                      type="text"
-                      value={currentPhoto.data.otherInfo}
-                      onChange={(e) => updatePhotoData(currentIndex, { otherInfo: e.target.value })}
-                      placeholder="補足(例: 駅から徒歩10分)"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
               </div>
 
-              {/* STEP3: 撮影設定・機材メモ */}
+              {/* 3. 写真のメモ・補足(1つの入力欄のみ。カメラ機種・レンズ・F値・
+                  シャッタースピード・ISO・焦点距離・撮影日時・時間帯はEXIFから
+                  自動取得して裏で保存するため、個別の入力欄は設けない) */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
                     3
                   </span>
-                  撮影設定・機材メモ(任意){photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
+                  写真のメモ・補足(任意){photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
                 </label>
-                {currentPhoto.data.autoFilled && (
-                  <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2 mb-2">
-                    写真のExifから自動入力しました。内容が異なる場合はそのまま編集してください。
-                  </p>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={currentPhoto.data.camera}
-                    onChange={(e) => updatePhotoData(currentIndex, { camera: e.target.value })}
-                    placeholder="カメラ機種"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={currentPhoto.data.lens}
-                    onChange={(e) => updatePhotoData(currentIndex, { lens: e.target.value })}
-                    placeholder="レンズ"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={currentPhoto.data.fNumber}
-                    onChange={(e) => updatePhotoData(currentIndex, { fNumber: e.target.value })}
-                    placeholder="F値(例: 2.8)"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={currentPhoto.data.exposureTime}
-                    onChange={(e) => updatePhotoData(currentIndex, { exposureTime: e.target.value })}
-                    placeholder="シャッタースピード(例: 1/250)"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={currentPhoto.data.iso}
-                    onChange={(e) => updatePhotoData(currentIndex, { iso: e.target.value })}
-                    placeholder="ISO感度"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={currentPhoto.data.focalLength}
-                    onChange={(e) => updatePhotoData(currentIndex, { focalLength: e.target.value })}
-                    placeholder="焦点距離(例: 35mm)"
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  {TIME_OF_DAY_OPTIONS.map(({ value, label }) => (
-                    <button
-                      key={value}
-                      onClick={() =>
-                        updatePhotoData(currentIndex, {
-                          timeOfDay: currentPhoto.data.timeOfDay === value ? "" : value,
-                        })
-                      }
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                        currentPhoto.data.timeOfDay === value
-                          ? "bg-orange-500 border-orange-500 text-white"
-                          : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <textarea
+                  value={currentPhoto.data.memo}
+                  onChange={(e) => updatePhotoData(currentIndex, { memo: e.target.value })}
+                  rows={2}
+                  placeholder="この写真についてのメモ(機材・撮影条件はExifから自動記録されます)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
               </div>
 
-              {/* STEP4: タイトル・説明・撮影アドバイス(任意の補足情報) */}
-              <div className="space-y-3">
-                <label className="block text-sm font-semibold text-gray-700">
+              {/* 4. おすすめの理由・構図のコツ(投稿全体で1つ) */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
                     4
                   </span>
-                  写真についての補足(任意)
+                  おすすめの理由・構図のコツ(任意)
                 </label>
-
-                {/* 公開設定: 自分だけの備忘録として使いたい場合の心理的ハードルを
-                    下げるため、デフォルトは「自分のみ(非公開)」にしている。 */}
-                <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-                  <p className="text-xs font-semibold text-gray-500">公開設定</p>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="visibility"
-                      checked={visibility === "private"}
-                      onChange={() => setVisibility("private")}
-                      className="mt-0.5"
-                    />
-                    <span className="text-sm text-gray-700">
-                      自分のみ(非公開メモ)
-                      <span className="block text-xs text-gray-400">
-                        自分だけの撮影ログ・備忘録として保存します(他のユーザーの地図には表示されません)
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="visibility"
-                      checked={visibility === "public"}
-                      onChange={() => setVisibility("public")}
-                      className="mt-0.5"
-                    />
-                    <span className="text-sm text-gray-700">
-                      全体公開
-                      <span className="block text-xs text-gray-400">みんなの検索地図にも表示します</span>
-                    </span>
-                  </label>
-                </div>
-
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="タイトル(例: ○○神社の桜並木)"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -897,78 +661,23 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   placeholder="おすすめの理由・構図のコツなど"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
+              </div>
+
+              {/* 5. 周辺情報・アクセス(駐車場・飲食店など。1つの入力欄のみ) */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
+                    5
+                  </span>
+                  周辺情報・アクセス(任意){photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
+                </label>
                 <textarea
-                  value={accessNote}
-                  onChange={(e) => setAccessNote(e.target.value)}
+                  value={currentPhoto.data.nearbyInfo}
+                  onChange={(e) => updatePhotoData(currentIndex, { nearbyInfo: e.target.value })}
                   rows={2}
-                  placeholder="撮影アドバイス(三脚利用の可否、許可申請の要否、足場の状況など)"
+                  placeholder="駐車場・飲食店・トイレの有無・徒歩アクセスなど"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
-
-                {/* ギャラリー・地図の絞り込み検索で使われるタグ(任意) */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-1">被写体・タグ</p>
-                  <div className="flex gap-2 flex-wrap">
-                    {PHOTO_SPOT_SUBJECT_TAGS.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => toggleTag(subjectTags, setSubjectTags, tag)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                          subjectTags.includes(tag)
-                            ? "bg-orange-500 border-orange-500 text-white"
-                            : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-1">機材・撮影条件</p>
-                  <div className="flex gap-2 flex-wrap">
-                    {PHOTO_SPOT_EQUIPMENT_TAGS.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => toggleTag(equipmentTags, setEquipmentTags, tag)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                          equipmentTags.includes(tag)
-                            ? "bg-pink-500 border-pink-500 text-white"
-                            : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 利用条件(ライセンス)設定 */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-1">利用条件</p>
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={isFree}
-                        onChange={(e) => setIsFree(e.target.checked)}
-                        className="rounded border-gray-300"
-                      />
-                      無料ダウンロードを許可する
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={allowCommercial}
-                        onChange={(e) => setAllowCommercial(e.target.checked)}
-                        className="rounded border-gray-300"
-                      />
-                      商用利用を許可する
-                    </label>
-                  </div>
-                </div>
               </div>
             </>
           )}

@@ -67,6 +67,8 @@ export type PhotoSpotPhotoItem = {
   parkingInfo?: string; // 例: "無料駐車場あり(20台)"
   diningInfo?: string; // 例: "徒歩3分にカフェあり"
   otherInfo?: string; // 例: "トイレあり、駅から徒歩10分"
+  // この写真固有の自由記述メモ・補足(投稿フォームの「写真のメモ・補足」欄)。
+  memo?: string;
 };
 
 // 公開範囲。private: 自分だけの撮影ログ・備忘録(他ユーザーの地図・検索には

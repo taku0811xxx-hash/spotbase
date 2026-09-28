@@ -245,6 +245,7 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
           ) : (
             <div className="space-y-4">
               {spot.description && <p className="text-sm text-gray-700">{spot.description}</p>}
+              {photo.memo && <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{photo.memo}</p>}
               <p className="text-xs text-gray-400">{photo.locationName}</p>
               {photo.address && photo.address !== photo.locationName && (
                 <p className="text-[11px] text-gray-300">{photo.address}</p>

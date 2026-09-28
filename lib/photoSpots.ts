@@ -50,6 +50,7 @@ export type NewPhotoSpotPhotoInput = {
   parkingInfo?: string;
   diningInfo?: string;
   otherInfo?: string;
+  memo?: string;
 };
 
 export type NewPhotoSpotInput = {
@@ -180,6 +181,7 @@ export async function createPhotoSpot(input: NewPhotoSpotInput): Promise<string>
     ...(p.parkingInfo ? { parkingInfo: p.parkingInfo } : {}),
     ...(p.diningInfo ? { diningInfo: p.diningInfo } : {}),
     ...(p.otherInfo ? { otherInfo: p.otherInfo } : {}),
+    ...(p.memo ? { memo: p.memo } : {}),
   }));
   // 先頭の写真を投稿全体の代表値として使う(地図のピン配置・クラスタリング・
   // ギャラリーサムネイル等、投稿単位で1組の位置/撮影条件しか必要としない
