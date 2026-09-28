@@ -12,7 +12,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
-import { Home, Map, PlusCircle, User } from "lucide-react";
+import { Home, Map, PlusCircle, User, Wrench } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { pickPhotosFromLibrary } from "@/lib/nativePhotoPicker";
 
@@ -85,6 +85,10 @@ export default function PhotoBottomNav({ onRequestUpload, onFilesSelected }: Pro
             e.target.value = "";
           }}
         />
+        <Link href="/tools" className={itemClass(pathname === "/tools")}>
+          <Wrench size={22} strokeWidth={pathname === "/tools" ? 2.5 : 2} />
+          準備
+        </Link>
         <Link href="/mypage" className={itemClass(pathname === "/mypage")}>
           <User size={22} strokeWidth={pathname === "/mypage" ? 2.5 : 2} />
           マイページ
