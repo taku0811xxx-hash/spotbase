@@ -51,33 +51,13 @@ const TOKYO_STATION: [number, number] = [35.6812, 139.7671];
 
 // ピンが1つも無い場合のデフォルト中心・ズーム(広域表示)
 const EMPTY_MAP_ZOOM = 11;
-// ピンが密集しているエリアを中心に表示する際のズーム(概ね半径20km程度が収まる値)
-const DENSITY_FOCUSED_ZOOM = 11;
-
-// 投稿ピンの分布から、最も密集しているエリアの重心を計算する。
-// 経度・緯度とも約0.2度(概ね20km四方)刻みのグリッドでビニングし、
-// 最も件数の多いセル内の平均座標を「重心」として採用する簡易クラスタリング。
-function computeDensityCenter(spots: PhotoSpot[]): [number, number] | null {
-  if (spots.length === 0) return null;
-
-  const CELL_SIZE_DEG = 0.2;
-  const bins = new Map<string, { lat: number; lng: number }[]>();
-  for (const s of spots) {
-    const key = `${Math.floor(s.lat / CELL_SIZE_DEG)}:${Math.floor(s.lng / CELL_SIZE_DEG)}`;
-    const bin = bins.get(key);
-    if (bin) bin.push({ lat: s.lat, lng: s.lng });
-    else bins.set(key, [{ lat: s.lat, lng: s.lng }]);
-  }
-
-  let densestBin: { lat: number; lng: number }[] = [];
-  for (const bin of bins.values()) {
-    if (bin.length > densestBin.length) densestBin = bin;
-  }
-
-  const lat = densestBin.reduce((sum, p) => sum + p.lat, 0) / densestBin.length;
-  const lng = densestBin.reduce((sum, p) => sum + p.lng, 0) / densestBin.length;
-  return [lat, lng];
-}
+// 現在地を中心に表示する際のズーム
+const CURRENT_LOCATION_ZOOM = 12;
+// 全ピン俯瞰(fitBounds)時、1件しか無い等でズームが際限なく深くなりすぎないための上限
+const FIT_BOUNDS_MAX_ZOOM = 14;
+// 現在地取得を待つ最大時間。特定のエリア(例: 箱根)にピンが偏っていても、
+// 常にそこへ寄ってしまわないよう、現在地が取れる場合は必ずそちらを優先する。
+const GEOLOCATION_TIMEOUT_MS = 5000;
 
 // MapContainer配下でLeafletのMapインスタンスを取得し、外側(このファイルの
 // マーカーclickハンドラ)から参照できるようrefへ格納するためだけの子コンポーネント。
@@ -104,20 +84,72 @@ function formatSettings(spot: PhotoSpot): string | null {
 // react-leafletのMapContainerはcenter/zoom propを初回マウント時にしか反映しない
 // (以降のprop変更は無視される、いわゆる"uncontrolled"な扱い)。ここでは
 // spotsがAPI等から非同期に取得されるため、MapContainerがマウントされた時点では
-// まだ空配列([])で、その後spotsが更新されても地図は追従しない。
-// そのため、実際にピンのデータが揃ったタイミングで明示的にmap.setViewを呼び、
-// 最も密集しているエリアを中心とした初期表示へ確実に合わせる(初回の1回のみ)。
+// まだ空配列([])で、その後spotsが更新されても地図は追従しない。そのため、
+// 以下の優先順位で明示的にmap.setView/fitBoundsを呼び、初期表示を確定させる
+// (適用は初回の1回のみ):
+//   優先1: 端末の現在地が取得できれば、それを中心に表示する
+//          (特定のエリアにピンが偏っていても、常にそこへ寄ってしまうのを防ぐ)
+//   優先2: 現在地が使えない場合、登録されている全ピンが画面内に収まるよう
+//          fitBoundsで広域表示する
+//   優先3: ピンが1件も無い場合のみ、デフォルト座標(東京駅周辺)のまま
 function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
   const map = useMap();
   const appliedRef = useRef(false);
+  // 優先1(現在地取得)の完了を待ってから優先2を判定するためのフラグ。
+  // stateではなくrefにしているのは、値の変化そのものでは再描画を必要とせず、
+  // 単に「もう待たなくてよい」という事実だけを後続の判定に伝えたいため。
+  const geoSettledRef = useRef(false);
+  const spotsRef = useRef(spots);
   useEffect(() => {
+    spotsRef.current = spots;
+  }, [spots]);
+
+  function applyFitBoundsIfReady() {
     if (appliedRef.current) return;
-    if (spots.length === 0) return;
-    const center = computeDensityCenter(spots);
-    if (!center) return;
-    map.setView(center, DENSITY_FOCUSED_ZOOM);
+    if (!geoSettledRef.current) return; // 現在地の判定が終わるまでは優先2を実行しない
+    const currentSpots = spotsRef.current;
+    if (currentSpots.length === 0) return;
+    const bounds = L.latLngBounds(currentSpots.map((s) => [s.lat, s.lng] as [number, number]));
+    map.fitBounds(bounds, { padding: [50, 50], maxZoom: FIT_BOUNDS_MAX_ZOOM });
     appliedRef.current = true;
+  }
+
+  // 優先1: 現在地(マウント時に1度だけ試行)
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      let position: GeolocationPosition | null = null;
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        position = await new Promise<GeolocationPosition | null>((resolve) => {
+          navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+            timeout: GEOLOCATION_TIMEOUT_MS,
+            maximumAge: 5 * 60 * 1000,
+          });
+        });
+      }
+      if (cancelled) return;
+      if (position && !appliedRef.current) {
+        map.setView([position.coords.latitude, position.coords.longitude], CURRENT_LOCATION_ZOOM);
+        appliedRef.current = true;
+      }
+      geoSettledRef.current = true;
+      // 現在地が使えなかった場合、既にspotsが揃っていればここで優先2へフォールバックする
+      applyFitBoundsIfReady();
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  // 優先2: 現在地の判定完了後にspotsが届いた場合(または既に判定済みでspotsが
+  // 後から更新された場合)も、全ピンが収まるようfitBoundsする
+  useEffect(() => {
+    applyFitBoundsIfReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spots, map]);
+
   return null;
 }
 
@@ -134,10 +166,9 @@ function FlyToFocusedSpot({ spots, focusedSpotId }: { spots: PhotoSpot[]; focuse
 }
 
 export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick }: Props) {
-  // 初期表示: ピンが1つも無ければ東京駅付近を広域表示、ある場合は最も密集している
-  // エリアの重心を中心に、半径約20km程度が収まるズームで表示する。
-  const center = computeDensityCenter(spots) ?? TOKYO_STATION;
-  const initialZoom = spots.length > 0 ? DENSITY_FOCUSED_ZOOM : EMPTY_MAP_ZOOM;
+  // MapContainerのcenter/zoomは初回マウント時のみ使われる安全なデフォルト値。
+  // 実際の初期表示(現在地優先→全ピン俯瞰)はマウント後にInitialViewOnLoadが
+  // 非同期に決定して上書きする。
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
   const mapRef = useRef<L.Map | null>(null);
 
@@ -152,8 +183,8 @@ export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick 
 
   return (
     <MapContainer
-      center={center}
-      zoom={initialZoom}
+      center={TOKYO_STATION}
+      zoom={EMPTY_MAP_ZOOM}
       className="w-full h-full"
       scrollWheelZoom
       zoomControl={false}
