@@ -45,6 +45,17 @@ type Props = {
   // 該当ピンを強調表示するためのID(未選択時はundefined)
   focusedSpotId?: string;
   onMarkerClick?: (spotId: string) => void;
+  // 初期表示で現在地を優先するかどうか(デフォルトtrue)。app/map/page.tsxの
+  // 全体マップ(周辺を探す用途)ではtrueのままでよいが、マイページの
+  // 「マイ撮影マップ」は自分の投稿の分布を一望する用途のため、現在地優先を
+  // 無効化し常に全ピン俯瞰(fitBounds)を使う。
+  preferCurrentLocation?: boolean;
+  // fitBounds時の余白。app/map/page.tsxの全画面マップは絶対配置のフィルター
+  // バーと重なるため大きめの既定値(FIT_BOUNDS_PADDING_TOP_LEFT/BOTTOM_RIGHT)を
+  // 使うが、マイページ等の小さく埋め込まれたマップではそのままだと余白が
+  // 過大になるため、呼び出し元から控えめな値を渡せるようにする。
+  fitBoundsPaddingTopLeft?: [number, number];
+  fitBoundsPaddingBottomRight?: [number, number];
 };
 
 const TOKYO_STATION: [number, number] = [35.6812, 139.7671];
@@ -55,6 +66,9 @@ const EMPTY_MAP_ZOOM = 11;
 const CURRENT_LOCATION_ZOOM = 12;
 // 全ピン俯瞰(fitBounds)時、1件しか無い等でズームが際限なく深くなりすぎないための上限
 const FIT_BOUNDS_MAX_ZOOM = 14;
+// ピンがちょうど1件だけの場合に使う適度なズーム(fitBoundsだと1点に対して
+// 過剰に寄ってしまうため、setViewで固定ズームを使う)
+const SINGLE_SPOT_ZOOM = 13;
 // fitBounds時の余白。上部はapp/map/page.tsxの絞り込みフィルターバー(地図に
 // 重ねて絶対配置されている)にピンが隠れないよう大きめに、下部はボトムナビゲーション
 // バー分のゆとりを確保する(ボトムナビ自体は地図コンテナのCSS padding-bottomで
@@ -93,12 +107,24 @@ function formatSettings(spot: PhotoSpot): string | null {
 // まだ空配列([])で、その後spotsが更新されても地図は追従しない。そのため、
 // 以下の優先順位で明示的にmap.setView/fitBoundsを呼び、初期表示を確定させる
 // (適用は初回の1回のみ):
-//   優先1: 端末の現在地が取得できれば、それを中心に表示する
-//          (特定のエリアにピンが偏っていても、常にそこへ寄ってしまうのを防ぐ)
-//   優先2: 現在地が使えない場合、登録されている全ピンが画面内に収まるよう
-//          fitBoundsで広域表示する
+//   優先1: preferCurrentLocationが有効(デフォルト)で端末の現在地が取得できれば、
+//          それを中心に表示する(特定のエリアにピンが偏っていても、常にそこへ
+//          寄ってしまうのを防ぐ)
+//   優先2: 現在地が使えない場合(または無効化されている場合)、登録されている
+//          全ピンが画面内に収まるようfitBoundsで広域表示する。ピンがちょうど
+//          1件の場合はfitBoundsだと寄りすぎるため、setViewで適度なズームにする
 //   優先3: ピンが1件も無い場合のみ、デフォルト座標(東京駅周辺)のまま
-function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
+function InitialViewOnLoad({
+  spots,
+  preferCurrentLocation = true,
+  fitBoundsPaddingTopLeft = FIT_BOUNDS_PADDING_TOP_LEFT,
+  fitBoundsPaddingBottomRight = FIT_BOUNDS_PADDING_BOTTOM_RIGHT,
+}: {
+  spots: PhotoSpot[];
+  preferCurrentLocation?: boolean;
+  fitBoundsPaddingTopLeft?: [number, number];
+  fitBoundsPaddingBottomRight?: [number, number];
+}) {
   const map = useMap();
   const appliedRef = useRef(false);
   // 優先1(現在地取得)の完了を待ってから優先2を判定するためのフラグ。
@@ -116,26 +142,34 @@ function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
     const currentSpots = spotsRef.current;
     if (currentSpots.length === 0) return;
     appliedRef.current = true;
-    const bounds = L.latLngBounds(currentSpots.map((s) => [s.lat, s.lng] as [number, number]));
     // 地図描画直後はコンテナの幅・高さがまだ確定していないことがあり、その状態で
-    // fitBoundsすると誤ったピクセルサイズを基準にズーム計算されて画面端のピンが
-    // 見切れることがある。invalidateSizeで実サイズを再計測させてから適用する。
+    // fitBounds/setViewすると誤ったピクセルサイズを基準に計算されて画面端の
+    // ピンが見切れることがある。invalidateSizeで実サイズを再計測させてから適用する。
     map.invalidateSize();
+    if (currentSpots.length === 1) {
+      const only = currentSpots[0];
+      window.setTimeout(() => {
+        map.setView([only.lat, only.lng], SINGLE_SPOT_ZOOM);
+      }, 100);
+      return;
+    }
+    const bounds = L.latLngBounds(currentSpots.map((s) => [s.lat, s.lng] as [number, number]));
     window.setTimeout(() => {
       map.fitBounds(bounds, {
-        paddingTopLeft: FIT_BOUNDS_PADDING_TOP_LEFT,
-        paddingBottomRight: FIT_BOUNDS_PADDING_BOTTOM_RIGHT,
+        paddingTopLeft: fitBoundsPaddingTopLeft,
+        paddingBottomRight: fitBoundsPaddingBottomRight,
         maxZoom: FIT_BOUNDS_MAX_ZOOM,
       });
     }, 100);
   }
 
-  // 優先1: 現在地(マウント時に1度だけ試行)
+  // 優先1: 現在地(マウント時に1度だけ試行。preferCurrentLocation=falseの場合は
+  // 試行せず、即座に優先2の判定へ進む)
   useEffect(() => {
     let cancelled = false;
     async function run() {
       let position: GeolocationPosition | null = null;
-      if (typeof navigator !== "undefined" && navigator.geolocation) {
+      if (preferCurrentLocation && typeof navigator !== "undefined" && navigator.geolocation) {
         position = await new Promise<GeolocationPosition | null>((resolve) => {
           navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
             timeout: GEOLOCATION_TIMEOUT_MS,
@@ -161,7 +195,7 @@ function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map]);
+  }, [map, preferCurrentLocation]);
 
   // 優先2: 現在地の判定完了後にspotsが届いた場合(または既に判定済みでspotsが
   // 後から更新された場合)も、全ピンが収まるようfitBoundsする
@@ -185,7 +219,14 @@ function FlyToFocusedSpot({ spots, focusedSpotId }: { spots: PhotoSpot[]; focuse
   return null;
 }
 
-export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick }: Props) {
+export default function PhotoSpotsMapView({
+  spots,
+  focusedSpotId,
+  onMarkerClick,
+  preferCurrentLocation = true,
+  fitBoundsPaddingTopLeft,
+  fitBoundsPaddingBottomRight,
+}: Props) {
   // MapContainerのcenter/zoomは初回マウント時のみ使われる安全なデフォルト値。
   // 実際の初期表示(現在地優先→全ピン俯瞰)はマウント後にInitialViewOnLoadが
   // 非同期に決定して上書きする。
@@ -217,7 +258,12 @@ export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick 
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <MapInstanceCapture mapRef={mapRef} />
-      <InitialViewOnLoad spots={spots} />
+      <InitialViewOnLoad
+        spots={spots}
+        preferCurrentLocation={preferCurrentLocation}
+        fitBoundsPaddingTopLeft={fitBoundsPaddingTopLeft}
+        fitBoundsPaddingBottomRight={fitBoundsPaddingBottomRight}
+      />
       <FlyToFocusedSpot spots={spots} focusedSpotId={focusedSpotId} />
       {/* 近接ピンの自動集約: 一定ズーム未満では複数ピンを「N件」の丸いクラスタにまとめ、
           ズームインすると自動的に個別ピンへ分解される */}

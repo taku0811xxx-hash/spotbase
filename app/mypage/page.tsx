@@ -294,7 +294,12 @@ export default function MyPage() {
               つのスポットで撮影しました
             </p>
             <div className="h-96 rounded-xl overflow-hidden border border-gray-200">
-              <PhotoSpotsMapView spots={myPosts} />
+              <PhotoSpotsMapView
+                spots={myPosts}
+                preferCurrentLocation={false}
+                fitBoundsPaddingTopLeft={[30, 30]}
+                fitBoundsPaddingBottomRight={[30, 30]}
+              />
             </div>
           </div>
         )}
