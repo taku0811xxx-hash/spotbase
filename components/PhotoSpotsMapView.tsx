@@ -55,6 +55,12 @@ const EMPTY_MAP_ZOOM = 11;
 const CURRENT_LOCATION_ZOOM = 12;
 // 全ピン俯瞰(fitBounds)時、1件しか無い等でズームが際限なく深くなりすぎないための上限
 const FIT_BOUNDS_MAX_ZOOM = 14;
+// fitBounds時の余白。上部はapp/map/page.tsxの絞り込みフィルターバー(地図に
+// 重ねて絶対配置されている)にピンが隠れないよう大きめに、下部はボトムナビゲーション
+// バー分のゆとりを確保する(ボトムナビ自体は地図コンテナのCSS padding-bottomで
+// 除外済みだが、ズームコントロールとの兼ね合いも含めて余裕を持たせる)。
+const FIT_BOUNDS_PADDING_TOP_LEFT: [number, number] = [40, 120];
+const FIT_BOUNDS_PADDING_BOTTOM_RIGHT: [number, number] = [40, 90];
 // 現在地取得を待つ最大時間。特定のエリア(例: 箱根)にピンが偏っていても、
 // 常にそこへ寄ってしまわないよう、現在地が取れる場合は必ずそちらを優先する。
 const GEOLOCATION_TIMEOUT_MS = 5000;
@@ -109,9 +115,19 @@ function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
     if (!geoSettledRef.current) return; // 現在地の判定が終わるまでは優先2を実行しない
     const currentSpots = spotsRef.current;
     if (currentSpots.length === 0) return;
-    const bounds = L.latLngBounds(currentSpots.map((s) => [s.lat, s.lng] as [number, number]));
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: FIT_BOUNDS_MAX_ZOOM });
     appliedRef.current = true;
+    const bounds = L.latLngBounds(currentSpots.map((s) => [s.lat, s.lng] as [number, number]));
+    // 地図描画直後はコンテナの幅・高さがまだ確定していないことがあり、その状態で
+    // fitBoundsすると誤ったピクセルサイズを基準にズーム計算されて画面端のピンが
+    // 見切れることがある。invalidateSizeで実サイズを再計測させてから適用する。
+    map.invalidateSize();
+    window.setTimeout(() => {
+      map.fitBounds(bounds, {
+        paddingTopLeft: FIT_BOUNDS_PADDING_TOP_LEFT,
+        paddingBottomRight: FIT_BOUNDS_PADDING_BOTTOM_RIGHT,
+        maxZoom: FIT_BOUNDS_MAX_ZOOM,
+      });
+    }, 100);
   }
 
   // 優先1: 現在地(マウント時に1度だけ試行)
@@ -129,8 +145,12 @@ function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
       }
       if (cancelled) return;
       if (position && !appliedRef.current) {
-        map.setView([position.coords.latitude, position.coords.longitude], CURRENT_LOCATION_ZOOM);
         appliedRef.current = true;
+        const { latitude, longitude } = position.coords;
+        map.invalidateSize();
+        window.setTimeout(() => {
+          map.setView([latitude, longitude], CURRENT_LOCATION_ZOOM);
+        }, 100);
       }
       geoSettledRef.current = true;
       // 現在地が使えなかった場合、既にspotsが揃っていればここで優先2へフォールバックする
