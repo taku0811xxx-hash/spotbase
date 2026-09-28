@@ -15,6 +15,7 @@ import {
   PHOTO_SPOT_SUBJECT_TAGS,
   type PhotoSpot,
   type PhotoSpotEquipmentTag,
+  type PhotoSpotPhotoItem,
   type PhotoSpotSubjectTag,
 } from "@/lib/types/photoSpot";
 import LikeSaveButtons from "@/components/LikeSaveButtons";
@@ -24,8 +25,9 @@ const PhotoSpotMap = dynamic(() => import("@/components/PhotoSpotMap"), { ssr: f
 
 type Props = {
   spot: PhotoSpot;
-  // 詳細を開いた対象の写真(同じスポットに複数枚あっても、この1枚を中心に表示する)
-  photoUrl: string;
+  // 詳細を開いた対象の写真(同じスポットに複数枚あっても、この1枚固有の
+  // 位置情報・場所名・撮影条件を中心に表示する)
+  photo: PhotoSpotPhotoItem;
   onClose: () => void;
   onUpdated: () => void; // 更新後、呼び出し元でギャラリーを再取得させるためのコールバック
 };
@@ -37,7 +39,7 @@ function formatShotAt(shotAt: string | undefined): string | null {
   return date.toLocaleString("ja-JP", { dateStyle: "medium", timeStyle: "short" });
 }
 
-export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdated }: Props) {
+export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -59,9 +61,9 @@ export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdate
     setError("");
     try {
       await updatePhotoSpot(spot.id, {
-        // タイトル未入力時は場所名を代替表示に使う。場所名も無ければ空欄のままにする
-        // (「無題の写真」等の固定文言は表示しない)。
-        name: name.trim() || spot.address.trim(),
+        // タイトル未入力時はこの写真の場所名を代替表示に使う。場所名も無ければ
+        // 空欄のままにする(「無題の写真」等の固定文言は表示しない)。
+        name: name.trim() || photo.locationName.trim(),
         description: description.trim(),
         accessNote: accessNote.trim(),
         subjectTags,
@@ -79,10 +81,10 @@ export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdate
     }
   }
 
-  const exif = spot.exif;
+  const exif = photo.exif;
   const shotAtLabel = formatShotAt(exif?.shotAt);
   const exifRows = [
-    { icon: Camera, label: [spot.cameraGear?.camera, spot.cameraGear?.lens].filter(Boolean).join(" / ") },
+    { icon: Camera, label: [photo.cameraGear?.camera, photo.cameraGear?.lens].filter(Boolean).join(" / ") },
     { icon: Aperture, label: exif?.fNumber != null ? `F${exif.fNumber}` : null },
     { icon: Timer, label: exif?.exposureTime ? `SS ${exif.exposureTime}` : null },
     { icon: Gauge, label: exif?.iso != null ? `ISO ${exif.iso}` : null },
@@ -94,7 +96,9 @@ export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdate
     <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-2xl">
-          <h2 className="text-lg font-bold text-gray-900 truncate pr-2">{editing ? "投稿を編集" : spot.name}</h2>
+          <h2 className="text-lg font-bold text-gray-900 truncate pr-2">
+            {editing ? "投稿を編集" : spot.name || photo.locationName}
+          </h2>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!editing && (
               <button
@@ -115,9 +119,13 @@ export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdate
           {/* この写真のプレビュー(枠内に収まるようobject-contain) + いいね/保存数 */}
           <div className="relative w-full h-64 rounded-lg overflow-hidden bg-gray-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photoUrl} alt={spot.name} className="w-full h-full object-contain bg-gray-100" />
+            <img
+              src={photo.url}
+              alt={photo.locationName || spot.name}
+              className="w-full h-full object-contain bg-gray-100"
+            />
             <div className="absolute bottom-2 right-2">
-              <LikeSaveButtons spotId={spot.id} url={photoUrl} size="md" />
+              <LikeSaveButtons spotId={spot.id} url={photo.url} size="md" />
             </div>
           </div>
 
@@ -218,7 +226,7 @@ export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdate
           ) : (
             <div className="space-y-4">
               {spot.description && <p className="text-sm text-gray-700">{spot.description}</p>}
-              <p className="text-xs text-gray-400">{spot.address}</p>
+              <p className="text-xs text-gray-400">{photo.locationName}</p>
               {spot.accessNote && (
                 <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{spot.accessNote}</p>
               )}
@@ -252,11 +260,14 @@ export default function PhotoSpotDetailModal({ spot, photoUrl, onClose, onUpdate
                 </div>
               )}
 
-              {/* 位置情報マップ(この写真の撮影場所を中央に表示) */}
+              {/* 位置情報マップ(この写真固有の緯度経度を中央に表示。周辺駐車場は
+                  スポット全体に紐づく情報で写真ごとの位置とはずれうるため非表示にする) */}
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1.5">撮影場所</p>
                 <div className="h-48 rounded-lg overflow-hidden border border-gray-200">
-                  <PhotoSpotMap spot={spot} />
+                  <PhotoSpotMap
+                    spot={{ ...spot, lat: photo.lat, lng: photo.lng, address: photo.locationName, parkingLots: undefined }}
+                  />
                 </div>
               </div>
             </div>

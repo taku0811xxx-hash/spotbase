@@ -26,21 +26,29 @@ import type {
   PhotoSpotEquipmentTag,
   PhotoSpotExif,
   PhotoSpotLicenseType,
+  PhotoSpotPhotoItem,
   PhotoSpotSubjectTag,
 } from "./types/photoSpot";
 import { DUMMY_PHOTO_SPOTS } from "./dummyPhotoSpots";
 
 const PHOTO_SPOTS_COLLECTION = "photo_spots";
 
+// 投稿する写真1枚ごとの入力(ファイル本体+その写真固有の位置情報・撮影条件)。
+// 複数枚を選んだ場合、各写真が別々の場所・設定で撮られている可能性があるため、
+// アップロード時点でこの単位のまま個別に保持する(PhotoSpotPhotoItem参照)。
+export type NewPhotoSpotPhotoInput = {
+  file: File;
+  lat: number;
+  lng: number;
+  locationName: string;
+  cameraGear?: PhotoSpotCameraGear;
+  exif?: PhotoSpotExif;
+};
+
 export type NewPhotoSpotInput = {
   name: string;
   description?: string;
-  address: string;
-  lat: number;
-  lng: number;
-  photos: File[];
-  cameraGear?: PhotoSpotCameraGear;
-  exif?: PhotoSpotExif;
+  photos: NewPhotoSpotPhotoInput[]; // 1枚以上必須。先頭の写真の位置情報等が投稿全体の代表値として使われる
   accessNote?: string;
   subjectTags?: PhotoSpotSubjectTag[];
   equipmentTags?: PhotoSpotEquipmentTag[];
@@ -49,6 +57,16 @@ export type NewPhotoSpotInput = {
   postedBy: string; // 投稿者のuid(photo_users)。firestore.rulesの本人判定に使う
   postedByName?: string;
 };
+
+// オブジェクト内のvalueがundefinedのキーを取り除く。FirestoreはネストしたフィールドでもJS値
+// undefinedを許容しないため、Exif等の任意入力項目を埋め込む前に必ずこれを通す。
+function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Partial<T> = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) result[key] = obj[key];
+  }
+  return result;
+}
 
 // isFree/allowCommercialの組み合わせから、表示用のlicenseTypeを自動的に決める。
 // free: 無料かつ商用利用可 / commercial: 有料だが商用利用可(条件付き) /
@@ -127,21 +145,44 @@ export async function createPhotoSpot(input: NewPhotoSpotInput): Promise<string>
     throw error;
   }
 
+  if (input.photos.length === 0) {
+    throw new Error("写真を1枚以上選択してください。");
+  }
+
   const spotRef = doc(collection(db, PHOTO_SPOTS_COLLECTION));
-  const photoUrls = await uploadPhotoSpotPhotos(spotRef.id, input.photos);
+  const photoUrls = await uploadPhotoSpotPhotos(
+    spotRef.id,
+    input.photos.map((p) => p.file)
+  );
   const isFree = input.isFree ?? false;
   const allowCommercial = input.allowCommercial ?? false;
+
+  // 写真ごとの個別メタデータ(位置情報・場所名・撮影条件)。アップロード後の
+  // 実際のURLと、投稿時にそれぞれの写真に紐付けた位置情報等を組み合わせる。
+  const photos: PhotoSpotPhotoItem[] = input.photos.map((p, i) => ({
+    url: photoUrls[i],
+    lat: p.lat,
+    lng: p.lng,
+    locationName: p.locationName,
+    ...(p.cameraGear ? { cameraGear: omitUndefined(p.cameraGear) } : {}),
+    ...(p.exif ? { exif: omitUndefined(p.exif) } : {}),
+  }));
+  // 先頭の写真を投稿全体の代表値として使う(地図のピン配置・クラスタリング・
+  // ギャラリーサムネイル等、投稿単位で1組の位置/撮影条件しか必要としない
+  // 既存箇所向けの後方互換フィールド)。
+  const primary = photos[0];
 
   try {
     await setDoc(spotRef, {
       name: input.name,
       description: input.description ?? "",
-      address: input.address,
-      lat: input.lat,
-      lng: input.lng,
+      address: primary.locationName,
+      lat: primary.lat,
+      lng: primary.lng,
       photoUrls,
-      ...(input.cameraGear ? { cameraGear: input.cameraGear } : {}),
-      ...(input.exif ? { exif: input.exif } : {}),
+      photos,
+      ...(primary.cameraGear ? { cameraGear: primary.cameraGear } : {}),
+      ...(primary.exif ? { exif: primary.exif } : {}),
       accessNote: input.accessNote ?? "",
       subjectTags: input.subjectTags ?? [],
       equipmentTags: input.equipmentTags ?? [],
@@ -206,6 +247,23 @@ export async function updatePhotoSpot(spotId: string, input: PhotoSpotUpdateInpu
   }
 
   await updateDoc(doc(db, PHOTO_SPOTS_COLLECTION, spotId), updates);
+}
+
+// スポットに含まれる写真ごとの個別メタデータ(位置情報・場所名・撮影条件)を取得する。
+// 新規投稿(createPhotoSpot)はphotos配列を必ず保存するが、それより前に作成された
+// 投稿やダミーデータ(lib/dummyPhotoSpots.ts)にはこのフィールドが存在しないため、
+// その場合は全ての写真がスポットの代表値(address/lat/lng/cameraGear/exif)を
+// 共有していたものとして扱う(後方互換フォールバック)。
+export function getPhotoSpotPhotos(spot: PhotoSpot): PhotoSpotPhotoItem[] {
+  if (spot.photos && spot.photos.length > 0) return spot.photos;
+  return spot.photoUrls.map((url) => ({
+    url,
+    lat: spot.lat,
+    lng: spot.lng,
+    locationName: spot.address,
+    cameraGear: spot.cameraGear,
+    exif: spot.exif,
+  }));
 }
 
 type PhotoSpotDoc = Omit<PhotoSpot, "id" | "postedAt"> & { postedAt: Timestamp | null };

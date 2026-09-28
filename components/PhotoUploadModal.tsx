@@ -286,9 +286,16 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
       setError("まずは写真を選択してください");
       return;
     }
-    const activeData = currentPhoto?.data;
-    if (!activeData?.position) {
-      setError("この写真を撮影した場所を地図でタップして設定してください");
+    // 各写真ごとに個別の撮影場所を保存するため、全ての写真に位置情報が
+    // 設定されている必要がある(未設定の写真があればスワイプして設定を促す)。
+    const missingIndex = photos.findIndex((p) => !p.data.position);
+    if (missingIndex !== -1) {
+      setCurrentIndex(missingIndex);
+      setError(
+        photos.length > 1
+          ? `${missingIndex + 1}枚目の写真の撮影場所を地図でタップして設定してください`
+          : "この写真を撮影した場所を地図でタップして設定してください"
+      );
       return;
     }
 
@@ -296,30 +303,33 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     setError("");
     try {
       await createPhotoSpot({
-        // タイトル未入力時は場所名を代替表示に使う。場所名も無ければ空欄のままにする
-        // (「無題の写真」等の固定文言は表示しない)。
-        name: name.trim() || activeData.address.trim(),
+        // タイトル未入力時は代表(先頭)の写真の場所名を代替表示に使う。それも
+        // 無ければ空欄のままにする(「無題の写真」等の固定文言は表示しない)。
+        name: name.trim() || photos[0].data.address.trim(),
         description: description.trim() || undefined,
-        address: activeData.address.trim(),
-        lat: activeData.position.lat,
-        lng: activeData.position.lng,
         accessNote: accessNote.trim() || undefined,
         subjectTags: subjectTags.length > 0 ? subjectTags : undefined,
         equipmentTags: equipmentTags.length > 0 ? equipmentTags : undefined,
         isFree,
         allowCommercial,
-        cameraGear: {
-          camera: activeData.camera.trim() || undefined,
-          lens: activeData.lens.trim() || undefined,
-        },
-        exif: {
-          fNumber: activeData.fNumber.trim() ? Number(activeData.fNumber) : undefined,
-          exposureTime: activeData.exposureTime.trim() || undefined,
-          iso: activeData.iso.trim() ? Number(activeData.iso) : undefined,
-          focalLength: activeData.focalLength.trim() || undefined,
-          timeOfDay: activeData.timeOfDay || undefined,
-        },
-        photos: photos.map((p) => p.file),
+        // 写真ごとの位置情報・撮影条件をそれぞれ個別に紐付けて保存する
+        photos: photos.map((p) => ({
+          file: p.file,
+          lat: p.data.position!.lat,
+          lng: p.data.position!.lng,
+          locationName: p.data.address.trim(),
+          cameraGear: {
+            camera: p.data.camera.trim() || undefined,
+            lens: p.data.lens.trim() || undefined,
+          },
+          exif: {
+            fNumber: p.data.fNumber.trim() ? Number(p.data.fNumber) : undefined,
+            exposureTime: p.data.exposureTime.trim() || undefined,
+            iso: p.data.iso.trim() ? Number(p.data.iso) : undefined,
+            focalLength: p.data.focalLength.trim() || undefined,
+            timeOfDay: p.data.timeOfDay || undefined,
+          },
+        })),
         postedBy: photoProfile.uid,
         postedByName: photoProfile.displayName,
       });

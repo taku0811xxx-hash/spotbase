@@ -10,8 +10,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { APP_MODE } from "@/lib/config";
-import { getAllPhotoSpots } from "@/lib/photoSpots";
-import type { PhotoSpot } from "@/lib/types/photoSpot";
+import { getAllPhotoSpots, getPhotoSpotPhotos } from "@/lib/photoSpots";
+import type { PhotoSpot, PhotoSpotPhotoItem } from "@/lib/types/photoSpot";
 import { useSavedPhotoKeys } from "@/lib/hooks/usePhotoInteractions";
 import { usePhotoProfile } from "@/lib/hooks/usePhotoProfile";
 import { buildPhotoSpotRecommendations, mostUsedCamera } from "@/lib/photoSpotRecommendations";
@@ -40,7 +40,7 @@ export default function MyPage() {
   const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
   // 撮影アルバムでタップされた写真1枚(と、それが属するスポット)。
   // 同じスポットに複数枚投稿されていても、詳細はタップされたその1枚を中心に表示する。
-  const [selectedPhoto, setSelectedPhoto] = useState<{ spot: PhotoSpot; url: string } | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{ spot: PhotoSpot; photo: PhotoSpotPhotoItem } | null>(null);
   const { displayName, avatarDataUrl, setAvatarFile } = usePhotoProfile(
     photoProfile?.displayName ?? "ゲスト",
     photoProfile?.photoURL
@@ -234,16 +234,16 @@ export default function MyPage() {
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {myPosts.flatMap((spot) =>
-                spot.photoUrls.map((url, i) => (
+                getPhotoSpotPhotos(spot).map((photo, i) => (
                   <button
                     key={`${spot.id}-${i}`}
-                    onClick={() => setSelectedPhoto({ spot, url })}
+                    onClick={() => setSelectedPhoto({ spot, photo })}
                     className="relative aspect-square rounded-lg overflow-hidden"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt={spot.name} className="w-full h-full object-cover" />
+                    <img src={photo.url} alt={photo.locationName || spot.name} className="w-full h-full object-cover" />
                     <div className="absolute bottom-1 right-1">
-                      <LikeSaveButtons spotId={spot.id} url={url} size="sm" stopPropagation />
+                      <LikeSaveButtons spotId={spot.id} url={photo.url} size="sm" stopPropagation />
                     </div>
                   </button>
                 ))
@@ -331,13 +331,16 @@ export default function MyPage() {
       {selectedPhoto && (
         <PhotoSpotDetailModal
           spot={selectedPhoto.spot}
-          photoUrl={selectedPhoto.url}
+          photo={selectedPhoto.photo}
           onClose={() => setSelectedPhoto(null)}
           onUpdated={async () => {
             const latest = await getAllPhotoSpots();
             setSpots(latest);
             const updatedSpot = latest.find((s) => s.id === selectedPhoto.spot.id);
-            setSelectedPhoto(updatedSpot ? { spot: updatedSpot, url: selectedPhoto.url } : null);
+            const updatedPhoto = updatedSpot
+              ? getPhotoSpotPhotos(updatedSpot).find((p) => p.url === selectedPhoto.photo.url)
+              : undefined;
+            setSelectedPhoto(updatedSpot && updatedPhoto ? { spot: updatedSpot, photo: updatedPhoto } : null);
           }}
         />
       )}

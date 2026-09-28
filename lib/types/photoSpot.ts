@@ -46,16 +46,38 @@ export type PhotoSpotParkingLot = {
 // editorial: 非商用・報道等の用途に限る / permission_required: 個別に許可が必要
 export type PhotoSpotLicenseType = "free" | "commercial" | "editorial" | "permission_required";
 
+// 写真1枚ごとの個別メタデータ。1回の投稿で複数枚を選んだ場合、各写真は撮影場所・
+// 撮影条件が異なりうる(例: 同じ投稿でも別々のスポットで撮った写真をまとめて
+// 投稿するケース)ため、PhotoSpotドキュメント直下にこの配列として個別保持する。
+export type PhotoSpotPhotoItem = {
+  url: string; // 画像URL
+  lat: number; // この写真固有の撮影位置(緯度)
+  lng: number; // 同経度
+  locationName: string; // この写真固有の場所名・住所
+  cameraGear?: PhotoSpotCameraGear; // この写真固有の撮影機材
+  exif?: PhotoSpotExif; // この写真固有の撮影設定(Exif由来、または手入力)
+};
+
 export type PhotoSpot = {
   id: string;
   name: string; // スポット名・おすすめの撮影ポイント
   description?: string; // 説明・構図のコツなど
+  // 以下4項目(address/lat/lng/photoUrls)と cameraGear/exif は、投稿の代表値
+  // (先頭の写真のデータ)を保持する後方互換フィールド。地図のピン配置・
+  // クラスタリング・ギャラリーのサムネイル表示など、投稿単位で1組の位置/
+  // 撮影条件しか必要としない既存箇所はこちらを参照する。
+  // 写真ごとの個別データが必要な箇所(マイページの撮影アルバム等)は
+  // photos配列(lib/photoSpots.ts の getPhotoSpotPhotos)を参照すること。
   address: string;
   lat: number;
   lng: number;
-  photoUrls: string[]; // 写真ギャラリー(複数枚)
+  photoUrls: string[]; // 写真ギャラリー(複数枚。photos[].urlと同じ並び)
   cameraGear?: PhotoSpotCameraGear;
   exif?: PhotoSpotExif;
+  // 写真ごとの個別メタデータ(位置情報・場所名・撮影条件)。
+  // 旧データ(このフィールドが存在しない投稿)は取得側で後方互換フォールバックする
+  // (getPhotoSpotPhotos参照)。
+  photos?: PhotoSpotPhotoItem[];
   accessNote?: string; // 撮影時の注意・アドバイス(三脚可否・許可申請・足場等)
   parkingLots?: PhotoSpotParkingLot[]; // 周辺の駐車場・コインパーキング情報
   isFree?: boolean; // 無料で利用・ダウンロード可能か
