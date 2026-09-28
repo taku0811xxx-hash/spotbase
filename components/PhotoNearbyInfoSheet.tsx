@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Car, Utensils, X } from "lucide-react";
 import { updatePhotoNearbyInfo } from "@/lib/photoSpots";
+import { composeChipsAndText as composeValue, splitChipsAndText } from "@/lib/nearbyInfoChips";
 import type { PhotoSpot, PhotoSpotPhotoItem } from "@/lib/types/photoSpot";
 
 const PARKING_CHIPS = ["無料あり", "コインP近隣", "大型可"];
@@ -19,29 +20,6 @@ type Props = {
   onClose: () => void;
   onSaved: () => void; // 保存後、呼び出し元で最新データを再取得させるためのコールバック
 };
-
-// 既存のparkingInfo/diningInfoの文字列から、末尾に付いている自由記述部分だけを
-// 補足テキスト欄の初期値として取り出す(先頭のプリセットチップ部分は再選択が
-// 必要になるが、チップ自体は文字列としてそのまま残っているので情報は失われない)。
-function splitChipsAndText(value: string | undefined, chips: string[]): { selected: string[]; text: string } {
-  if (!value) return { selected: [], text: "" };
-  const parts = value.split(" / ");
-  const chipPart = parts[0] ?? "";
-  const rest = parts.slice(1).join(" / ");
-  const selected = chips.filter((c) => chipPart.split("・").includes(c));
-  // チップ部分が丸ごとプリセットの組み合わせで説明できない場合は、全体を
-  // 補足テキストとして扱う(既存データを壊して消さないための保険)。
-  const chipPartMatches = selected.length > 0 && selected.join("・") === chipPart;
-  if (!chipPartMatches) return { selected: [], text: value };
-  return { selected, text: rest };
-}
-
-function composeValue(selected: string[], text: string): string {
-  const chipPart = selected.join("・");
-  const trimmedText = text.trim();
-  if (chipPart && trimmedText) return `${chipPart} / ${trimmedText}`;
-  return chipPart || trimmedText;
-}
 
 export default function PhotoNearbyInfoSheet({ spot, photo, onClose, onSaved }: Props) {
   const initialParking = splitChipsAndText(photo.parkingInfo, PARKING_CHIPS);

@@ -12,6 +12,7 @@ export type ParsedExif = {
   iso?: number;
   focalLength?: string;
   timeOfDay?: PhotoSpotTimeOfDay;
+  shotAt?: string; // 撮影日時(ISO文字列)
   position?: { lat: number; lng: number };
 };
 
@@ -30,6 +31,25 @@ function parseExifDateTimeHour(value: string | undefined): number | null {
   const match = value.match(/^\d{4}:\d{2}:\d{2} (\d{2}):/);
   if (!match) return null;
   return Number(match[1]);
+}
+
+// EXIFのDateTimeOriginal("YYYY:MM:DD HH:MM:SS")をISO文字列に変換する。
+// タイムゾーン情報を持たないため、端末のローカル時刻としてそのまま解釈する。
+function parseExifDateTimeIso(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = value.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return undefined;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  );
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
 }
 
 // シャッタースピードを "1/250" のような表示形式に整形する
@@ -76,6 +96,8 @@ export async function parseExif(file: File): Promise<ParsedExif> {
 
     const hour = parseExifDateTimeHour(exif?.DateTimeOriginal?.description);
     if (hour != null) result.timeOfDay = timeOfDayFromHour(hour);
+    const shotAt = parseExifDateTimeIso(exif?.DateTimeOriginal?.description);
+    if (shotAt) result.shotAt = shotAt;
 
     if (typeof gps?.Latitude === "number" && typeof gps?.Longitude === "number") {
       result.position = { lat: gps.Latitude, lng: gps.Longitude };

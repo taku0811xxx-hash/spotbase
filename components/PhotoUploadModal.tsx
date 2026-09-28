@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Car, Copy, Info as InfoIcon, Utensils } from "lucide-react";
+import {
+  DINING_INFO_CHIPS,
+  PARKING_INFO_CHIPS,
+  SHOOTING_ENV_CHIPS,
+  splitChipsAndText,
+  toggleChipInValue,
+} from "@/lib/nearbyInfoChips";
 import { createPhotoSpot } from "@/lib/photoSpots";
 import {
   PHOTO_SPOT_EQUIPMENT_TAGS,
@@ -21,7 +28,14 @@ import { pickPhotosFromLibrary } from "@/lib/nativePhotoPicker";
 // LeafletはSSR非対応なのでクライアント側のみで読み込む(app/page.tsxと同様)
 const LocationPicker = dynamic(() => import("@/components/LocationPicker"), { ssr: false });
 
-const TIME_OF_DAY_OPTIONS: PhotoSpotTimeOfDay[] = ["早朝", "昼", "夕景", "夜景"];
+// 保存する値(PhotoSpotExif.timeOfDayの型)は変えず、ボタンの表示ラベルだけ
+// より具体的な言い回しにする(早朝/朝焼け 等)。
+const TIME_OF_DAY_OPTIONS: { value: PhotoSpotTimeOfDay; label: string }[] = [
+  { value: "早朝", label: "早朝/朝焼け" },
+  { value: "昼", label: "日中/順光" },
+  { value: "夕景", label: "夕方/夕景" },
+  { value: "夜景", label: "夜景/星空" },
+];
 
 type Props = {
   onClose: () => void;
@@ -53,6 +67,7 @@ type PhotoData = {
   iso: string;
   focalLength: string;
   timeOfDay: PhotoSpotTimeOfDay | "";
+  shotAt: string; // 撮影日時(EXIFのDateTimeOriginal由来のISO文字列。任意)
   autoFilled: boolean;
 };
 
@@ -79,6 +94,7 @@ function emptyPhotoData(): PhotoData {
     iso: "",
     focalLength: "",
     timeOfDay: "",
+    shotAt: "",
     autoFilled: false,
   };
 }
@@ -173,6 +189,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
             if (parsed.iso != null) data.iso = String(parsed.iso);
             if (parsed.focalLength) data.focalLength = parsed.focalLength;
             if (parsed.timeOfDay) data.timeOfDay = parsed.timeOfDay;
+            if (parsed.shotAt) data.shotAt = parsed.shotAt;
             if (parsed.position) {
               data.position = parsed.position;
               data.positionSource = "exif";
@@ -378,6 +395,7 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
             iso: p.data.iso.trim() ? Number(p.data.iso) : undefined,
             focalLength: p.data.focalLength.trim() || undefined,
             timeOfDay: p.data.timeOfDay || undefined,
+            shotAt: p.data.shotAt || undefined,
           },
         })),
         postedBy: photoProfile.uid,
@@ -619,37 +637,126 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   heightClassName="h-52"
                 />
 
-                {/* 周辺情報(駐車場・飲食店等。任意のフリーテキスト) */}
-                <div className="mt-3 space-y-2">
+                {/* 周辺情報(駐車場・飲食店・撮影環境。ワンタップのプリセットチップ+
+                    任意のフリーテキスト。チップはタップでトグル選択でき、選択内容は
+                    そのままparkingInfo等のテキストへ合成される(lib/nearbyInfoChips)) */}
+                <div className="mt-3 space-y-3">
                   <p className="text-xs font-semibold text-gray-500">周辺情報(任意)</p>
-                  <div className="flex items-center gap-2">
-                    <Car size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Car size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-[11px] font-semibold text-gray-500">駐車場</span>
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {PARKING_INFO_CHIPS.map((chip) => {
+                        const selected = splitChipsAndText(currentPhoto.data.parkingInfo, PARKING_INFO_CHIPS).selected.includes(
+                          chip
+                        );
+                        return (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() =>
+                              updatePhotoData(currentIndex, {
+                                parkingInfo: toggleChipInValue(currentPhoto.data.parkingInfo, chip, PARKING_INFO_CHIPS),
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                              selected
+                                ? "bg-orange-500 border-orange-500 text-white"
+                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {chip}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <input
                       type="text"
                       value={currentPhoto.data.parkingInfo}
                       onChange={(e) => updatePhotoData(currentIndex, { parkingInfo: e.target.value })}
-                      placeholder="駐車場情報(例: 無料駐車場あり・20台)"
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      placeholder="補足(例: 公園東側のタイムズが使いやすい)"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Utensils size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Utensils size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-[11px] font-semibold text-gray-500">周辺飲食店</span>
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {DINING_INFO_CHIPS.map((chip) => {
+                        const selected = splitChipsAndText(currentPhoto.data.diningInfo, DINING_INFO_CHIPS).selected.includes(
+                          chip
+                        );
+                        return (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() =>
+                              updatePhotoData(currentIndex, {
+                                diningInfo: toggleChipInValue(currentPhoto.data.diningInfo, chip, DINING_INFO_CHIPS),
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                              selected
+                                ? "bg-pink-500 border-pink-500 text-white"
+                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {chip}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <input
                       type="text"
                       value={currentPhoto.data.diningInfo}
                       onChange={(e) => updatePhotoData(currentIndex, { diningInfo: e.target.value })}
-                      placeholder="周辺飲食店・カフェ情報(例: 徒歩3分にカフェあり)"
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      placeholder="補足(例: 徒歩3分にカフェあり)"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <InfoIcon size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <InfoIcon size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-[11px] font-semibold text-gray-500">撮影環境</span>
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {SHOOTING_ENV_CHIPS.map((chip) => {
+                        const selected = splitChipsAndText(currentPhoto.data.otherInfo, SHOOTING_ENV_CHIPS).selected.includes(
+                          chip
+                        );
+                        return (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() =>
+                              updatePhotoData(currentIndex, {
+                                otherInfo: toggleChipInValue(currentPhoto.data.otherInfo, chip, SHOOTING_ENV_CHIPS),
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                              selected
+                                ? "bg-gray-700 border-gray-700 text-white"
+                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {chip}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <input
                       type="text"
                       value={currentPhoto.data.otherInfo}
                       onChange={(e) => updatePhotoData(currentIndex, { otherInfo: e.target.value })}
-                      placeholder="その他補足(トイレの有無、徒歩アクセス等)"
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      placeholder="補足(例: 駅から徒歩10分)"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
                 </div>
@@ -713,21 +820,21 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   />
                 </div>
                 <div className="flex gap-2 mt-2 flex-wrap">
-                  {TIME_OF_DAY_OPTIONS.map((t) => (
+                  {TIME_OF_DAY_OPTIONS.map(({ value, label }) => (
                     <button
-                      key={t}
+                      key={value}
                       onClick={() =>
                         updatePhotoData(currentIndex, {
-                          timeOfDay: currentPhoto.data.timeOfDay === t ? "" : t,
+                          timeOfDay: currentPhoto.data.timeOfDay === value ? "" : value,
                         })
                       }
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                        currentPhoto.data.timeOfDay === t
+                        currentPhoto.data.timeOfDay === value
                           ? "bg-orange-500 border-orange-500 text-white"
                           : "border-gray-300 text-gray-600 hover:bg-gray-50"
                       }`}
                     >
-                      {t}
+                      {label}
                     </button>
                   ))}
                 </div>
