@@ -101,6 +101,26 @@ function formatSettings(spot: PhotoSpot): string | null {
   return parts.length > 0 ? parts.join(" / ") : null;
 }
 
+// react-leafletのMapContainerはcenter/zoom propを初回マウント時にしか反映しない
+// (以降のprop変更は無視される、いわゆる"uncontrolled"な扱い)。ここでは
+// spotsがAPI等から非同期に取得されるため、MapContainerがマウントされた時点では
+// まだ空配列([])で、その後spotsが更新されても地図は追従しない。
+// そのため、実際にピンのデータが揃ったタイミングで明示的にmap.setViewを呼び、
+// 最も密集しているエリアを中心とした初期表示へ確実に合わせる(初回の1回のみ)。
+function InitialViewOnLoad({ spots }: { spots: PhotoSpot[] }) {
+  const map = useMap();
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (appliedRef.current) return;
+    if (spots.length === 0) return;
+    const center = computeDensityCenter(spots);
+    if (!center) return;
+    map.setView(center, DENSITY_FOCUSED_ZOOM);
+    appliedRef.current = true;
+  }, [spots, map]);
+  return null;
+}
+
 // focusedSpotIdが変わるたびに、該当スポットの座標へアニメーション付きで移動する
 function FlyToFocusedSpot({ spots, focusedSpotId }: { spots: PhotoSpot[]; focusedSpotId?: string }) {
   const map = useMap();
@@ -146,6 +166,7 @@ export default function PhotoSpotsMapView({ spots, focusedSpotId, onMarkerClick 
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <MapInstanceCapture mapRef={mapRef} />
+      <InitialViewOnLoad spots={spots} />
       <FlyToFocusedSpot spots={spots} focusedSpotId={focusedSpotId} />
       {/* 近接ピンの自動集約: 一定ズーム未満では複数ピンを「N件」の丸いクラスタにまとめ、
           ズームインすると自動的に個別ピンへ分解される */}
