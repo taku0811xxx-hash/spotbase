@@ -4,6 +4,7 @@
 // 「Googleマップでナビ起動」や、推奨レンズ・駐車場情報の再確認へすぐアクセスできる
 // ようにする「場所決め」パネル。一覧から選ぶと「環境」タブへそのスポットを引き渡す。
 import { useEffect, useMemo, useState } from "react";
+import { getSpotTitle } from "@/lib/spotTitle";
 import { MapPin, Navigation2 } from "lucide-react";
 import { useSavedPhotoKeys } from "@/lib/hooks/usePhotoInteractions";
 import { getAllPhotoSpots, getPhotoSpotPhotos } from "@/lib/photoSpots";
@@ -57,10 +58,10 @@ export default function SpotPlanner({ onSelectSpot }: Props) {
             >
               {spot.photoUrls[0] && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={spot.photoUrls[0]} alt={spot.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                <img src={spot.photoUrls[0]} alt={getSpotTitle(spot)} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{spot.name || spot.address}</p>
+                <p className="text-sm font-semibold text-gray-900 truncate">{getSpotTitle(spot)}</p>
                 <p className="text-xs text-gray-400 truncate">{spot.address}</p>
                 {recommendedLens && (
                   <p className="text-[11px] text-gray-500 mt-0.5 truncate">推奨レンズ: {recommendedLens}</p>

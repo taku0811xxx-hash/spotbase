@@ -8,6 +8,7 @@
 // react-leaflet-cluster(内部でleaflet.markercluster)でクラスタリングし、
 // ズームインすると自動的に個別ピンへ分解される。
 import { useEffect, useRef, type MutableRefObject } from "react";
+import { getSpotTitle } from "@/lib/spotTitle";
 import Link from "next/link";
 import { MapContainer, TileLayer, Marker, Popup, ZoomControl, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
@@ -317,13 +318,13 @@ export default function PhotoSpotsMapView({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={thumbnail}
-                      alt={spot.name}
+                      alt={getSpotTitle(spot)}
                       className="w-full h-24 object-cover rounded-md mb-1.5"
                     />
                   )}
                   <p className="text-sm font-semibold text-gray-900 truncate">
                     {spot.visibility === "private" && "🔒 "}
-                    {spot.name}
+                    {getSpotTitle(spot)}
                   </p>
                   {settings && <p className="text-xs text-gray-500">{settings}</p>}
                   <Link

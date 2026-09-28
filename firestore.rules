@@ -90,6 +90,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /photo_feedback/{docId} {
+      // 「ここトレ！」のユーザー要望・改善リクエスト。ログイン中の本人名義での作成のみ可能で、
+      // 読み取り・更新・削除はクライアントから不可(開発者がコンソールで確認する)。
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
     match /photo_spots/{spotId} {
       // 「ここトレ！」専用の撮影スポット投稿。組織非依存のパブリックな写真共有として、
       // 未ログインのゲストを含め誰でも閲覧・投稿でき、編集/削除は投稿者本人のみ可能。

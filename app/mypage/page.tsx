@@ -6,13 +6,14 @@
 // pro向けのlib/pins.tsには一切依存しない。
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Lock } from "lucide-react";
+import { Lock, MessageSquarePlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/auth";
 import { APP_MODE } from "@/lib/config";
 import { getAllPhotoSpots, getPhotoSpotPhotos } from "@/lib/photoSpots";
 import type { PhotoSpot, PhotoSpotPhotoItem } from "@/lib/types/photoSpot";
+import { getSpotTitle } from "@/lib/spotTitle";
 import { useSavedPhotoKeys } from "@/lib/hooks/usePhotoInteractions";
 import { usePhotoProfile } from "@/lib/hooks/usePhotoProfile";
 import { buildPhotoSpotRecommendations, mostUsedCamera } from "@/lib/photoSpotRecommendations";
@@ -23,6 +24,7 @@ import PhotoSpotDetailModal from "@/components/PhotoSpotDetailModal";
 import LikeSaveButtons from "@/components/LikeSaveButtons";
 import AuthModal from "@/components/AuthModal";
 import ProfileEditModal from "@/components/ProfileEditModal";
+import FeedbackModal from "@/components/FeedbackModal";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const PhotoSpotsMapView = dynamic(() => import("@/components/PhotoSpotsMapView"), { ssr: false });
@@ -37,6 +39,7 @@ export default function MyPage() {
   const [tab, setTab] = useState<"posts" | "saved" | "map">("posts");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
   const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
   // 撮影アルバムでタップされた写真1枚(と、それが属するスポット)。
@@ -187,10 +190,10 @@ export default function MyPage() {
                 <div key={spot.id} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
                   {spot.photoUrls[0] && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={spot.photoUrls[0]} alt={spot.name} className="w-full h-24 object-cover" />
+                    <img src={spot.photoUrls[0]} alt={getSpotTitle(spot)} className="w-full h-24 object-cover" />
                   )}
                   <div className="p-2">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{spot.name}</p>
+                    <p className="text-xs font-semibold text-gray-800 truncate">{getSpotTitle(spot)}</p>
                     <p className="text-[10px] text-gray-400 truncate">{spot.address}</p>
                   </div>
                 </div>
@@ -242,7 +245,7 @@ export default function MyPage() {
                     className="relative aspect-square rounded-lg overflow-hidden"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.url} alt={photo.locationName || spot.name} className="w-full h-full object-cover" />
+                    <img src={photo.url} alt={photo.locationName || getSpotTitle(spot)} className="w-full h-full object-cover" />
                     {spot.visibility === "private" && (
                       <div
                         className="absolute top-1 left-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center"
@@ -282,10 +285,10 @@ export default function MyPage() {
                 <div key={spot.id} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
                   {spot.photoUrls[0] && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={spot.photoUrls[0]} alt={spot.name} className="w-full h-28 object-cover" />
+                    <img src={spot.photoUrls[0]} alt={getSpotTitle(spot)} className="w-full h-28 object-cover" />
                   )}
                   <div className="p-2">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{spot.name}</p>
+                    <p className="text-xs font-semibold text-gray-800 truncate">{getSpotTitle(spot)}</p>
                     <p className="text-[10px] text-gray-400 truncate">{spot.address}</p>
                   </div>
                 </div>
@@ -314,6 +317,16 @@ export default function MyPage() {
         )}
       </div>
 
+      <div className={`max-w-3xl w-full mx-auto px-4 sm:px-6 -mt-2 ${PHOTO_BOTTOM_NAV_SAFE_PADDING_CLASS}`}>
+        <button
+          onClick={() => (user ? setShowFeedbackModal(true) : setShowAuthModal(true))}
+          className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+        >
+          <MessageSquarePlus size={18} className="text-orange-500" />
+          開発者へ要望・改善案を送る
+        </button>
+      </div>
+
       <PhotoBottomNav
         onRequestUpload={() => {
           if (!user) {
@@ -328,6 +341,7 @@ export default function MyPage() {
         }}
       />
 
+      {showFeedbackModal && <FeedbackModal onClose={() => setShowFeedbackModal(false)} />}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
       {showPhotoUploadModal && (
         <PhotoUploadModal

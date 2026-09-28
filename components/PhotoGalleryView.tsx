@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getSpotTitle } from "@/lib/spotTitle";
 import dynamic from "next/dynamic";
 import { motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
 import type { PhotoSpot } from "@/lib/types/photoSpot";
@@ -249,7 +250,7 @@ export default function PhotoGalleryView({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.url}
-                  alt={item.spot.name}
+                  alt={getSpotTitle(item.spot)}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                 />
                 {SHOW_LICENSE_BADGES && getLicenseBadges(item.spot).length > 0 && (
@@ -266,7 +267,7 @@ export default function PhotoGalleryView({
                 )}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-4 pb-1.5 flex items-end justify-between">
                   <span className="text-white text-xs text-left truncate opacity-0 group-hover:opacity-100 transition-opacity">
-                    {item.spot.name}
+                    {getSpotTitle(item.spot)}
                   </span>
                   <div className="bg-black/30 rounded-full backdrop-blur-sm">
                     <LikeSaveButtons spotId={item.spot.id} url={item.url} size="sm" stopPropagation />
@@ -319,13 +320,13 @@ export default function PhotoGalleryView({
                 </button>
 
                 {/* 1. メイン写真の拡大表示(画面を少しスクロールするだけで地図・詳細情報が
-                    目に入るよう、以前より一回りコンパクトなサイズに調整) */}
+                    目に入るよう、モバイルはコンパクト、PC/Web(md以上)は最大560pxまで大きく表示) */}
                 <div className="rounded-xl overflow-hidden bg-black flex-shrink-0 shadow-lg">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={selected.url}
-                    alt={selected.spot.name}
-                    className="w-full max-h-72 object-contain bg-black"
+                    alt={getSpotTitle(selected.spot)}
+                    className="w-full max-h-72 md:max-h-[560px] md:min-h-[360px] object-contain bg-black"
                   />
                 </div>
 
@@ -334,7 +335,7 @@ export default function PhotoGalleryView({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-xs text-gray-400">{selected.spot.address}</p>
-                      <h2 className="text-sm font-medium text-gray-700">{selected.spot.name}</h2>
+                      <h2 className="text-sm font-medium text-gray-700">{getSpotTitle(selected.spot)}</h2>
                     </div>
                     <LikeSaveButtons spotId={selected.spot.id} url={selected.url} size="md" />
                   </div>
@@ -445,7 +446,7 @@ export default function PhotoGalleryView({
                           className="relative flex-shrink-0 w-28 h-28 rounded-lg overflow-hidden bg-gray-200"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.url} alt={item.spot.name} className="w-full h-full object-cover" />
+                          <img src={item.url} alt={getSpotTitle(item.spot)} className="w-full h-full object-cover" />
                         </button>
                       ))}
                     </div>

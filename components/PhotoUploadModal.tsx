@@ -30,7 +30,7 @@ type Props = {
 
 // 写真1枚ごとの撮影場所・撮影設定。投稿コストを最小化するため、UI上で
 // ユーザーが直接入力する項目は「場所名(位置情報)」「写真のメモ・補足」
-// 「周辺情報・アクセス」の3つに絞り込んでいる。カメラ機種・レンズ・F値・
+// 「周辺情報・アクセス」の3つに絞り込んでいる(機材・撮影設定は折りたたみ欄で任意修正可)。カメラ機種・レンズ・F値・
 // シャッタースピード・ISO・焦点距離・撮影日時・時間帯はEXIFから自動抽出して
 // 裏で保持するのみで、個別の編集フィールドは設けない。
 type PhotoData = {
@@ -384,9 +384,9 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
             lens: p.data.lens.trim() || undefined,
           },
           exif: {
-            fNumber: p.data.fNumber.trim() ? Number(p.data.fNumber) : undefined,
+            fNumber: Number(p.data.fNumber.replace(/^f\/?/i, "")) || undefined,
             exposureTime: p.data.exposureTime.trim() || undefined,
-            iso: p.data.iso.trim() ? Number(p.data.iso) : undefined,
+            iso: Number(p.data.iso.replace(/^iso\s*/i, "")) || undefined,
             focalLength: p.data.focalLength.trim() || undefined,
             timeOfDay: p.data.timeOfDay || undefined,
             shotAt: p.data.shotAt || undefined,
@@ -624,19 +624,19 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </p>
                 )}
 
-                <div className="flex gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1">
                   <input
                     type="text"
                     value={currentPhoto.data.locationName}
                     onChange={(e) => updatePhotoData(currentIndex, { locationName: e.target.value })}
                     onKeyDown={(e) => e.key === "Enter" && handleAddressSearch()}
-                    placeholder="施設名・場所名(例: 井の頭恩賜公園。位置情報から自動入力されます)"
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    placeholder="施設名・場所名(例: 井の頭恩賜公園)"
+                    className="flex-1 min-w-0 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <button
                     onClick={handleAddressSearch}
                     disabled={searchingAddress}
-                    className="px-3 py-2 text-sm rounded-lg bg-gray-800 text-white disabled:opacity-50"
+                    className="flex-shrink-0 whitespace-nowrap px-3 py-2 text-sm rounded-lg bg-gray-800 text-white disabled:opacity-50"
                   >
                     {searchingAddress ? "検索中..." : "検索"}
                   </button>
@@ -692,10 +692,64 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   value={currentPhoto.data.memo}
                   onChange={(e) => updatePhotoData(currentIndex, { memo: e.target.value })}
                   rows={2}
-                  placeholder="この写真についてのメモ(機材・撮影条件はExifから自動記録されます)"
+                  placeholder="この写真についてのメモ(機材・撮影設定はExifから自動入力されます)"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
+
+              {/* 機材・撮影設定(Exifから自動入力。チップで要約表示し、開くと手動修正できる) */}
+              {(() => {
+                const d = currentPhoto.data;
+                const fields: { key: "camera" | "lens" | "focalLength" | "fNumber" | "exposureTime" | "iso"; label: string; placeholder: string; wide?: boolean }[] = [
+                  { key: "camera", label: "カメラ", placeholder: "例: Sony α7 IV", wide: true },
+                  { key: "lens", label: "レンズ", placeholder: "例: FE 24-70mm F2.8 GM II", wide: true },
+                  { key: "focalLength", label: "焦点距離", placeholder: "35mm" },
+                  { key: "fNumber", label: "F値", placeholder: "2.8" },
+                  { key: "exposureTime", label: "シャッター速度", placeholder: "1/500" },
+                  { key: "iso", label: "ISO", placeholder: "100" },
+                ];
+                const chips = [
+                  d.camera,
+                  d.lens,
+                  d.focalLength,
+                  d.fNumber && `f/${d.fNumber}`,
+                  d.exposureTime && `${d.exposureTime}s`,
+                  d.iso && `ISO ${d.iso}`,
+                ].filter(Boolean) as string[];
+                return (
+                  <details className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700 list-none flex items-center justify-between">
+                      <span>📷 機材・撮影設定{photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}</span>
+                      <span className="text-[10px] font-normal text-gray-400">
+                        {currentPhoto.exifChecking ? "解析中..." : chips.length > 0 ? "Exif自動入力・タップで編集" : "タップして入力"}
+                      </span>
+                    </summary>
+                    {chips.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {chips.map((c) => (
+                          <span key={c} className="text-[11px] px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      {fields.map((f) => (
+                        <label key={f.key} className={`block ${f.wide ? "col-span-2" : ""}`}>
+                          <span className="text-[10px] text-gray-500">{f.label}</span>
+                          <input
+                            value={d[f.key]}
+                            onChange={(e) => updatePhotoData(currentIndex, { [f.key]: e.target.value })}
+                            placeholder={f.placeholder}
+                            inputMode={f.key === "fNumber" || f.key === "iso" ? "decimal" : undefined}
+                            className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })()}
 
               {/* 4. おすすめの理由・構図のコツ(投稿全体で1つ) */}
               <div>

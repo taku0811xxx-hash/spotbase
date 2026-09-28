@@ -7,6 +7,7 @@
 // (写真・撮影場所・EXIFはPhotoSpot1件につき1組しか保持しないスキーマのため
 // 編集対象外。差し替えは新規投稿で行う運用)。
 import { useState } from "react";
+import { getSpotTitle } from "@/lib/spotTitle";
 import dynamic from "next/dynamic";
 import { Aperture, Calendar, Camera, Car, Gauge, Info as InfoIcon, Pencil, Plus, Ruler, Timer, Utensils, X } from "lucide-react";
 import { updatePhotoSpot } from "@/lib/photoSpots";
@@ -108,7 +109,7 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
       <div className="bg-white rounded-2xl w-full max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto shadow-xl">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-2xl">
           <h2 className="text-lg font-bold text-gray-900 truncate pr-2">
-            {editing ? "投稿を編集" : spot.name || photo.locationName}
+            {editing ? "投稿を編集" : getSpotTitle(spot)}
           </h2>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!editing && (
@@ -134,12 +135,12 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
               PC/Web版は枠を写真の実アスペクト比に合わせて可変させ、黒帯余白を
               最小限にしつつ画面内で最大限大きく表示する(max-h-[70vh]で上限のみ設定)。
               いいね/保存数は写真の右下に重ねて表示する。 */}
-          <div className="relative w-full h-64 md:h-auto md:max-h-[70vh] rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+          <div className="relative w-full h-64 md:h-auto md:min-h-[420px] md:max-h-[80vh] rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={photo.url}
-              alt={photo.locationName || spot.name}
-              className="w-full h-full md:w-auto md:h-auto md:max-w-full md:max-h-[70vh] object-contain"
+              alt={photo.locationName || getSpotTitle(spot)}
+              className="w-full h-full md:w-full md:h-auto md:max-h-[80vh] object-contain"
             />
             <div className="absolute bottom-2 right-2">
               <LikeSaveButtons spotId={spot.id} url={photo.url} size="md" />

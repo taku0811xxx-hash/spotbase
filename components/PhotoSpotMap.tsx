@@ -4,6 +4,7 @@
 // (Pin型・pro向け機能を多数抱える2000行超のコンポーネント)には依存せず、
 // PhotoSpot型専用の軽量な表示のみを持つ独立コンポーネントとして分離する。
 import { useEffect, useRef, useState } from "react";
+import { getSpotTitle } from "@/lib/spotTitle";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -74,7 +75,7 @@ export default function PhotoSpotMap({ spot }: Props) {
         <Marker position={[spot.lat, spot.lng]} icon={spotIcon} ref={spotMarkerRef}>
           <Popup className="kokotore-compact-popup">
             <div className="text-xs leading-tight">
-              <p className="font-semibold">{spot.name}</p>
+              <p className="font-semibold">{getSpotTitle(spot)}</p>
               <p className="text-gray-500">{spot.address}</p>
             </div>
           </Popup>
