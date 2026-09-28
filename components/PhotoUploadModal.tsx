@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Copy } from "lucide-react";
+import {
+  NEARBY_INFO_CHIPS,
+  PHOTO_MEMO_CHIPS,
+  splitChipsAndText,
+  toggleChipInValue,
+} from "@/lib/nearbyInfoChips";
 import { createPhotoSpot } from "@/lib/photoSpots";
 import type { PhotoSpotTimeOfDay, PhotoSpotVisibility } from "@/lib/types/photoSpot";
 import { geocodeQueryPoi, reverseGeocodePoi, type PoiGeocodeResult } from "@/lib/geocode";
@@ -75,6 +81,43 @@ function emptyPhotoData(): PhotoData {
     timeOfDay: "",
     shotAt: "",
   };
+}
+
+// スリムな1つのテキスト欄構造は保ったまま、手入力の手間を減らすためのワン
+// タップチップ行。タップでON/OFFをトグルし、選択状態はテキスト欄の内容
+// (プリセット部分)から都度導出する(別のstateは持たない)。横スクロールで
+// 折り返さず、フォームの縦長化を防ぐ。
+function ChipRow({
+  value,
+  chips,
+  onToggle,
+  colorClass,
+}: {
+  value: string;
+  chips: readonly string[];
+  onToggle: (chip: string) => void;
+  colorClass: string;
+}) {
+  const { selected } = splitChipsAndText(value, chips);
+  return (
+    <div className="flex gap-1.5 overflow-x-auto pb-1 mb-1.5" style={{ scrollbarWidth: "none" }}>
+      {chips.map((chip) => {
+        const isSelected = selected.includes(chip);
+        return (
+          <button
+            key={chip}
+            type="button"
+            onClick={() => onToggle(chip)}
+            className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors ${
+              isSelected ? `${colorClass} text-white` : "border-gray-300 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {chip}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // 「ここトレ！」は"スポット登録"ではなく"写真の投稿"を主軸とするPhoto-Firstな
@@ -637,6 +680,14 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </span>
                   写真のメモ・補足(任意){photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
                 </label>
+                <ChipRow
+                  value={currentPhoto.data.memo}
+                  chips={PHOTO_MEMO_CHIPS}
+                  colorClass="bg-gray-700 border-gray-700"
+                  onToggle={(chip) =>
+                    updatePhotoData(currentIndex, { memo: toggleChipInValue(currentPhoto.data.memo, chip, PHOTO_MEMO_CHIPS) })
+                  }
+                />
                 <textarea
                   value={currentPhoto.data.memo}
                   onChange={(e) => updatePhotoData(currentIndex, { memo: e.target.value })}
@@ -671,6 +722,16 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   </span>
                   周辺情報・アクセス(任意){photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
                 </label>
+                <ChipRow
+                  value={currentPhoto.data.nearbyInfo}
+                  chips={NEARBY_INFO_CHIPS}
+                  colorClass="bg-orange-500 border-orange-500"
+                  onToggle={(chip) =>
+                    updatePhotoData(currentIndex, {
+                      nearbyInfo: toggleChipInValue(currentPhoto.data.nearbyInfo, chip, NEARBY_INFO_CHIPS),
+                    })
+                  }
+                />
                 <textarea
                   value={currentPhoto.data.nearbyInfo}
                   onChange={(e) => updatePhotoData(currentIndex, { nearbyInfo: e.target.value })}

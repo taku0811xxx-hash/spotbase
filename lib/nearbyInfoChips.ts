@@ -8,6 +8,31 @@ export const PARKING_INFO_CHIPS = ["無料Pあり", "有料コインP", "近隣P
 export const DINING_INFO_CHIPS = ["カフェあり", "テイクアウト", "コンビニ近隣"] as const;
 export const SHOOTING_ENV_CHIPS = ["三脚OK", "三脚禁止", "トイレあり", "要徒歩10分以上"] as const;
 
+// PhotoUploadModal(投稿フォーム)のスリム化された単一入力欄向けのプリセット。
+// 駐車場・飲食店・トイレ等の周辺情報を1つの「周辺情報・アクセス」欄にまとめて
+// 入力するためのチップ。
+export const NEARBY_INFO_CHIPS = [
+  "無料Pあり",
+  "有料コインP",
+  "近隣Pなし",
+  "カフェ・コンビニあり",
+  "テイクアウトあり",
+  "トイレあり",
+  "要徒歩",
+] as const;
+
+// 写真ごとの「写真のメモ・補足」欄向けのプリセット。三脚可否・光線状況など
+// 撮影環境を1タップで書き添えられるようにする。
+export const PHOTO_MEMO_CHIPS = [
+  "三脚OK",
+  "三脚禁止",
+  "要手持ち",
+  "順光",
+  "逆光",
+  "マジックアワー",
+  "要フィルター",
+] as const;
+
 export function splitChipsAndText(
   value: string | undefined,
   chips: readonly string[]
