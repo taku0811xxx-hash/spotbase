@@ -8,7 +8,7 @@
 // 編集対象外。差し替えは新規投稿で行う運用)。
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { Aperture, Calendar, Camera, Gauge, Pencil, Ruler, Timer, X } from "lucide-react";
+import { Aperture, Calendar, Camera, Car, Gauge, Info as InfoIcon, Pencil, Ruler, Timer, Utensils, X } from "lucide-react";
 import { updatePhotoSpot } from "@/lib/photoSpots";
 import {
   PHOTO_SPOT_EQUIPMENT_TAGS,
@@ -90,6 +90,12 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
     { icon: Gauge, label: exif?.iso != null ? `ISO ${exif.iso}` : null },
     { icon: Ruler, label: exif?.focalLength ? exif.focalLength : null },
     { icon: Calendar, label: shotAtLabel ?? (exif?.timeOfDay || null) },
+  ].filter((row) => row.label);
+
+  const nearbyInfoRows = [
+    { icon: Car, label: photo.parkingInfo || null },
+    { icon: Utensils, label: photo.diningInfo || null },
+    { icon: InfoIcon, label: photo.otherInfo || null },
   ].filter((row) => row.label);
 
   return (
@@ -265,6 +271,21 @@ export default function PhotoSpotDetailModal({ spot, photo, onClose, onUpdated }
                       <div key={i} className="flex items-center gap-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-2.5 py-1.5">
                         <Icon size={13} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
                         <span className="truncate">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 周辺情報(駐車場・飲食店・その他補足をアイコン付きで表示) */}
+              {nearbyInfoRows.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1.5">周辺情報</p>
+                  <div className="space-y-1.5">
+                    {nearbyInfoRows.map(({ icon: Icon, label }, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                        <Icon size={13} strokeWidth={2} className="text-gray-400 flex-shrink-0 mt-0.5" />
+                        <span>{label}</span>
                       </div>
                     ))}
                   </div>

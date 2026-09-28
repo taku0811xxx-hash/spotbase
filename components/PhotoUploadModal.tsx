@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { Car, Copy, Info as InfoIcon, Utensils } from "lucide-react";
 import { createPhotoSpot } from "@/lib/photoSpots";
 import {
   PHOTO_SPOT_EQUIPMENT_TAGS,
@@ -40,6 +41,10 @@ type PhotoData = {
   // 正式な住所。POI優先ジオコーディングで取得できた場合のみ裏で保持する
   // (Firestoreへは photos[].address として保存され、locationNameとは区別する)
   formalAddress: string;
+  // 周辺情報(フリーテキスト。任意)
+  parkingInfo: string;
+  diningInfo: string;
+  otherInfo: string;
   camera: string;
   lens: string;
   fNumber: string;
@@ -63,6 +68,9 @@ function emptyPhotoData(): PhotoData {
     positionSource: null,
     locationName: "",
     formalAddress: "",
+    parkingInfo: "",
+    diningInfo: "",
+    otherInfo: "",
     camera: "",
     lens: "",
     fNumber: "",
@@ -296,6 +304,23 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
     }
   }
 
+  // 「1枚目の場所・情報をコピー」: 複数枚投稿時、2枚目以降の入力の手間を
+  // 減らすため、先頭の写真の場所名・位置情報・住所・周辺情報をそのまま転記する。
+  // 転記後もユーザーは自由に上書き修正できる(通常のupdatePhotoDataと同じ欄を使う)。
+  function copyLocationFromFirstPhoto(index: number) {
+    const first = photos[0];
+    if (!first || index === 0) return;
+    updatePhotoData(index, {
+      position: first.data.position,
+      positionSource: first.data.positionSource,
+      locationName: first.data.locationName,
+      formalAddress: first.data.formalAddress,
+      parkingInfo: first.data.parkingInfo,
+      diningInfo: first.data.diningInfo,
+      otherInfo: first.data.otherInfo,
+    });
+  }
+
   async function handleSubmit() {
     if (!photoProfile) return;
     if (photos.length === 0) {
@@ -335,6 +360,9 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
           lng: p.data.position!.lng,
           locationName: p.data.locationName.trim(),
           address: p.data.formalAddress.trim() || undefined,
+          parkingInfo: p.data.parkingInfo.trim() || undefined,
+          diningInfo: p.data.diningInfo.trim() || undefined,
+          otherInfo: p.data.otherInfo.trim() || undefined,
           cameraGear: {
             camera: p.data.camera.trim() || undefined,
             lens: p.data.lens.trim() || undefined,
@@ -506,12 +534,25 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
             <>
               {/* STEP2: 撮影場所の設定(写真から自動セット、なければ地図タップ) */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
-                    2
-                  </span>
-                  撮影した場所{photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-white text-[10px] font-bold mr-1.5 align-middle">
+                      2
+                    </span>
+                    撮影した場所{photos.length > 1 ? `(${currentIndex + 1}枚目)` : ""}
+                  </label>
+                  {/* 複数枚投稿時、2枚目以降は1枚目の場所・周辺情報をワンタップで
+                      転記できる(転記後も自由に上書き修正可能) */}
+                  {photos.length > 1 && currentIndex > 0 && (
+                    <button
+                      onClick={() => copyLocationFromFirstPhoto(currentIndex)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 border border-orange-200 rounded-full px-2.5 py-1 flex-shrink-0"
+                    >
+                      <Copy size={11} strokeWidth={2} />
+                      1枚目の場所・情報をコピー
+                    </button>
+                  )}
+                </div>
 
                 {currentPhoto.exifChecking && (
                   <p className="text-xs text-gray-400 mb-2">写真のExif情報を解析しています...</p>
@@ -572,6 +613,41 @@ export default function PhotoUploadModal({ onClose, onCreated, initialFiles }: P
                   onChange={(pos) => handleManualPositionChange(currentIndex, pos)}
                   heightClassName="h-52"
                 />
+
+                {/* 周辺情報(駐車場・飲食店等。任意のフリーテキスト) */}
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500">周辺情報(任意)</p>
+                  <div className="flex items-center gap-2">
+                    <Car size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={currentPhoto.data.parkingInfo}
+                      onChange={(e) => updatePhotoData(currentIndex, { parkingInfo: e.target.value })}
+                      placeholder="駐車場情報(例: 無料駐車場あり・20台)"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Utensils size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={currentPhoto.data.diningInfo}
+                      onChange={(e) => updatePhotoData(currentIndex, { diningInfo: e.target.value })}
+                      placeholder="周辺飲食店・カフェ情報(例: 徒歩3分にカフェあり)"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <InfoIcon size={14} strokeWidth={2} className="text-gray-400 flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={currentPhoto.data.otherInfo}
+                      onChange={(e) => updatePhotoData(currentIndex, { otherInfo: e.target.value })}
+                      placeholder="その他補足(トイレの有無、徒歩アクセス等)"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* STEP3: 撮影設定・機材メモ */}

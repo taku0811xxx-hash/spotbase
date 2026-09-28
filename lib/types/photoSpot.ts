@@ -62,6 +62,11 @@ export type PhotoSpotPhotoItem = {
   address?: string;
   cameraGear?: PhotoSpotCameraGear; // この写真固有の撮影機材
   exif?: PhotoSpotExif; // この写真固有の撮影設定(Exif由来、または手入力)
+  // この写真固有の周辺情報(フリーテキスト)。構造化されたparkingLots(地図に
+  // サブピンを表示する用途)とは別に、投稿者が自由文で書き添える簡易情報。
+  parkingInfo?: string; // 例: "無料駐車場あり(20台)"
+  diningInfo?: string; // 例: "徒歩3分にカフェあり"
+  otherInfo?: string; // 例: "トイレあり、駅から徒歩10分"
 };
 
 export type PhotoSpot = {
