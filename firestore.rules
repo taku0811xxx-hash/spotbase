@@ -110,7 +110,7 @@ service cloud.firestore {
       // 誰でも閲覧でき、ログインユーザーが作成のみ可能(更新・削除は不可)。
       allow read: if true;
       allow create: if isSignedIn()
-        && request.resource.data.keys().hasOnly(['spotId', 'type', 'lat', 'lng', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['spotId', 'type', 'lat', 'lng', 'createdAt', 'photoUrl'])
         && request.resource.data.type in ['parking', 'cafe'];
       allow update, delete: if false;
     }

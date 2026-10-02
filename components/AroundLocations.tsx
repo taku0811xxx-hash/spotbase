@@ -28,6 +28,10 @@ export default function AroundLocations({ spotId, lat, lng }: { spotId: string; 
             {a.type === "parking" ? <ParkingSquare size={16} className="text-blue-600" /> : <Coffee size={16} className="text-amber-600" />}
             <span className="text-sm text-gray-800">{QUICK_MEMO_LABEL[a.type]}</span>
             <span className="text-xs text-gray-400">約{Math.round(distanceMeters(lat, lng, a.lat, a.lng))}m</span>
+            {a.photoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={a.photoUrl} alt={`${QUICK_MEMO_LABEL[a.type]}の写真`} loading="lazy" className="w-12 h-12 rounded object-cover" />
+            )}
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${a.lat},${a.lng}`}
               target="_blank"

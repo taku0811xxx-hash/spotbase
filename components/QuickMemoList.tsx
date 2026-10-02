@@ -63,11 +63,15 @@ export default function QuickMemoList() {
               <p className="text-sm font-semibold text-gray-800">{QUICK_MEMO_LABEL[m.type]}</p>
               <p className="text-[11px] text-gray-400">{m.createdAt ? m.createdAt.toLocaleString("ja-JP") : ""}</p>
             </div>
+            {m.photoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={m.photoUrl} alt="メモの写真" loading="lazy" className="w-10 h-10 rounded object-cover ml-auto" />
+            )}
             <a
               href={`https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto text-gray-500"
+              className={`${m.photoUrl ? "" : "ml-auto "}text-gray-500`}
               aria-label="地図で見る"
             >
               <MapPin size={18} />
