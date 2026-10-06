@@ -204,39 +204,23 @@ export default function MyPage() {
         )}
 
         {/* タブ切替 */}
-        <div className="flex gap-2 border-b border-gray-200">
-          <button
-            onClick={() => setTab("posts")}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              tab === "posts" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            撮影アルバム
-          </button>
-          <button
-            onClick={() => setTab("saved")}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-              tab === "saved" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            保存したスポット
-          </button>
-          <button
-            onClick={() => setTab("map")}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              tab === "map" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            マイ撮影マップ
-          </button>
-          <button
-            onClick={() => setTab("memo")}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              tab === "memo" ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            自分メモ
-          </button>
+        <div className="flex border-b border-gray-200">
+          {([
+            ["posts", "撮影\nアルバム"],
+            ["saved", "保存した\nスポット"],
+            ["map", "マイ撮影\nmap"],
+            ["memo", "周辺メモ"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`flex-1 px-1 py-2 text-xs leading-tight font-semibold whitespace-pre-line text-center border-b-2 transition-colors ${
+                tab === key ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {loading ? (
