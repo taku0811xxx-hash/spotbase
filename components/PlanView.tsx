@@ -3,6 +3,7 @@
 // 「ここトレ！」プランタブ本体。
 // Step1: スポット選択(保存済み/今月のおすすめ) → Step2: 狙える作例 →
 // Step3: 機材チェックリスト → Step4: タイムスケジュール+Googleマップナビ。
+import { useBlockedUserIds } from "@/lib/moderation";
 import { useEffect, useMemo, useState } from "react";
 import { Calendar, Camera, CheckSquare, Clock, ChevronLeft, Navigation, Square } from "lucide-react";
 import AroundLocations from "@/components/AroundLocations";
@@ -91,6 +92,7 @@ function navUrl(spot: PhotoSpot): string {
 
 export default function PlanView() {
   const { user } = useAuth();
+  const blockedUserIds = useBlockedUserIds(user?.uid);
   const savedKeys = useSavedPhotoKeys();
   const [spots, setSpots] = useState<PhotoSpot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,7 +107,7 @@ export default function PlanView() {
       .finally(() => setLoading(false));
   }, []);
 
-  const visible = useMemo(() => filterVisibleSpots(spots, user?.uid), [spots, user]);
+  const visible = useMemo(() => filterVisibleSpots(spots, user?.uid, blockedUserIds), [spots, user, blockedUserIds]);
   const month = new Date().getMonth() + 1;
   const savedIds = useMemo(() => new Set(savedKeys.map((k) => k.split(":")[0])), [savedKeys]);
   const savedSpots = useMemo(() => visible.filter((s) => savedIds.has(s.id)), [visible, savedIds]);

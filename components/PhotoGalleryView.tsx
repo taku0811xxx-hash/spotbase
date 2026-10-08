@@ -13,6 +13,7 @@ import { PHOTO_BOTTOM_NAV_SAFE_PADDING_CLASS } from "@/components/PhotoBottomNav
 import { getLicenseBadges, canDownloadFree } from "@/lib/photoSpotLicense";
 import { Download } from "lucide-react";
 import AroundLocations from "@/components/AroundLocations";
+import ReportBlockMenu from "@/components/ReportBlockMenu";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む。
 // pro向けのcomponents/Map.tsxとは別の、photoSpot専用の軽量な地図コンポーネント。
@@ -338,7 +339,15 @@ export default function PhotoGalleryView({
                       <p className="text-xs text-gray-400">{selected.spot.address}</p>
                       <h2 className="text-sm font-medium text-gray-700">{getSpotTitle(selected.spot)}</h2>
                     </div>
-                    <LikeSaveButtons spotId={selected.spot.id} url={selected.url} size="md" />
+                    <div className="flex items-center gap-1">
+                      <LikeSaveButtons spotId={selected.spot.id} url={selected.url} size="md" />
+                      <ReportBlockMenu
+                        spotId={selected.spot.id}
+                        postedBy={selected.spot.postedBy}
+                        postedByName={selected.spot.postedByName}
+                        onBlocked={dismissDetail}
+                      />
+                    </div>
                   </div>
 
                   {SHOW_LICENSE_BADGES && getLicenseBadges(selected.spot).length > 0 && (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useBlockedUserIds } from "@/lib/moderation";
 import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -99,6 +100,7 @@ function getParentLocation(pin: Pin): string {
 export default function Home() {
   const router = useRouter();
   const { user, profile, photoProfile, loading: authLoading } = useAuth();
+  const blockedUserIds = useBlockedUserIds(user?.uid);
   const [pins, setPins] = useState<Pin[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1178,7 +1180,7 @@ export default function Home() {
         </div>
         <QuickMemoButton onRequestLogin={() => setShowAuthModal(true)} />
         <PhotoGalleryView
-          spots={filterVisibleSpots(photoSpots, user?.uid)}
+          spots={filterVisibleSpots(photoSpots, user?.uid, blockedUserIds)}
           loading={loadingPhotoSpots}
           initialSpotId={initialPhotoSpotId}
           onLoadMore={loadMorePhotoSpots}

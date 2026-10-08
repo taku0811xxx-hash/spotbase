@@ -291,8 +291,16 @@ export function getPhotoSpotPhotos(spot: PhotoSpot): PhotoSpotPhotoItem[] {
 // visibilityフィールドが無い旧データはpublic相当として扱う(後方互換)。
 // firestore.rules側でも同様の判定を行い読み取り自体を拒否しているため、
 // これは主にUI側での二重の安全策(および同一ユーザーの端末内フィルタ)として機能する。
-export function filterVisibleSpots(spots: PhotoSpot[], viewerUid: string | null | undefined): PhotoSpot[] {
-  return spots.filter((spot) => spot.visibility !== "private" || spot.postedBy === viewerUid);
+// blockedUids に含まれるユーザーの投稿も非表示にする(UGC審査対応のブロック機能)。
+export function filterVisibleSpots(
+  spots: PhotoSpot[],
+  viewerUid: string | null | undefined,
+  blockedUids: string[] = []
+): PhotoSpot[] {
+  return spots.filter(
+    (spot) =>
+      (spot.visibility !== "private" || spot.postedBy === viewerUid) && !blockedUids.includes(spot.postedBy)
+  );
 }
 
 export type PhotoNearbyInfoUpdate = {

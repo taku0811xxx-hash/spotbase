@@ -97,6 +97,14 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    match /photo_reports/{docId} {
+      // 「ここトレ！」の通報(不適切な投稿・ユーザー)。ログイン中の本人名義での作成のみ可能で、
+      // 読み取り・更新・削除はクライアントから不可(運営がコンソールで確認する)。
+      allow create: if isSignedIn() && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.targetType in ['post', 'user'];
+      allow read, update, delete: if false;
+    }
+
     match /photo_quick_memos/{docId} {
       // 「ここトレ！」の自分用クイックメモ(パーキング/カフェの打刻)。本人だけが読み書きできる。
       allow read, delete: if isSignedIn() && resource.data.uid == request.auth.uid;

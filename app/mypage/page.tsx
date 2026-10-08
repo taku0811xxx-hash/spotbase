@@ -4,6 +4,7 @@
 // 自分の投稿(撮影履歴アルバム)・保存したスポット(ブックマーク)・撮影傾向に基づく
 // おすすめスポット提案を表示する。"photo_spots"コレクションのみを参照し、
 // pro向けのlib/pins.tsには一切依存しない。
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Lock, MessageSquarePlus } from "lucide-react";
@@ -320,6 +321,9 @@ export default function MyPage() {
           <MessageSquarePlus size={18} className="text-orange-500" />
           開発者へ要望・改善案を送る
         </button>
+        <Link href="/terms" className="block mt-3 text-center text-xs text-gray-500 underline">
+          利用規約
+        </Link>
       </div>
 
       <PhotoBottomNav

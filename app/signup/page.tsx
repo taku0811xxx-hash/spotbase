@@ -147,6 +147,11 @@ export default function PhotoSignUpPage() {
                 )}
               </div>
             )}
+            <p className="text-xs text-gray-500 text-center">
+              会員登録することで
+              <Link href="/terms" className="text-orange-600 underline">利用規約</Link>
+              に同意したものとみなします。不適切なコンテンツの投稿や嫌がらせ行為は禁止で、違反した場合はアカウント停止等の措置を行います。
+            </p>
             <button
               type="submit"
               disabled={submitting}

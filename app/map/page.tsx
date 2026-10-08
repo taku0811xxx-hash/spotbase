@@ -3,6 +3,7 @@
 // 「ここトレ！」(APP_MODE === 'photo')専用: 全投稿写真を地図上のピンで一覧できる
 // 全画面マップビュー。SpotBase本体(pro)向けの地図(app/page.tsx内のcomponents/Map.tsx)
 // とは完全に独立しており、"photo_spots"コレクションのみを参照する。
+import { useBlockedUserIds } from "@/lib/moderation";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ const PhotoSpotsMapView = dynamic(() => import("@/components/PhotoSpotsMapView")
 export default function PhotoSpotsMapPage() {
   const router = useRouter();
   const { user, photoProfile, loading: authLoading } = useAuth();
+  const blockedUserIds = useBlockedUserIds(user?.uid);
   const [spots, setSpots] = useState<PhotoSpot[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<PhotoSpotFilters>(EMPTY_PHOTO_SPOT_FILTERS);
@@ -60,7 +62,7 @@ export default function PhotoSpotsMapPage() {
 
   const filteredSpots = useMemo(
     () =>
-      filterVisibleSpots(spots, user?.uid).filter((spot) => matchesPhotoSpotFilters(spot, filters)),
+      filterVisibleSpots(spots, user?.uid, blockedUserIds).filter((spot) => matchesPhotoSpotFilters(spot, filters)),
     [spots, filters, user?.uid]
   );
 
