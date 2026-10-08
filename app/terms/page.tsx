@@ -58,9 +58,10 @@ export default function TermsPage() {
             ))}
           </section>
         ))}
-        <Link href="/" className="inline-block text-sm text-orange-600 hover:underline">
-          ← ホームへ戻る
-        </Link>
+        <div className="flex gap-4 text-sm">
+          <Link href="/" className="text-orange-600 hover:underline">← ホームへ戻る</Link>
+          <Link href="/support" className="text-orange-600 hover:underline">サポート</Link>
+        </div>
       </div>
     </div>
   );

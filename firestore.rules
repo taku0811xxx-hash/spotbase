@@ -105,6 +105,16 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    match /photo_support_inquiries/{docId} {
+      // 「ここトレ！」サポートページ(/support)からの問い合わせ。未ログインでも作成のみ可能。
+      // 読み取り・更新・削除はクライアントから不可(運営がコンソールで確認する)。
+      allow create: if request.resource.data.keys().hasOnly(['uid', 'category', 'name', 'email', 'message', 'createdAt'])
+        && request.resource.data.message is string && request.resource.data.message.size() <= 2000
+        && request.resource.data.email is string && request.resource.data.email.size() <= 200
+        && (request.resource.data.uid == null || (isSignedIn() && request.resource.data.uid == request.auth.uid));
+      allow read, update, delete: if false;
+    }
+
     match /photo_quick_memos/{docId} {
       // 「ここトレ！」の自分用クイックメモ(パーキング/カフェの打刻)。本人だけが読み書きできる。
       allow read, delete: if isSignedIn() && resource.data.uid == request.auth.uid;

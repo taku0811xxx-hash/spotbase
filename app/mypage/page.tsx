@@ -321,9 +321,10 @@ export default function MyPage() {
           <MessageSquarePlus size={18} className="text-orange-500" />
           開発者へ要望・改善案を送る
         </button>
-        <Link href="/terms" className="block mt-3 text-center text-xs text-gray-500 underline">
-          利用規約
-        </Link>
+        <div className="mt-3 flex justify-center gap-4 text-xs text-gray-500">
+          <Link href="/terms" className="underline">利用規約</Link>
+          <Link href="/support" className="underline">サポート</Link>
+        </div>
       </div>
 
       <PhotoBottomNav
