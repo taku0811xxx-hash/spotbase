@@ -9,7 +9,7 @@
     "dev:walk": "NEXT_PUBLIC_APP_MODE=walk next dev",
     "build": "next build --webpack",
     "build:photo": "node scripts/build-photo.mjs",
-    "cap:sync:photo": "npm run build:photo && NEXT_PUBLIC_APP_MODE=photo npx cap sync ios",
+    "cap:sync:photo": "node scripts/build-photo.mjs --sync",
     "cap:open:photo": "NEXT_PUBLIC_APP_MODE=photo npx cap open ios",
     "start": "next start",
     "lint": "eslint",
