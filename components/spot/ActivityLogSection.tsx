@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "@/components/AuthProvider";
 import {
@@ -9,7 +9,6 @@ import {
   ACTIVITY_STATUSES,
   ACTIVITY_STATUS_META,
   addActivityLog,
-  listActivityLogs,
   updateActivityLog,
   type ActivityActionType,
   type ActivityLog,
@@ -25,10 +24,18 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export default function ActivityLogSection({ pin }: { pin: Pin }) {
+export default function ActivityLogSection({
+  pin,
+  fieldRecordId,
+  logs,
+  onChanged,
+}: {
+  pin: Pin;
+  fieldRecordId?: string; // 未指定は旧データ枠(追加不可)
+  logs: ActivityLog[];
+  onChanged: () => void;
+}) {
   const { user, profile } = useAuth();
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -39,29 +46,6 @@ export default function ActivityLogSection({ pin }: { pin: Pin }) {
   const [detail, setDetail] = useState("");
   const [interviewNotes, setInterviewNotes] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!profile) return;
-    try {
-      setLogs(
-        await listActivityLogs({
-          organizationId: profile.organizationId,
-          targetType: "pin",
-          targetId: pin.id,
-        })
-      );
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError("対応履歴の取得に失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  }, [profile, pin.id]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   function startAdd() {
     setEditingId(null);
@@ -113,11 +97,12 @@ export default function ActivityLogSection({ pin }: { pin: Pin }) {
           detail,
           interviewNotes,
           createdByUid: user.uid,
+          fieldRecordId,
         });
       }
       setAdding(false);
       setEditingId(null);
-      await load();
+      onChanged();
     } catch (err) {
       console.error(err);
       setError("保存に失敗しました");
@@ -131,8 +116,8 @@ export default function ActivityLogSection({ pin }: { pin: Pin }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">対応履歴</h2>
-        {!adding && (
+        <h3 className="text-sm font-semibold">対応履歴</h3>
+        {!adding && fieldRecordId && (
           <button type="button" onClick={startAdd} className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
             対応を記録
           </button>
@@ -174,10 +159,8 @@ export default function ActivityLogSection({ pin }: { pin: Pin }) {
         </div>
       )}
 
-      {loading ? (
-        <p className="text-sm text-gray-500">読み込み中...</p>
-      ) : logs.length === 0 ? (
-        <p className="text-sm text-gray-500">対応履歴はまだありません</p>
+      {logs.length === 0 ? (
+        <p className="text-xs text-gray-500">対応履歴はありません</p>
       ) : (
         <ol className="border-l-2 border-gray-200 ml-1 space-y-3">
           {logs.map((l) => {

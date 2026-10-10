@@ -4,6 +4,7 @@ import {
   doc,
   getDocs,
   orderBy,
+  writeBatch,
   query,
   Timestamp,
   updateDoc,
@@ -18,12 +19,31 @@ import { db, storage } from "./firebase";
 // 現在の実装対象はpinのみ。将来incidentへ拡張できるようtargetTypeを持たせている。
 export type RecordTargetType = "pin" | "incident";
 
+// 現場記録: ロケや中継のたびに作る日付単位の取材記録。報告書と対応履歴はこの下に積まれる。
+// 親はpin(pinId)。報告書/対応履歴側は targetId(=pinId) と fieldRecordId の両方を持つ。
+export type FieldRecordSource = "manual" | "report_import";
+export type FieldRecord = {
+  id: string;
+  organizationId: string;
+  category: string; // 親pinのcategoryをコピー(FirestoreルールのcanView用)
+  pinId: string;
+  recordDate: Timestamp; // 取材日(並び順・AI時系列のキー)
+  title: string; // 例: "2026/10/10 初回現地ロケ"
+  interviewNotes: string;
+  source: FieldRecordSource;
+  authorUid: string;
+  authorName: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
 export type SpotReport = {
   id: string;
   organizationId: string;
   category: string; // 親pinのcategoryをコピー(FirestoreルールのcanView用)
   targetType: RecordTargetType;
   targetId: string;
+  fieldRecordId?: string; // 所属する現場記録(旧データは未設定)
   title: string;
   body: string; // 本文 / 文字起こしテキスト
   interviewNotes: string; // 取材メモ
@@ -67,6 +87,7 @@ export type ActivityLog = {
   category: string;
   targetType: RecordTargetType;
   targetId: string;
+  fieldRecordId?: string; // 所属する現場記録(旧データは未設定)
   loggedAt: Timestamp; // 対応日時(ユーザー入力。AI要約の並べ替えキー)
   actorUid: string;
   actorName: string; // 対応者
@@ -88,6 +109,7 @@ export type LatestInfoSummary = {
   generatedAt: string; // ISO
 };
 
+const FIELD_RECORDS = "field_records";
 const REPORTS = "spot_reports";
 const LOGS = "activity_logs";
 
@@ -105,17 +127,26 @@ export async function listReports(scope: Scope): Promise<SpotReport[]> {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SpotReport);
 }
 
-export async function addReport(
-  input: Omit<SpotReport, "id" | "createdAt" | "updatedAt" | "attachmentUrls">,
+async function uploadReportFiles(
+  organizationId: string,
+  pinId: string,
   files: File[]
-): Promise<void> {
+): Promise<string[]> {
   const urls: string[] = [];
-  const folder = `spot_reports/${input.organizationId}/${input.targetId}`;
+  const folder = `spot_reports/${organizationId}/${pinId}`;
   for (let i = 0; i < files.length; i++) {
     const r = ref(storage, `${folder}/${Date.now()}-${i}-${files[i].name}`);
     await uploadBytes(r, files[i]);
     urls.push(await getDownloadURL(r));
   }
+  return urls;
+}
+
+export async function addReport(
+  input: Omit<SpotReport, "id" | "createdAt" | "updatedAt" | "attachmentUrls">,
+  files: File[]
+): Promise<void> {
+  const urls = await uploadReportFiles(input.organizationId, input.targetId, files);
   await addDoc(collection(db, REPORTS), {
     ...input,
     attachmentUrls: urls,
@@ -158,4 +189,102 @@ export async function updateActivityLog(
   >
 ): Promise<void> {
   await updateDoc(doc(db, LOGS, id), patch);
+}
+
+export async function listFieldRecords(pinId: string, organizationId: string): Promise<FieldRecord[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, FIELD_RECORDS),
+      where("organizationId", "==", organizationId),
+      where("pinId", "==", pinId),
+      orderBy("recordDate", "desc")
+    )
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FieldRecord);
+}
+
+// 入力ミス修正用。作成者本人またはadminのみ(Firestoreルールでも保証)。
+export async function updateFieldRecord(
+  id: string,
+  patch: Pick<FieldRecord, "recordDate" | "title" | "interviewNotes">
+): Promise<void> {
+  await updateDoc(doc(db, FIELD_RECORDS, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export type NewFieldRecordInput = {
+  pin: { id: string; organizationId: string; category: string };
+  user: { uid: string; name: string };
+  recordDate: Date;
+  title: string;
+  interviewNotes: string;
+  source: FieldRecordSource;
+  // 手入力 / 報告書読み込みのどちらでも、対応内容があれば対応履歴を1件作る
+  activity?: {
+    actorName: string;
+    actionType: ActivityActionType;
+    status: ActivityStatus;
+    detail: string;
+  };
+  // 報告書読み込み時: 本文貼り付けと添付ファイル(PDF/画像)
+  report?: { title: string; body: string; files: File[] };
+};
+
+// 現場記録と、それに紐づく対応履歴/報告書を1回のバッチで作成する(添付のアップロードは先に行う)。
+export async function createFieldRecord(input: NewFieldRecordInput): Promise<string> {
+  const { pin, user } = input;
+  const base = {
+    organizationId: pin.organizationId,
+    category: pin.category,
+  };
+  const now = Timestamp.now();
+  const recordRef = doc(collection(db, FIELD_RECORDS));
+  const urls = input.report
+    ? await uploadReportFiles(pin.organizationId, pin.id, input.report.files)
+    : [];
+
+  const batch = writeBatch(db);
+  batch.set(recordRef, {
+    ...base,
+    pinId: pin.id,
+    recordDate: Timestamp.fromDate(input.recordDate),
+    title: input.title,
+    interviewNotes: input.interviewNotes,
+    source: input.source,
+    authorUid: user.uid,
+    authorName: user.name,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const target = { targetType: "pin" as const, targetId: pin.id, fieldRecordId: recordRef.id };
+  if (input.activity) {
+    batch.set(doc(collection(db, LOGS)), {
+      ...base,
+      ...target,
+      loggedAt: Timestamp.fromDate(input.recordDate),
+      actorUid: user.uid,
+      actorName: input.activity.actorName || user.name,
+      actionType: input.activity.actionType,
+      status: input.activity.status,
+      detail: input.activity.detail,
+      interviewNotes: "",
+      createdByUid: user.uid,
+      createdAt: now,
+    });
+  }
+  if (input.report) {
+    batch.set(doc(collection(db, REPORTS)), {
+      ...base,
+      ...target,
+      title: input.report.title,
+      body: input.report.body,
+      interviewNotes: "",
+      attachmentUrls: urls,
+      authorUid: user.uid,
+      authorName: user.name,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  await batch.commit();
+  return recordRef.id;
 }

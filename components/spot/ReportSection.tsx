@@ -1,16 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { addReport, listReports, updateReport, type SpotReport } from "@/lib/spotRecords";
+import { addReport, updateReport, type SpotReport } from "@/lib/spotRecords";
 import type { Pin } from "@/lib/pins";
 
 const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm";
 
-export default function ReportSection({ pin }: { pin: Pin }) {
+export default function ReportSection({
+  pin,
+  fieldRecordId,
+  reports,
+  onChanged,
+}: {
+  pin: Pin;
+  fieldRecordId?: string; // 未指定は旧データ枠(追加不可)
+  reports: SpotReport[];
+  onChanged: () => void;
+}) {
   const { user, profile } = useAuth();
-  const [reports, setReports] = useState<SpotReport[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -19,29 +27,6 @@ export default function ReportSection({ pin }: { pin: Pin }) {
   const [interviewNotes, setInterviewNotes] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!profile) return;
-    try {
-      setReports(
-        await listReports({
-          organizationId: profile.organizationId,
-          targetType: "pin",
-          targetId: pin.id,
-        })
-      );
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError("報告書の取得に失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  }, [profile, pin.id]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   function reset() {
     setAdding(false);
@@ -78,12 +63,13 @@ export default function ReportSection({ pin }: { pin: Pin }) {
             interviewNotes,
             authorUid: user.uid,
             authorName: profile.name,
+            fieldRecordId,
           },
           files
         );
       }
       reset();
-      await load();
+      onChanged();
     } catch (err) {
       console.error(err);
       setError("保存に失敗しました");
@@ -97,8 +83,8 @@ export default function ReportSection({ pin }: { pin: Pin }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">過去報告書</h2>
-        {!adding && (
+        <h3 className="text-sm font-semibold">報告書</h3>
+        {!adding && fieldRecordId && (
           <button
             type="button"
             onClick={() => setAdding(true)}
@@ -134,10 +120,8 @@ export default function ReportSection({ pin }: { pin: Pin }) {
         </div>
       )}
 
-      {loading ? (
-        <p className="text-sm text-gray-500">読み込み中...</p>
-      ) : reports.length === 0 ? (
-        <p className="text-sm text-gray-500">報告書はまだありません</p>
+      {reports.length === 0 ? (
+        <p className="text-xs text-gray-500">報告書はありません</p>
       ) : (
         <ul className="space-y-2">
           {reports.map((r) => (

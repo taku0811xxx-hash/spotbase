@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
 import { callAnthropicWithHaikuFallback } from "@/lib/anthropicModel";
-import { buildLatestInfoPrompt, type PromptActivityLog, type PromptReport } from "@/lib/latestInfoPrompt";
+import { buildLatestInfoPrompt, type PromptFieldRecord } from "@/lib/latestInfoPrompt";
 import { ACTIVITY_ACTION_LABELS, type ActivityActionType, type LatestInfoSummary } from "@/lib/spotRecords";
 
 // 場所(pin)の過去報告書と対応履歴をAI(Haiku)に読ませて「最新情報」を集約する。
 // 現在の対象はpinのみ。
 
 const ENDPOINT = "/api/spot-latest-summary";
-const MAX_LOGS = 30;
-const MAX_REPORTS = 10;
+const MAX_RECORDS = 10; // 直近の現場記録数
+const MAX_LOGS_PER_RECORD = 10;
+const MAX_REPORTS_PER_RECORD = 5;
+const LEGACY_KEY = "__legacy__"; // fieldRecordId未設定の旧データ
 
 function iso(ts: Timestamp | undefined): string {
   return ts?.toDate?.().toISOString() ?? "";
@@ -56,51 +58,97 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "閲覧権限がありません" }, { status: 403 });
   }
 
-  const [logSnap, reportSnap] = await Promise.all([
+  const [recordSnap, logSnap, reportSnap] = await Promise.all([
+    db
+      .collection("field_records")
+      .where("organizationId", "==", pin.organizationId)
+      .where("pinId", "==", pinId)
+      .orderBy("recordDate", "desc")
+      .limit(MAX_RECORDS)
+      .get(),
     db
       .collection("activity_logs")
       .where("organizationId", "==", pin.organizationId)
       .where("targetId", "==", pinId)
       .orderBy("loggedAt", "desc")
-      .limit(MAX_LOGS)
+      .limit(MAX_RECORDS * MAX_LOGS_PER_RECORD)
       .get(),
     db
       .collection("spot_reports")
       .where("organizationId", "==", pin.organizationId)
       .where("targetId", "==", pinId)
       .orderBy("createdAt", "desc")
-      .limit(MAX_REPORTS)
+      .limit(MAX_RECORDS * MAX_REPORTS_PER_RECORD)
       .get(),
   ]);
 
-  if (logSnap.empty && reportSnap.empty) {
-    return NextResponse.json({ error: "報告書も対応履歴も登録されていません" }, { status: 400 });
+  if (recordSnap.empty && logSnap.empty && reportSnap.empty) {
+    return NextResponse.json({ error: "現場記録がまだ登録されていません" }, { status: 400 });
   }
 
-  const logs: (PromptActivityLog & { id: string })[] = logSnap.docs.map((d) => {
+  const buckets = new Map<string, PromptFieldRecord>();
+  for (const d of recordSnap.docs) {
     const x = d.data();
-    return {
-      id: d.id,
-      at: iso(x.loggedAt) || iso(x.createdAt),
+    buckets.set(d.id, {
+      recordDate: iso(x.recordDate),
+      title: x.title ?? "",
+      interviewNotes: x.interviewNotes ?? "",
+      logs: [],
+      reports: [],
+    });
+  }
+  const legacy: PromptFieldRecord = {
+    recordDate: "",
+    title: "記録に未分類(旧データ)",
+    interviewNotes: "",
+    logs: [],
+    reports: [],
+  };
+  const bucketFor = (fieldRecordId: string | undefined) =>
+    fieldRecordId ? buckets.get(fieldRecordId) : legacy; // 直近N件外の記録の項目はundefined(除外)
+
+  let newestLogId: string | null = null;
+  let newestLogAt = "";
+  for (const d of logSnap.docs) {
+    const x = d.data();
+    const at = iso(x.loggedAt) || iso(x.createdAt);
+    const bucket = bucketFor(x.fieldRecordId);
+    if (!bucket || bucket.logs.length >= MAX_LOGS_PER_RECORD) continue;
+    bucket.logs.push({
+      at,
       actorName: x.actorName ?? "",
       actionLabel: ACTIVITY_ACTION_LABELS[x.actionType as ActivityActionType] ?? x.actionType ?? "",
       status: x.status ?? "",
       detail: x.detail ?? "",
       interviewNotes: x.interviewNotes ?? "",
-    };
-  });
-  const reports: PromptReport[] = reportSnap.docs.map((d) => {
+    });
+    if (at > newestLogAt) {
+      newestLogAt = at;
+      newestLogId = d.id;
+    }
+  }
+  for (const d of reportSnap.docs) {
     const x = d.data();
-    return {
+    const bucket = bucketFor(x.fieldRecordId);
+    if (!bucket || bucket.reports.length >= MAX_REPORTS_PER_RECORD) continue;
+    bucket.reports.push({
       createdAt: iso(x.createdAt),
       title: x.title ?? "",
       body: x.body ?? "",
       interviewNotes: x.interviewNotes ?? "",
-    };
-  });
+    });
+  }
+  if (legacy.logs.length > 0 || legacy.reports.length > 0) {
+    // 旧データ枠の日付は、含まれる項目の最新日時で代用する
+    legacy.recordDate = [...legacy.logs.map((l) => l.at), ...legacy.reports.map((r) => r.createdAt)]
+      .sort()
+      .reverse()[0];
+    buckets.set(LEGACY_KEY, legacy);
+  }
+  const records = [...buckets.values()];
 
   const targetName = [pin.parentLocation, pin.name].filter(Boolean).join(" ");
-  const prompt = buildLatestInfoPrompt({ targetName, reports, logs });
+  const prompt = buildLatestInfoPrompt({ targetName, records });
   const result = await callAnthropicWithHaikuFallback({
     apiKey,
     prompt,
@@ -119,13 +167,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "AIの応答を解析できませんでした。再度お試しください。" }, { status: 502 });
   }
 
-  const newestLog = [...logs].sort((a, b) => b.at.localeCompare(a.at))[0];
   const summary: LatestInfoSummary = {
     currentStatus: String(parsed.currentStatus ?? ""),
     changeSummary: String(parsed.changeSummary ?? ""),
     fieldNotes: String(parsed.fieldNotes ?? ""),
     openItems: Array.isArray(parsed.openItems) ? parsed.openItems.map(String) : [],
-    basedOnLogId: newestLog?.id ?? null,
+    basedOnLogId: newestLogId,
     generatedAt: new Date().toISOString(),
   };
 

@@ -35,6 +35,15 @@
         { "fieldPath": "targetId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "field_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "pinId", "order": "ASCENDING" },
+        { "fieldPath": "recordDate", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
