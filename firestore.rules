@@ -42,6 +42,35 @@ service cloud.firestore {
       allow update, delete: if canView(resource.data);
     }
 
+    match /spot_reports/{reportId} {
+      // 場所(pin)ごとの過去報告書。閲覧はpinsと同じ(同組織かつ管理者/同分類)。
+      // 編集は作成者本人または管理者のみ。対象・組織・分類・作成者は変更不可。
+      allow read: if canView(resource.data);
+      allow create: if isSignedIn() && isOwnOrgData(request.resource.data) &&
+        request.resource.data.authorUid == request.auth.uid;
+      allow update: if canView(resource.data) &&
+        (resource.data.authorUid == request.auth.uid || requesterProfile().accessLevel == "admin") &&
+        request.resource.data.organizationId == resource.data.organizationId &&
+        request.resource.data.category == resource.data.category &&
+        request.resource.data.targetId == resource.data.targetId &&
+        request.resource.data.authorUid == resource.data.authorUid;
+      allow delete: if false;
+    }
+
+    match /activity_logs/{logId} {
+      // 対応履歴: 監査性のため削除不可。編集(誤字・日付修正)は登録者本人または管理者のみ。
+      allow read: if canView(resource.data);
+      allow create: if isSignedIn() && isOwnOrgData(request.resource.data) &&
+        request.resource.data.createdByUid == request.auth.uid;
+      allow update: if canView(resource.data) &&
+        (resource.data.createdByUid == request.auth.uid || requesterProfile().accessLevel == "admin") &&
+        request.resource.data.organizationId == resource.data.organizationId &&
+        request.resource.data.category == resource.data.category &&
+        request.resource.data.targetId == resource.data.targetId &&
+        request.resource.data.createdByUid == resource.data.createdByUid;
+      allow delete: if false;
+    }
+
     match /dispatches/{dispatchId} {
       allow read, write: if isSignedIn();
     }

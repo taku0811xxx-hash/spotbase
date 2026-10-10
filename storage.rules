@@ -12,6 +12,10 @@ service firebase.storage {
     match /dispatch_records/{recordId}/{allPaths=**} {
       allow read, write: if true;
     }
+    match /spot_reports/{orgId}/{allPaths=**} {
+      // 過去報告書の添付ファイル: サインイン必須
+      allow read, write: if request.auth != null;
+    }
     match /photo_spots/{spotId}/{allPaths=**} {
       // 「ここトレ！」専用: 撮影スポット写真。誰でも閲覧可、投稿はサインイン必須。
       allow read: if true;

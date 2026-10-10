@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { deletePin, type Pin, type PinDrawing, type PinExif } from "@/lib/pins";
 import { APP_MODE } from "@/lib/config";
+import SpotRecordsTab from "./spot/SpotRecordsTab";
 import ConfirmDialog from "./ConfirmDialog";
 import Toast, { type ToastState } from "./Toast";
 
@@ -268,12 +269,13 @@ function DrawingsTab({ drawings }: { drawings?: PinDrawing[] }) {
 
 // 固定タブ(基本情報・図面管理)のid。customFieldsから動的に増えるタブは
 // `field:${項目名}` という文字列で表す(SiteRecordForm.tsxの動的タブと同じ方式)。
-type FixedTab = "basic" | "drawings";
+type FixedTab = "basic" | "drawings" | "records";
 const DYNAMIC_FIELD_PREFIX = "field:";
 
 const FIXED_TABS: { id: FixedTab; label: string }[] = [
   { id: "basic", label: "基本情報・注意事項" },
   { id: "drawings", label: "図面管理" },
+  { id: "records", label: "報告書・対応履歴" },
 ];
 
 type Props = {
@@ -295,7 +297,7 @@ export default function PinDetail({ pin, onClose, onDeleted }: Props) {
   const isPhotoMode = APP_MODE === "photo";
   const customFields = pin.customFields ?? [];
   // photoモードでは「図面管理」タブを出さない(フォトスポット共有アプリに図面管理は不要なため)
-  const fixedTabs = isPhotoMode ? FIXED_TABS.filter((t) => t.id !== "drawings") : FIXED_TABS;
+  const fixedTabs = isPhotoMode ? FIXED_TABS.filter((t) => t.id !== "drawings" && t.id !== "records") : FIXED_TABS;
 
   async function handleDelete() {
     setDeleting(true);
@@ -424,6 +426,7 @@ export default function PinDetail({ pin, onClose, onDeleted }: Props) {
         <div className="flex-1 min-w-0">
           {tab === "basic" && <BasicInfoTab pin={pin} isPhotoMode={isPhotoMode} />}
           {tab === "drawings" && <DrawingsTab drawings={pin.drawings} />}
+          {tab === "records" && !isPhotoMode && <SpotRecordsTab pin={pin} />}
           {tab.startsWith(DYNAMIC_FIELD_PREFIX) &&
             (() => {
               const key = tab.slice(DYNAMIC_FIELD_PREFIX.length);

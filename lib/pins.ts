@@ -14,6 +14,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
 import { compressImage } from "./imageCompression";
+import type { LatestInfoSummary } from "./spotRecords";
 
 export type AiProposal = {
   content: {
@@ -45,6 +46,7 @@ export type AiProposal = {
         iconType: "angle" | "parking";
       };
     };
+    latestSummary?: LatestInfoSummary; // 過去報告書・対応履歴から集約した最新情報(/api/spot-latest-summary)
     pinSummary?: {
       parkingInfo: string;
       shootingSpots: string;
