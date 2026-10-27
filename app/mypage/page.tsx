@@ -27,6 +27,7 @@ import AuthModal from "@/components/AuthModal";
 import ProfileEditModal from "@/components/ProfileEditModal";
 import QuickMemoList from "@/components/QuickMemoList";
 import FeedbackModal from "@/components/FeedbackModal";
+import DeleteAccountModal from "@/components/DeleteAccountModal";
 
 // LeafletはSSR非対応なのでクライアント側のみで読み込む
 const PhotoSpotsMapView = dynamic(() => import("@/components/PhotoSpotsMapView"), { ssr: false });
@@ -42,6 +43,7 @@ export default function MyPage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showPhotoUploadModal, setShowPhotoUploadModal] = useState(false);
   const [photoUploadInitialFiles, setPhotoUploadInitialFiles] = useState<File[]>([]);
   // 撮影アルバムでタップされた写真1枚(と、それが属するスポット)。
@@ -325,6 +327,12 @@ export default function MyPage() {
           <Link href="/terms" className="underline">利用規約</Link>
           <Link href="/support" className="underline">サポート</Link>
         </div>
+        <button
+          onClick={() => setShowDeleteAccountModal(true)}
+          className="block mx-auto mt-3 text-xs text-red-500 underline"
+        >
+          アカウントを削除
+        </button>
       </div>
 
       <PhotoBottomNav
@@ -342,6 +350,12 @@ export default function MyPage() {
       />
 
       {showFeedbackModal && <FeedbackModal onClose={() => setShowFeedbackModal(false)} />}
+      {showDeleteAccountModal && (
+        <DeleteAccountModal
+          onClose={() => setShowDeleteAccountModal(false)}
+          onDeleted={() => router.push("/login")}
+        />
+      )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
       {showPhotoUploadModal && (
         <PhotoUploadModal
